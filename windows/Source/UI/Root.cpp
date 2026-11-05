@@ -94,6 +94,47 @@ struct Meters : juce::Component {
     Model& model;
 };
 
+/// Puts a component's explanation in the rig's explanation strip while the pointer is over it.
+struct HoverExplainer : juce::MouseListener {
+    explicit HoverExplainer(Model& m) : model(m) {}
+    void add(juce::Component& c, const char* key, const juce::String& title) { items[&c] = { key, title }; c.addMouseListener(this, true); }
+    void detach() { for (auto& it : items) it.first->removeMouseListener(this); items.clear(); }
+    void mouseEnter(const juce::MouseEvent& e) override {
+        for (auto* c = e.eventComponent; c; c = c->getParentComponent())
+            if (auto it = items.find(c); it != items.end()) { model.showHover(it->second.first, it->second.second, Model::explain(it->second.first)); return; }
+    }
+    void mouseExit(const juce::MouseEvent& e) override {
+        for (auto* c = e.eventComponent; c; c = c->getParentComponent())
+            if (auto it = items.find(c); it != items.end()) { model.clearHover(it->second.first); return; }
+    }
+    Model& model;
+    std::map<juce::Component*, std::pair<juce::String, juce::String>> items;
+};
+
+/// The whole take so far, squeezed to fit; shown in the top bar while recording.
+struct LiveWave : juce::Component, private juce::Timer {
+    explicit LiveWave(Model& m) : model(m) { startTimerHz(15); }
+    void timerCallback() override { if (isVisible()) repaint(); }
+    void paint(juce::Graphics& g) override {
+        g.setColour(juce::Colour(0xff1a1a1a)); g.fillRoundedRectangle(getLocalBounds().toFloat(), 5);
+        const auto& w = model.sessions->liveWave;
+        const size_t n = w.size() / 2;
+        if (n == 0) return;
+        const int cols = std::max(getWidth() / 2, 1);
+        const double per = std::max((double) n / cols, 1.0);
+        const int used = (int) std::min((size_t) cols, n);
+        const float mid = (float) getHeight() / 2, amp = (float) getHeight() / 2 - 3;
+        g.setColour(juce::Colours::red.withAlpha(0.9f));
+        for (int c = 0; c < used; ++c) {
+            const size_t a = (size_t) (c * per), b = std::max((size_t) ((c + 1) * per), a + 1);
+            float lo = 0, hi = 0;
+            for (size_t i = a; i < std::min(b, n); ++i) { lo = std::min(lo, w[2 * i]); hi = std::max(hi, w[2 * i + 1]); }
+            g.fillRect((float) c * 2 + 1, mid - hi * amp, 1.5f, std::max((hi - lo) * amp, 1.f));
+        }
+    }
+    Model& model;
+};
+
 struct TopBar : juce::Component {
     explicit TopBar(Model& m) : model(m),
         power(""), rec(""), tuner("Tuner"), midi("MIDI"), save("Save"), saveAs("Save as..."), presetMenu(""),
@@ -105,6 +146,12 @@ struct TopBar : juce::Component {
         for (auto* c : std::initializer_list<juce::Component*> { &power, &rec, &tuner, &midi, &save, &saveAs, &presetMenu, &metro, &prev, &next, &tap, &bpm, &meters })
             addAndMakeVisible(c);
         for (auto* o : { &tunerLearn, &metroLearn, &prevLearn, &nextLearn }) addAndMakeVisible(o);
+        addChildComponent(wave);
+        hover.add(power, "top:power", "Audio on/off"); hover.add(meters, "top:meters", "Levels"); hover.add(rec, "top:rec", "Record");
+        hover.add(metro, "top:metro", "Metronome"); hover.add(bpm, "top:tempo", "Tempo"); hover.add(tap, "top:tap", "Tap tempo");
+        hover.add(tuner, "top:tuner", "Tuner"); hover.add(midi, "top:midi", "MIDI learn"); hover.add(prev, "top:prev", "Previous preset");
+        hover.add(next, "top:next", "Next preset"); hover.add(presetMenu, "top:preset", "Preset"); hover.add(save, "top:save", "Save");
+        hover.add(saveAs, "top:saveAs", "Save as"); hover.add(wave, "top:recWave", "Recording");
         power.onClick = [&m] { m.toggle(); };
         rec.onClick = [&m] { m.sessions->toggleRecord(); }; rec.setTooltip("Record dry + wet (Ctrl+R)");
         tuner.onClick = [&m] { m.setTuner(!m.tunerOn); };
@@ -132,6 +179,7 @@ struct TopBar : juce::Component {
         bpm.setButtonText(std::fmod(m.bpm, 1.0) == 0 ? juce::String(juce::roundToInt(m.bpm)) : juce::String(m.bpm, 1));
         presetMenu.setButtonText((m.presetModified() ? juce::String::fromUTF8("\xe2\x97\x8f ") : juce::String()) + m.presetName);
         save.setEnabled(m.presetModified());
+        wave.setVisible(m.sessions->recording);
         for (auto* o : { &tunerLearn, &metroLearn, &prevLearn, &nextLearn }) o->sync();
         resized(); repaint();
     }
@@ -140,6 +188,7 @@ struct TopBar : juce::Component {
         auto place = [&](juce::Component& c, int w, int h = 28) { c.setBounds(x, (getHeight() - h) / 2, w, h); x += w + 10; };
         x = 64 + 196;
         place(power, 80); place(meters, 170, 36); x += 100;   // latency text
+        wave.setBounds(x, (getHeight() - 34) / 2, 200, 34);
         int r = getWidth() - 14;
         auto placeR = [&](juce::Component& c, int w, int h = 28) { r -= w; c.setBounds(r, (getHeight() - h) / 2, w, h); r -= 10; };
         placeR(saveAs, 80);
@@ -222,6 +271,9 @@ struct TopBar : juce::Component {
     Meters meters;
     LearnOverlay tunerLearn, metroLearn, prevLearn, nextLearn;
     int latencyX = 0;
+    LiveWave wave { model };
+    HoverExplainer hover { model };
+    ~TopBar() override { hover.detach(); }
 };
 
 // MARK: - presets screen
@@ -341,7 +393,9 @@ struct Waveform : juce::Component {
         } else if (cur) { g.setColour(theme::secondary); g.setFont(theme::font(10)); g.drawText(juce::String("loading") + ellipsis, getLocalBounds(), juce::Justification::centred); }
         if (s.playing && dur > 0) { g.setColour(juce::Colours::white); g.fillRect((float) (s.playPos / dur) * w, 0.f, 2.f, h); }
     }
-    void mouseUp(const juce::MouseEvent& e) override {
+    void mouseDown(const juce::MouseEvent& e) override { seekTo(e); }   // jump on press
+    void mouseDrag(const juce::MouseEvent& e) override { seekTo(e); }   // scrub while dragging
+    void seekTo(const juce::MouseEvent& e) {
         if (auto* cur = model.sessions->current()) model.sessions->seek(juce::jlimit(0.0, 1.0, (double) e.x / getWidth()) * cur->duration);
     }
     Model& model;
@@ -629,9 +683,15 @@ struct SettingsScreen : Screen_ {
         resized(); repaint();
         for (auto* g : { &audio, &look, &tun, &upd, &mid, &lib, &fb, &about }) g->repaint();
     }
+    /// Nav and content as one block, centred on wide windows instead of hugging the sidebar.
+    juce::Rectangle<int> block() const {
+        const int bw = std::min(getWidth() - 48, 1240);
+        return { (getWidth() - bw) / 2, 18, bw, getHeight() - 36 };
+    }
     void resized() override {
-        nav.setBounds(getLocalBounds().removeFromLeft(navW));
-        viewport.setBounds(getLocalBounds().withTrimmedLeft(navW + 1));
+        const auto b = block();
+        nav.setBounds(b.getX(), b.getY(), navW, b.getHeight());
+        viewport.setBounds(b.getX() + navW + 12, 0, b.getWidth() - navW - 12, getHeight());
         const int w = std::min(viewport.getMaximumVisibleWidth() - 48, 1000), x = 24;
         int y = 24, shownBottom = 0;
         // every group is laid out as before; only the selected section is shown, at the top
@@ -735,7 +795,11 @@ struct SettingsScreen : Screen_ {
         inner.setSize(viewport.getMaximumVisibleWidth(), shownBottom + 24);
         juce::ignoreUnused(y);
     }
-    void paint(juce::Graphics& g) override { g.setColour(theme::line); g.fillRect(navW, 0, 1, getHeight()); }
+    void paint(juce::Graphics& g) override {
+        const auto r = nav.getBounds().toFloat().reduced(0.5f);
+        g.setColour(theme::bar); g.fillRoundedRectangle(r, 12);
+        g.setColour(theme::line); g.drawRoundedRectangle(r, 12, 1);
+    }
 
     /// Left-hand navigation: groups of sections (same as the Mac app); the last one opened is remembered.
     static constexpr int navW = 220;

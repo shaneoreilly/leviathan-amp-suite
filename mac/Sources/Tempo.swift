@@ -25,6 +25,7 @@ struct TempoControl: View {
             Toggle(isOn: $m.metroOn) { Image(systemName: "metronome") }
                 .toggleStyle(.button).help("Metronome")
                 .overlay { MidiLearnOverlay(armed: .action("@metro", "Metronome"), cornerRadius: 6) }
+                .explain("top:metro", "Metronome")
             Button { ui.open.toggle() } label: {
                 HStack(spacing: 6) {
                     Text(String(format: m.bpm.truncatingRemainder(dividingBy: 1) == 0 ? "%.0f" : "%.1f", m.bpm)).monospacedDigit()
@@ -32,8 +33,9 @@ struct TempoControl: View {
                 }
             }
             .help("Tempo and metronome settings")
+            .explain("top:tempo", "Tempo")
             .popover(isPresented: $ui.open, arrowEdge: .bottom) { TempoPopover().environmentObject(m).padding(16) }
-            TapButton()
+            TapButton().explain("top:tap", "Tap tempo")
         }
         .fixedSize()
     }

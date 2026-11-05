@@ -100,6 +100,8 @@ public:
     void mouseDown(const juce::MouseEvent& e) override { setFrom(e); }
     void mouseDrag(const juce::MouseEvent& e) override { setFrom(e); }
     void mouseDoubleClick(const juce::MouseEvent&) override { model.setSettings([&] { auto s = model.s(); s.setEq(band, 0); return s; }()); }
+    void mouseEnter(const juce::MouseEvent&) override;
+    void mouseExit(const juce::MouseEvent&) override { model.clearHover("eq" + juce::String(band)); }
 private:
     Model& model; int band;
     void setFrom(const juce::MouseEvent& e);

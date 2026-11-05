@@ -248,6 +248,12 @@ void Footswitch::mouseUp(const juce::MouseEvent& e) {
 
 Fader::Fader(Model& m, int b) : model(m), band(b) { setPref(*this, 26, 165); setTooltip(juce::String::fromUTF8("Click or drag \xc2\xb7 double-click resets to 0 dB")); }
 
+void Fader::mouseEnter(const juce::MouseEvent&) {
+    static const char* freqs[] = { "80 Hz", "160 Hz", "320 Hz", "640 Hz", "1.2 kHz", "2.5 kHz", "5 kHz", "10 kHz" };
+    const auto k = "eq" + juce::String(band);
+    model.showHover(k, juce::String::fromUTF8("Graphic EQ \xc2\xb7 ") + freqs[juce::jlimit(0, 7, band)], Model::explain(k));
+}
+
 void Fader::setFrom(const juce::MouseEvent& e) {
     const float thumb = 20, h = (float) getHeight();
     const float t = juce::jlimit(0.f, 1.f, 1 - ((float) e.y - thumb / 2) / (h - thumb));

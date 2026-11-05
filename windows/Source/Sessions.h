@@ -30,6 +30,7 @@ public:
     double recSeconds = 0, playPos = 0;
     std::optional<double> rendering;     // offline re-amp progress 0...1
     std::vector<float> waveform;         // min/max pairs
+    std::vector<float> liveWave;         // min/max pairs of the take being recorded, 20 per second (top bar)
     juce::String message;
 
     const Session* current() const;
@@ -69,6 +70,9 @@ private:
     juce::File recDir; double recRate = 48000; juce::Time recStart; juce::int64 recFrames = 0;
     std::vector<float> tmp[3];
     int playLen = 0; double playRate = 48000;
+    float liveLo = 0, liveHi = 0; int liveN = 0;
+    /// The take last loaded for playback, kept so clicking around the waveform doesn't reload the file.
+    juce::File loadedFile; double loadedRate = 0; std::vector<std::vector<float>> loadedCh;
     // buffers handed to the audio thread; swapped-out ones are freed a second later
     std::vector<std::vector<float>> live, retired;
     int retireCountdown = 0;

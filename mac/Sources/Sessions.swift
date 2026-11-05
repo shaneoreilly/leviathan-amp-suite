@@ -1,3 +1,4 @@
+import SwiftUI
 import Foundation
 import AVFoundation
 import AppKit
@@ -40,6 +41,11 @@ final class Sessions: ObservableObject {
     @Published var recSeconds = 0.0
     @Published var playing = false
     @Published var playPos = 0.0
+    /// Min/max pairs of the take being recorded (20 per second), for the top bar.
+    let liveWave = LiveWave()
+    private var liveBin: (lo: Float, hi: Float, n: Int) = (0, 0, 0)
+    /// The take last loaded for playback, kept so clicking around the waveform doesn't reload the file.
+    private var loaded: (id: URL, rate: Double, l: [Float], r: [Float])?
     @Published var liveReamp = false
     @Published var rendering: Double? = nil      // progress 0...1 while an offline re-amp runs
     @Published var waveform: [Float] = []        // min/max pairs
@@ -143,6 +149,7 @@ final class Sessions: ObservableObject {
             message = "Could not start recording: \(error.localizedDescription)"; return
         }
         recDir = dir; recRate = sr; recStart = Date(); recSeconds = 0
+        liveWave.reset(); liveBin = (0, 0, 0)
         let p = m.params
         p.recDry.reset(); p.recL.reset(); p.recR.reset()
         p.recording = true
@@ -183,6 +190,12 @@ final class Sessions: ObservableObject {
             if n == 0 { break }
             _ = p.recDry.read(into: tmp[0], max: n); _ = p.recL.read(into: tmp[1], max: n); _ = p.recR.read(into: tmp[2], max: n)
             write(dryFile, [tmp[0]], n); write(wetFile, [tmp[1], tmp[2]], n)
+            let binLen = max(Int(recRate / 20), 1)
+            for i in 0..<n {
+                let x = tmp[1][i]
+                liveBin.lo = min(liveBin.lo, x); liveBin.hi = max(liveBin.hi, x); liveBin.n += 1
+                if liveBin.n >= binLen { liveWave.append(liveBin.lo, liveBin.hi); liveBin = (0, 0, 0) }
+            }
         }
     }
 
@@ -205,11 +218,20 @@ final class Sessions: ObservableObject {
 
     func play(from t: Double = 0) {
         guard let s = current else { return }
-        guard m.running, let dsp = m.engine.dsp else { message = "Turn the amp on to play recordings."; return }
+        guard m.running, let dsp = m.engine.dsp else {
+            // audio is off: start it, then play from the same point once the engine is up
+            if !m.running { m.start(); DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in if self?.m.running == true { self?.play(from: t) } } }
+            return
+        }
         stopLiveReamp()
         let sr = Double(dsp.sr)
-        guard let ch = try? loadAudio(s.wet, rate: sr), let l = ch.first else { message = "Could not read the recording."; return }
-        let r = ch.count > 1 ? ch[1] : l
+        let l: [Float], r: [Float]
+        if let c = loaded, c.id == s.id, c.rate == sr { l = c.l; r = c.r }
+        else {
+            guard let ch = try? loadAudio(s.wet, rate: sr), let first = ch.first else { message = "Could not read the recording."; return }
+            l = first; r = ch.count > 1 ? ch[1] : first
+            loaded = (s.id, sr, l, r)
+        }
         let p = m.params
         p.bkPlaying = false
         let oldL = p.bkL, oldR = p.bkR
@@ -222,7 +244,8 @@ final class Sessions: ObservableObject {
     }
 
     func seek(_ t: Double) {
-        if playing { m.params.bkPos = max(0, min(Int(t * playRate), playLen - 1)); playPos = t } else { play(from: t) }
+        // still playing in the engine: just move the playhead; otherwise (stopped, or it ran off the end) start again from t
+        if playing && m.params.bkPlaying { m.params.bkPos = max(0, min(Int(t * playRate), playLen - 1)); playPos = t } else { play(from: t) }
     }
 
     func stopPlayback() {
@@ -514,4 +537,37 @@ extension JSONDecoder { static let iso: JSONDecoder = { let d = JSONDecoder(); d
 func mmss(_ t: Double) -> String {
     let s = max(0, Int(t.rounded(.down)))
     return String(format: "%d:%02d", s / 60, s % 60)
+}
+
+
+/// Waveform of the take being recorded, for the top bar.
+@MainActor
+final class LiveWave: ObservableObject {
+    @Published private(set) var pairs: [Float] = []
+    func reset() { pairs = [] }
+    func append(_ lo: Float, _ hi: Float) { pairs.append(lo); pairs.append(hi) }
+}
+
+/// The whole take so far, squeezed to fit, growing from the left; the newest audio is always at the right edge.
+struct LiveWaveView: View {
+    @ObservedObject var wave: LiveWave
+    var color: Color
+    var body: some View {
+        Canvas { ctx, size in
+            ctx.fill(Path(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: 5), with: .color(Color(white: 0.1)))
+            let n = wave.pairs.count / 2
+            guard n > 0 else { return }
+            let cols = max(Int(size.width / 2), 1), per = max(Double(n) / Double(cols), 1)
+            let used = min(cols, n), mid = size.height / 2, amp = size.height / 2 - 3
+            var path = Path()
+            for c in 0..<used {
+                let a = Int(Double(c) * per), b = max(Int(Double(c + 1) * per), a + 1)
+                var lo: Float = 0, hi: Float = 0
+                for i in a..<min(b, n) { lo = min(lo, wave.pairs[2 * i]); hi = max(hi, wave.pairs[2 * i + 1]) }
+                let x = CGFloat(c) * 2 + 1
+                path.addRect(CGRect(x: x, y: mid - CGFloat(hi) * amp, width: 1.5, height: max(CGFloat(hi - lo) * amp, 1)))
+            }
+            ctx.fill(path, with: .color(color.opacity(0.9)))
+        }
+    }
 }

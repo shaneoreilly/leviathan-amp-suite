@@ -724,7 +724,7 @@ final class DSP {
         if metro && !mWas { mCount = 0; mBeat = -1 }
         mWas = metro
         let beatLen = max(Int(60 / max(p.bpm, 20) * sr), 1), beats = max(p.beatsPerBar, 1)
-        let clickLen = Int(0.04 * sr), clickDecay = 1 / (0.01 * sr)
+        let clickLen = Int(0.08 * sr), clickDecay = 1 / (0.022 * sr)
         for i in 0..<n {
             var yl = wl[i], yr = wr[i]
             if bkOn, let bl, let br, bLen > 0 {
@@ -736,7 +736,9 @@ final class DSP {
                 mCount += 1; if mCount >= beatLen { mCount = 0 }
                 if mClick < clickLen {
                     let t = Float(mClick)
-                    let s = sinf(2 * .pi * (mAccent ? 1760 : 1320) * t / sr) * expf(-t * clickDecay) * mg
+                    // woodblock-like: a pitched tone plus its fifth below for body; accent is higher and louder
+                    let f: Float = mAccent ? 1500 : 1000, env = expf(-t * clickDecay) * mg * (mAccent ? 1 : 0.75)
+                    let s = (sinf(2 * .pi * f * t / sr) * 0.7 + sinf(2 * .pi * f * 0.667 * t / sr) * 0.3) * env
                     yl += s; yr += s; mClick += 1
                 }
             }

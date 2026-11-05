@@ -558,7 +558,7 @@ void DSP::process(const float* input, float* outL, float* outR, int frames) {
     if (metro && !mWas) { mCount = 0; mBeat = -1; }
     mWas = metro;
     const int beatLen = std::max((int) (60 / std::max(p.bpm, 20.0f) * sr), 1), beats = std::max(p.beatsPerBar, 1);
-    const int clickLen = (int) (0.04f * sr); const float clickDecay = 1 / (0.01f * sr);
+    const int clickLen = (int) (0.08f * sr); const float clickDecay = 1 / (0.022f * sr);
     for (int i = 0; i < n; ++i) {
         float yl = wl[(size_t) i], yr = wr[(size_t) i];
         if (bkOn && bl && br && bLen > 0) {
@@ -570,7 +570,9 @@ void DSP::process(const float* input, float* outL, float* outR, int frames) {
             if (++mCount >= beatLen) mCount = 0;
             if (mClick < clickLen) {
                 const float t = (float) mClick;
-                const float s = std::sin(2 * kPi * (mAccent ? 1760.f : 1320.f) * t / sr) * std::exp(-t * clickDecay) * mg;
+                // woodblock-like: a pitched tone plus its fifth below for body; accent is higher and louder
+                const float f = mAccent ? 1500.f : 1000.f, env = std::exp(-t * clickDecay) * mg * (mAccent ? 1.f : 0.75f);
+                const float s = (std::sin(2 * kPi * f * t / sr) * 0.7f + std::sin(2 * kPi * f * 0.667f * t / sr) * 0.3f) * env;
                 yl += s; yr += s; mClick++;
             }
         }

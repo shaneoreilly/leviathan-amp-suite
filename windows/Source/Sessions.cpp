@@ -147,6 +147,7 @@ void Sessions::startRecording() {
     wetWriter = openWriter(dir.getChildFile("wet.wav"), sr, 2);
     if (!dryWriter || !wetWriter) { dryWriter.reset(); wetWriter.reset(); message = "Could not start recording in " + dir.getFullPathName(); m.changed(); return; }
     recDir = dir; recRate = sr; recStart = juce::Time::getCurrentTime(); recSeconds = 0; recFrames = 0;
+    liveWave.clear(); liveLo = liveHi = 0; liveN = 0;
     m.params.recDry.reset(); m.params.recL.reset(); m.params.recR.reset();
     m.params.recording.store(true);
     recording = true; message = {};
@@ -179,6 +180,12 @@ void Sessions::drain() {
         if (dryWriter) dryWriter->writeFromFloatArrays(d, 1, n);
         recFrames += n;
         if (wetWriter) wetWriter->writeFromFloatArrays(w, 2, n);
+        const int binLen = std::max((int) (recRate / 20), 1);
+        for (int i = 0; i < n; ++i) {
+            const float x = tmp[1][(size_t) i];
+            liveLo = std::min(liveLo, x); liveHi = std::max(liveHi, x);
+            if (++liveN >= binLen) { liveWave.push_back(liveLo); liveWave.push_back(liveHi); liveLo = liveHi = 0; liveN = 0; }
+        }
     }
 }
 
@@ -204,11 +211,19 @@ const float* Sessions::hand(std::vector<float> x) {
 void Sessions::play(double from) {
     auto* s = current();
     if (!s) return;
-    if (!m.running || m.engineRate() <= 0) { message = "Turn the amp on to play recordings."; m.changed(); return; }
+    if (!m.running || m.engineRate() <= 0) {
+        // audio is off: start it, then play from the same point once the engine is up
+        if (!m.running) { m.start(); juce::Timer::callAfterDelay(600, [this, from] { if (m.running) play(from); }); }
+        return;
+    }
     stopLiveReamp();
     const double sr = m.engineRate();
-    auto w = loadAudio(s->wet(), sr);
-    if (w.channels.empty()) { message = "Could not read the recording."; m.changed(); return; }
+    if (loadedFile != s->wet() || loadedRate != sr) {
+        auto a = loadAudio(s->wet(), sr);
+        if (a.channels.empty()) { message = "Could not read the recording."; m.changed(); return; }
+        loadedCh = std::move(a.channels); loadedFile = s->wet(); loadedRate = sr;
+    }
+    WavData w; w.channels = loadedCh; w.rate = sr;
     auto& p = m.params;
     p.bkPlaying.store(false);
     for (auto& b : live) retired.push_back(std::move(b));
@@ -224,7 +239,8 @@ void Sessions::play(double from) {
 }
 
 void Sessions::seek(double t) {
-    if (playing) { m.params.bkPos.store(juce::jlimit(0, std::max(playLen - 1, 0), (int) (t * playRate))); playPos = t; }
+    // still playing in the engine: just move the playhead; otherwise (stopped, or it ran off the end) start again from t
+    if (playing && m.params.bkPlaying.load()) { m.params.bkPos.store(juce::jlimit(0, std::max(playLen - 1, 0), (int) (t * playRate))); playPos = t; }
     else play(t);
 }
 

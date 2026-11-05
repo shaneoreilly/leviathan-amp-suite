@@ -124,8 +124,12 @@ struct TopBar: View {
             .fixedSize()
             Button(m.running ? "⏻ On" : "⏻ Start") { m.toggle() }
                 .buttonStyle(.borderedProminent).tint(m.running ? .green : ch).keyboardShortcut(.space, modifiers: [])
-            LevelMeters(mt: m.meters)
-            if let i = m.info { LatencyLabel(info: i, mt: m.meters) }
+                .explain("top:power", "Audio on/off")
+            LevelMeters(mt: m.meters).explain("top:meters", "Levels")
+            if let i = m.info { LatencyLabel(info: i, mt: m.meters).explain("top:latency", "Latency") }
+            if rec.recording {
+                LiveWaveView(wave: rec.liveWave, color: .red).frame(width: 240 * W, height: 34 * Z).explain("top:recWave", "Recording")
+            }
             Spacer(minLength: 8)
             Button { rec.toggleRecord() } label: {
                 HStack(spacing: 6) {
@@ -135,20 +139,26 @@ struct TopBar: View {
             }
             .keyboardShortcut("r", modifiers: [.command])
             .help("Record dry + wet (⌘R)")
+            .explain("top:rec", "Record")
             TempoControl()
             Toggle("Tuner", isOn: $m.tunerOn).toggleStyle(.button).keyboardShortcut("t", modifiers: [])
                 .overlay { MidiLearnOverlay(armed: .action("@tuner", "Tuner"), cornerRadius: 6) }
-            MidiLearnButton()
+                .explain("top:tuner", "Tuner")
+            MidiLearnButton().explain("top:midi", "MIDI learn")
             HStack(spacing: 2) {
                 Button { m.stepPreset(-1) } label: { Image(systemName: "chevron.left") }.help("Previous preset")
                     .overlay { MidiLearnOverlay(armed: .action("@prev", "Previous preset"), cornerRadius: 6) }
-                PresetMenu().frame(maxWidth: 300 * W)
+                    .explain("top:prev", "Previous preset")
+                PresetMenu().frame(maxWidth: 300 * W).explain("top:preset", "Preset")
                 Button { m.stepPreset(1) } label: { Image(systemName: "chevron.right") }.help("Next preset")
                     .overlay { MidiLearnOverlay(armed: .action("@next", "Next preset"), cornerRadius: 6) }
+                    .explain("top:next", "Next preset")
             }
             Button("Save") { m.saveCurrent() }.keyboardShortcut("s").disabled(!m.presetModified).help("Save changes to this preset (⌘S)")
+                .explain("top:save", "Save")
             Button("Save as…") { m.newPresetName = m.presetName.isEmpty ? "" : m.presetName + " copy"; m.savingPreset = true }
                 .keyboardShortcut("s", modifiers: [.command, .shift]).help("Save as a new preset, leaving this one unchanged (⇧⌘S)")
+                .explain("top:saveAs", "Save as")
         }
         .lineLimit(1)
         .padding(.horizontal, 14).padding(.vertical, 10)
@@ -418,7 +428,7 @@ struct WaveformView: View {
                 }
             }
             .contentShape(Rectangle())
-            .gesture(DragGesture(minimumDistance: 0).onEnded { v in
+            .gesture(DragGesture(minimumDistance: 0).onChanged { v in   // jump on press, scrub while dragging
                 seek(max(0, min(Double(v.location.x / w), 1)) * duration)
             })
         }
@@ -448,11 +458,16 @@ struct SettingsView: View {
     ]
 
     var body: some View {
-        HStack(spacing: 0) {
+        HStack(alignment: .top, spacing: 0) {
             navigation
-            Rectangle().fill(line).frame(width: 1)
-            ScrollView { sections }
+                .background(RoundedRectangle(cornerRadius: 12).fill(Color(white: 0.07)))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(line))
+                .padding(.vertical, 18)
+            ScrollView { sections.frame(maxWidth: .infinity, alignment: .leading) }
         }
+        .padding(.horizontal, 24)
+        .frame(maxWidth: 1240)                                  // centred on wide windows instead of hugging the sidebar
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     var navigation: some View {
@@ -467,7 +482,7 @@ struct SettingsView: View {
                     Button { ui.section = item.name } label: {
                         HStack(spacing: 8) {
                             Image(systemName: item.icon).frame(width: 18 * Z)
-                            Text(item.name)
+                            Text(item.name).lineLimit(1).fixedSize()
                             Spacer()
                             if item.name == "Updates" && updater.available != nil { Circle().fill(.red).frame(width: 8, height: 8) }
                         }
@@ -484,7 +499,7 @@ struct SettingsView: View {
         }
         .padding(14)
         .frame(width: 220 * Z)
-        .background(Color(white: 0.07))
+        .frame(maxHeight: .infinity, alignment: .top)
     }
 
     var sections: some View {

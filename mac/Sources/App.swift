@@ -540,7 +540,14 @@ final class Model: ObservableObject {
         didSet { UserDefaults.standard.set(metroVol, forKey: "metroVol"); applyAll() }
     }
     private var taps: [Date] = []
-    @Published var screen: Screen = .rig
+    @Published var screen: Screen = {   // LEVIATHAN_SCREEN=settings|presets|recordings opens there (UI testing)
+        switch ProcessInfo.processInfo.environment["LEVIATHAN_SCREEN"] {
+        case "settings": return .settings
+        case "presets": return .presets
+        case "recordings": return .recordings
+        default: return .rig
+        }
+    }()
     /// Accent colour: a picked colour, or (when none is set) the colour of the active amp channel.
     @Published var accentRGB: [Double]? = UserDefaults.standard.array(forKey: "accent") as? [Double] {
         didSet { UserDefaults.standard.set(accentRGB, forKey: "accent") }
@@ -1697,6 +1704,8 @@ struct ContentView: View {
                         Fader(value: $m.s.eq[i], range: -12...12, color: ch)
                         Text(freqs[i]).font(.system(size: 9 * UI)).foregroundStyle(.secondary)
                     }
+                    .contentShape(Rectangle())
+                    .explain("eq\(i)", "Graphic EQ · \(freqs[i])\(freqs[i].hasSuffix("k") ? "Hz" : " Hz")")
                 }
             }
         }
@@ -1923,5 +1932,15 @@ struct ScrollCatcher: NSViewRepresentable {
             }
         }
         deinit { if let monitor { NSEvent.removeMonitor(monitor) } }
+    }
+}
+
+
+extension View {
+    /// Show `EXPLAIN[key]` in the rig's explanation strip while the pointer is over this view.
+    func explain(_ key: String, _ title: String) -> some View {
+        onHover { inside in
+            if inside { HoverHelp.shared.show(id: key, title: title, text: EXPLAIN[key]) } else { HoverHelp.shared.clear(id: key) }
+        }
     }
 }
