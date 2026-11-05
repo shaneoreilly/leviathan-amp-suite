@@ -517,8 +517,12 @@ struct FlowLayout: Layout {
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let maxW = proposal.width ?? .infinity
         let r = rows(maxW, subviews)
-        let h = r.reduce(0) { $0 + ($1.map(\.1.height).max() ?? 0) } + spacing * CGFloat(max(r.count - 1, 0))
-        let w = r.map { $0.reduce(0) { $0 + $1.1.width } + spacing * CGFloat(max($0.count - 1, 0)) }.max() ?? 0
+        var h: CGFloat = spacing * CGFloat(max(r.count - 1, 0)), w: CGFloat = 0
+        for row in r {
+            var rowW: CGFloat = spacing * CGFloat(max(row.count - 1, 0)), rowH: CGFloat = 0
+            for item in row { rowW += item.1.width; rowH = max(rowH, item.1.height) }
+            h += rowH; w = max(w, rowW)
+        }
         // take the whole offered width, so rows always span the window (and stretch to fill)
         return CGSize(width: proposal.width ?? w, height: h)
     }

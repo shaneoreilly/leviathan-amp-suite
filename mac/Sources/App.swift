@@ -390,7 +390,12 @@ final class Model: ObservableObject {
             // God's Cab IRs are phase-aligned, so a straight sum blends cleanly
             if s.irBlend > 0.001, !s.irB.isEmpty, let b = irLib.samples(s.irB, sampleRate: sr) {
                 let t = Float(s.irBlend)
-                h = (0..<max(h.count, b.count)).map { i in (i < h.count ? h[i] : 0) * (1 - t) + (i < b.count ? b[i] : 0) * t }
+                let a = h
+                h = (0..<max(a.count, b.count)).map { (i: Int) -> Float in
+                    let x: Float = i < a.count ? a[i] : 0
+                    let y: Float = i < b.count ? b[i] : 0
+                    return x * (1 - t) + y * t
+                }
             }
             return normaliseIR(h)
         } else if s.cabModel == CAB_USER, let ir = userIR {
