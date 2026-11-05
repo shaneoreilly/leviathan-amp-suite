@@ -1,0 +1,43 @@
+# Build output
+mac/Leviathan.app/
+*.app/
+.build/
+build/
+DerivedData/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*~
+xcuserdata/
+*.xcuserstate
+
+# Python (capture tools)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Audio and captures generated locally (test signals, wet takes, fitted models)
+*.wav
+*.aif
+*.aiff
+*.caf
+mac/Capture/out/
+
+# Third-party impulse responses are not redistributable: keep them out of the repo
+IRs/
+
+# Local agent settings
+.claude/settings.local.json
+
+# Release packages
+mac/dist/

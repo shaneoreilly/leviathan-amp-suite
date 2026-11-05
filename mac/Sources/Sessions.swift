@@ -1,0 +1,433 @@
+import Foundation
+import AVFoundation
+import AppKit
+import UniformTypeIdentifiers
+
+enum Screen: Hashable { case rig, presets, recordings, settings }
+
+/// What a session folder holds besides its audio: when, which preset, and the full rig used.
+struct SessionMeta: Codable {
+    var name: String
+    var date: Date
+    var duration: Double
+    var preset: String
+    var settings: Settings?
+    var source: String? = nil      // "import" for takes brought in from elsewhere
+}
+
+struct Session: Identifiable, Hashable {
+    let id: URL                      // the folder
+    var meta: SessionMeta
+    var dry: URL { id.appendingPathComponent("dry.wav") }
+    var wet: URL { id.appendingPathComponent("wet.wav") }
+    static func == (a: Session, b: Session) -> Bool { a.id == b.id }
+    func hash(into h: inout Hasher) { h.combine(id) }
+}
+
+/// Recorder, session library, playback, live re-amp and offline re-amp.
+///
+/// Recording taps the engine twice: the raw input (dry, mono) and the final output (wet, stereo).
+/// Playback and live re-amp reuse the engine's backing-track and reamp-source slots.
+@MainActor
+final class Sessions: ObservableObject {
+    static let root = FileManager.default.urls(for: .musicDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("Leviathan/Sessions")
+
+    unowned let m: Model
+    @Published var list: [Session] = []
+    @Published var selected: URL? { didSet { if selected != oldValue { stopPlayback(); stopLiveReamp(); loadWaveform() } } }
+    @Published var recording = false
+    @Published var recSeconds = 0.0
+    @Published var playing = false
+    @Published var playPos = 0.0
+    @Published var liveReamp = false
+    @Published var rendering: Double? = nil      // progress 0...1 while an offline re-amp runs
+    @Published var waveform: [Float] = []        // min/max pairs
+    @Published var message = ""
+
+    private var dryFile: AVAudioFile?, wetFile: AVAudioFile?, recDir: URL?, recRate = 48000.0, recStart = Date()
+    private let tmp = (0..<3).map { _ in UnsafeMutablePointer<Float>.allocate(capacity: 1 << 18) }
+    private var playLen = 0, playRate = 48000.0
+
+    init(model: Model) {
+        m = model
+        try? FileManager.default.createDirectory(at: Sessions.root, withIntermediateDirectories: true)
+        refresh()
+    }
+
+    var current: Session? { list.first { $0.id == selected } }
+
+    func refresh() {
+        let dirs = (try? FileManager.default.contentsOfDirectory(at: Sessions.root, includingPropertiesForKeys: nil)) ?? []
+        list = dirs.compactMap { d in
+            guard let data = try? Data(contentsOf: d.appendingPathComponent("session.json")),
+                  let meta = try? JSONDecoder.iso.decode(SessionMeta.self, from: data) else { return nil }
+            return Session(id: d, meta: meta)
+        }.sorted { $0.meta.date > $1.meta.date }
+        if let s = selected, !list.contains(where: { $0.id == s }) { selected = nil }
+    }
+
+    private func save(_ s: Session) {
+        try? JSONEncoder.iso.encode(s.meta).write(to: s.id.appendingPathComponent("session.json"))
+    }
+
+    // MARK: recording
+
+    func toggleRecord() { recording ? stopRecording() : startRecording() }
+
+    func startRecording() {
+        guard !recording else { return }
+        guard m.running, let dsp = m.engine.dsp else { message = "Turn the amp on to record."; return }
+        stopPlayback()
+        let sr = Double(dsp.sr)
+        let stamp = DateFormatter.folder.string(from: Date())
+        let dir = Sessions.root.appendingPathComponent(stamp)
+        do {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            dryFile = try AVAudioFile(forWriting: dir.appendingPathComponent("dry.wav"), settings: wavSettings(sr, 1),
+                                      commonFormat: .pcmFormatFloat32, interleaved: false)
+            wetFile = try AVAudioFile(forWriting: dir.appendingPathComponent("wet.wav"), settings: wavSettings(sr, 2),
+                                      commonFormat: .pcmFormatFloat32, interleaved: false)
+        } catch {
+            message = "Could not start recording: \(error.localizedDescription)"; return
+        }
+        recDir = dir; recRate = sr; recStart = Date(); recSeconds = 0
+        let p = m.params
+        p.recDry.reset(); p.recL.reset(); p.recR.reset()
+        p.recording = true
+        recording = true
+        message = ""
+    }
+
+    func stopRecording() {
+        guard recording, let dir = recDir else { return }
+        m.params.recording = false
+        drain()
+        let frames = dryFile?.length ?? 0
+        dryFile = nil; wetFile = nil; recording = false; recDir = nil
+        let n = (list.compactMap { Int($0.meta.name.replacingOccurrences(of: "Session ", with: "")) }.max() ?? 0) + 1
+        let s = Session(id: dir, meta: SessionMeta(name: String(format: "Session %02d", n), date: recStart,
+                                                   duration: Double(frames) / recRate, preset: m.presetName, settings: m.s))
+        save(s)
+        refresh()
+        selected = s.id
+    }
+
+    /// Called ~30x/s: move recorded audio from the engine's FIFOs to disk.
+    func tick() {
+        if recording { drain(); recSeconds = Date().timeIntervalSince(recStart) }
+        let p = m.params
+        if playing {
+            playPos = Double(p.bkPos) / playRate
+            if !p.bkPlaying { playing = false; playPos = 0 }
+        }
+        if p.srcDone { p.srcDone = false; liveReamp = false }
+    }
+
+    private func drain() {
+        let p = m.params
+        let cap = 1 << 18
+        while true {
+            let n = min(p.recDry.available, p.recL.available, p.recR.available, cap)
+            if n == 0 { break }
+            _ = p.recDry.read(into: tmp[0], max: n); _ = p.recL.read(into: tmp[1], max: n); _ = p.recR.read(into: tmp[2], max: n)
+            write(dryFile, [tmp[0]], n); write(wetFile, [tmp[1], tmp[2]], n)
+        }
+    }
+
+    private func write(_ f: AVAudioFile?, _ ch: [UnsafeMutablePointer<Float>], _ n: Int) {
+        guard let f, let buf = AVAudioPCMBuffer(pcmFormat: f.processingFormat, frameCapacity: AVAudioFrameCount(n)),
+              let d = buf.floatChannelData else { return }
+        buf.frameLength = AVAudioFrameCount(n)
+        for (i, c) in ch.enumerated() { d[i].update(from: c, count: n) }
+        try? f.write(from: buf)
+    }
+
+    private func wavSettings(_ sr: Double, _ ch: Int) -> [String: Any] {
+        [AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: sr, AVNumberOfChannelsKey: ch,
+         AVLinearPCMBitDepthKey: 32, AVLinearPCMIsFloatKey: true, AVLinearPCMIsNonInterleaved: false]
+    }
+
+    // MARK: playback (through the engine's backing slot, so it plays on your chosen output)
+
+    func togglePlay() { playing ? stopPlayback() : play() }
+
+    func play(from t: Double = 0) {
+        guard let s = current else { return }
+        guard m.running, let dsp = m.engine.dsp else { message = "Turn the amp on to play recordings."; return }
+        stopLiveReamp()
+        let sr = Double(dsp.sr)
+        guard let ch = try? loadAudio(s.wet, rate: sr), let l = ch.first else { message = "Could not read the recording."; return }
+        let r = ch.count > 1 ? ch[1] : l
+        let p = m.params
+        p.bkPlaying = false
+        let oldL = p.bkL, oldR = p.bkR
+        p.bkL = copyOut(l); p.bkR = copyOut(r); p.bkLen = l.count; p.bkLoop = false; p.bkVol = 0
+        p.bkPos = min(Int(t * sr), max(l.count - 1, 0))
+        OSMemoryBarrier()
+        p.bkPlaying = true
+        retire(oldL, oldR)
+        playLen = l.count; playRate = sr; playing = true
+    }
+
+    func seek(_ t: Double) {
+        if playing { m.params.bkPos = max(0, min(Int(t * playRate), playLen - 1)); playPos = t } else { play(from: t) }
+    }
+
+    func stopPlayback() {
+        m.params.bkPlaying = false
+        playing = false
+    }
+
+    // MARK: live re-amp: the dry take replaces your guitar, looping, through the live rig
+
+    func toggleLiveReamp() { liveReamp ? stopLiveReamp() : startLiveReamp() }
+
+    func startLiveReamp() {
+        guard let s = current else { return }
+        guard m.running, let dsp = m.engine.dsp else { message = "Turn the amp on to re-amp."; return }
+        stopPlayback()
+        guard let ch = try? loadAudio(s.dry, rate: Double(dsp.sr)), let x = ch.first else { message = "This session has no dry take."; return }
+        let p = m.params
+        p.srcPlaying = false
+        let old = p.srcPtr
+        p.srcPtr = copyOut(x); p.srcLen = x.count; p.srcPos = 0; p.srcLoop = true; p.srcDone = false
+        OSMemoryBarrier()
+        p.srcPlaying = true
+        retire(old, nil)
+        liveReamp = true
+    }
+
+    func stopLiveReamp() {
+        m.params.srcPlaying = false
+        liveReamp = false
+    }
+
+    // MARK: offline re-amp: render the dry take through the current rig into a new wet take
+
+    func reamp() {
+        guard let s = current, rendering == nil else { return }
+        let sr = m.engine.dsp.map { Double($0.sr) } ?? 48000
+        guard let ch = try? loadAudio(s.dry, rate: sr), let x = ch.first else { message = "This session has no dry take."; return }
+        stopPlayback(); stopLiveReamp()
+        let rig = m.offlineRig(sr: sr)
+        let settings = m.s, preset = m.presetName
+        rendering = 0
+        let wet = s.wet, backup = s.id.appendingPathComponent("wet-original.wav")
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let tail = Int(sr * 2)                        // let delay/reverb ring out
+            let total = x.count + tail
+            var l = [Float](repeating: 0, count: total), r = [Float](repeating: 0, count: total)
+            var input = x + [Float](repeating: 0, count: tail)
+            let block = 512
+            var i = 0
+            input.withUnsafeMutableBufferPointer { ip in
+                l.withUnsafeMutableBufferPointer { lp in r.withUnsafeMutableBufferPointer { rp in
+                    while i < total {
+                        let n = min(block, total - i)
+                        rig.process(input: ip.baseAddress! + i, outL: lp.baseAddress! + i, outR: rp.baseAddress! + i, frames: n)
+                        i += n
+                        if i % (block * 400) == 0 {
+                            let prog = Double(i) / Double(total)
+                            DispatchQueue.main.async { self?.rendering = prog }
+                        }
+                    }
+                }}
+            }
+            var err: String?
+            do {
+                let fm = FileManager.default
+                if !fm.fileExists(atPath: backup.path), fm.fileExists(atPath: wet.path) { try fm.moveItem(at: wet, to: backup) }
+                else if fm.fileExists(atPath: wet.path) { try fm.removeItem(at: wet) }
+                let f = try AVAudioFile(forWriting: wet, settings: [AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: sr,
+                                                                    AVNumberOfChannelsKey: 2, AVLinearPCMBitDepthKey: 32,
+                                                                    AVLinearPCMIsFloatKey: true, AVLinearPCMIsNonInterleaved: false],
+                                        commonFormat: .pcmFormatFloat32, interleaved: false)
+                let buf = AVAudioPCMBuffer(pcmFormat: f.processingFormat, frameCapacity: AVAudioFrameCount(total))!
+                buf.frameLength = AVAudioFrameCount(total)
+                buf.floatChannelData![0].update(from: l, count: total)
+                buf.floatChannelData![1].update(from: r, count: total)
+                try f.write(from: buf)
+            } catch { err = error.localizedDescription }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.rendering = nil
+                if let err { self.message = "Re-amp failed: \(err)"; return }
+                if var cur = self.list.first(where: { $0.id == s.id }) {
+                    cur.meta.preset = preset; cur.meta.settings = settings
+                    self.save(cur); self.refresh()
+                }
+                self.loadWaveform()
+                self.message = "Re-amped with “\(preset)”. The original wet take is kept as wet-original.wav."
+            }
+        }
+    }
+
+    // MARK: manage
+
+    func loadPreset() {
+        guard let s = current, let st = s.meta.settings else { return }
+        m.s = st; m.presetName = s.meta.preset
+    }
+
+    func rename(_ name: String) {
+        guard var s = current, !name.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        s.meta.name = name; save(s); refresh()
+    }
+
+    func delete() {
+        guard let s = current else { return }
+        stopPlayback(); stopLiveReamp()
+        NSWorkspace.shared.recycle([s.id]) { [weak self] _, _ in DispatchQueue.main.async { self?.refresh() } }
+        selected = nil
+    }
+
+    func reveal() { if let s = current { NSWorkspace.shared.activateFileViewerSelecting([s.wet]) } }
+
+    /// Import WAV (or AIFF/CAF) recordings, picked as files or folders. Files named as a pair
+    /// (`Dry_<name>` + `Wet_<name>`, or `<name> dry` + `<name> wet`) become one take; any other file becomes a
+    /// take of its own, treated as a dry DI recording so it can be re-amped through the rig.
+    func importRecordings() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true; panel.canChooseFiles = true; panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = [.wav, .aiff, .audio]
+        panel.message = "Choose WAV recordings or folders of them"
+        guard panel.runModal() == .OK else { return }
+        let audioExt: Set<String> = ["wav", "wave", "aif", "aiff", "caf"]
+        var files: [URL] = []
+        for u in panel.urls {
+            if (try? u.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
+                files += ((try? FileManager.default.contentsOfDirectory(at: u, includingPropertiesForKeys: nil)) ?? [])
+            } else { files.append(u) }
+        }
+        files = files.filter { audioExt.contains($0.pathExtension.lowercased()) }
+
+        func split(_ u: URL) -> (name: String, tag: String)? {
+            let n = u.deletingPathExtension().lastPathComponent, low = n.lowercased()
+            for tag in ["dry", "wet"] {
+                for pre in ["\(tag)_", "\(tag) ", "\(tag)-"] where low.hasPrefix(pre) { return (String(n.dropFirst(pre.count)), tag) }
+                for suf in [" \(tag)", "_\(tag)", "-\(tag)"] where low.hasSuffix(suf) { return (String(n.dropLast(suf.count)), tag) }
+            }
+            return nil
+        }
+        var dries: [String: URL] = [:], wets: [String: URL] = [:], singles: [(String, URL)] = []
+        for f in files {
+            if let (n, t) = split(f) { if t == "dry" { dries[n] = f } else { wets[n] = f } }
+            else { singles.append((f.deletingPathExtension().lastPathComponent, f)) }
+        }
+        // a dry or wet file without its partner is just a single take
+        for (n, f) in dries where wets[n] == nil { singles.append((n, f)); dries[n] = nil }
+        for (n, f) in wets where dries[n] == nil { singles.append((n, f)); wets[n] = nil }
+
+        let have = Set(list.map { $0.meta.name })
+        var added = 0
+        func add(_ name: String, dry: URL, wet: URL) {
+            guard !have.contains(name) else { return }
+            let date = (try? wet.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? Date()
+            let dir = Sessions.root.appendingPathComponent(DateFormatter.folder.string(from: date) + " " + name.replacingOccurrences(of: "/", with: "-"))
+            do {
+                try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                // stored as WAV whatever came in, so every take in the library is the same format
+                try writeWav(from: dry, to: dir.appendingPathComponent("dry.wav"))
+                try writeWav(from: wet, to: dir.appendingPathComponent("wet.wav"))
+                let dur = (try? AVAudioFile(forReading: dir.appendingPathComponent("wet.wav"))).map { Double($0.length) / $0.processingFormat.sampleRate } ?? 0
+                save(Session(id: dir, meta: SessionMeta(name: name, date: date, duration: dur, preset: "", settings: nil, source: "import")))
+                added += 1
+            } catch {}
+        }
+        for (n, d) in dries.sorted(by: { $0.key < $1.key }) { if let w = wets[n] { add(n, dry: d, wet: w) } }
+        for (n, f) in singles.sorted(by: { $0.0 < $1.0 }) { add(n, dry: f, wet: f) }
+        refresh()
+        message = added == 0 ? "Nothing new to import." : "Imported \(added) recording\(added == 1 ? "" : "s")."
+    }
+
+    private func writeWav(from src: URL, to dst: URL) throws {
+        try? FileManager.default.removeItem(at: dst)
+        if src.pathExtension.lowercased().hasPrefix("wav") { try FileManager.default.copyItem(at: src, to: dst); return }
+        let inFile = try AVAudioFile(forReading: src)
+        let fmt = inFile.processingFormat
+        let out = try AVAudioFile(forWriting: dst, settings: [AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: fmt.sampleRate,
+                                                               AVNumberOfChannelsKey: fmt.channelCount, AVLinearPCMBitDepthKey: 32,
+                                                               AVLinearPCMIsFloatKey: true, AVLinearPCMIsNonInterleaved: false],
+                                  commonFormat: .pcmFormatFloat32, interleaved: false)
+        guard let buf = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: 65536) else { return }
+        while inFile.framePosition < inFile.length { try inFile.read(into: buf); if buf.frameLength == 0 { break }; try out.write(from: buf) }
+    }
+
+    // MARK: helpers
+
+    private func loadWaveform() {
+        waveform = []
+        guard let s = current else { return }
+        let url = FileManager.default.fileExists(atPath: s.wet.path) ? s.wet : s.dry
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let ch = try? loadAudio(url, rate: nil), let x = ch.first else { return }
+            let buckets = 1500, per = max(x.count / buckets, 1)
+            var w = [Float](); w.reserveCapacity(buckets * 2)
+            var i = 0
+            while i < x.count {
+                let e = min(i + per, x.count)
+                var lo: Float = 0, hi: Float = 0
+                for k in i..<e { lo = min(lo, x[k]); hi = max(hi, x[k]) }
+                w.append(lo); w.append(hi); i = e
+            }
+            DispatchQueue.main.async { if self?.current?.id == s.id { self?.waveform = w } }
+        }
+    }
+
+    private func copyOut(_ x: [Float]) -> UnsafeMutablePointer<Float> {
+        let p = UnsafeMutablePointer<Float>.allocate(capacity: max(x.count, 1))
+        x.withUnsafeBufferPointer { p.update(from: $0.baseAddress!, count: x.count) }
+        return p
+    }
+
+    /// Free swapped-out engine buffers once the audio thread can no longer be reading them.
+    private func retire(_ a: UnsafeMutablePointer<Float>?, _ b: UnsafeMutablePointer<Float>?) {
+        let pa = a.map { UInt(bitPattern: $0) }, pb = b.map { UInt(bitPattern: $0) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+            pa.flatMap { UnsafeMutablePointer<Float>(bitPattern: $0) }?.deallocate()
+            pb.flatMap { UnsafeMutablePointer<Float>(bitPattern: $0) }?.deallocate()
+        }
+    }
+}
+
+/// Read an audio file as float channels, converted to `rate` (or left at its own rate when nil).
+func loadAudio(_ url: URL, rate: Double?, maxSeconds: Double = 900) throws -> [[Float]] {
+    let f = try AVAudioFile(forReading: url)
+    let inFmt = f.processingFormat
+    let frames = AVAudioFrameCount(min(f.length, Int64(inFmt.sampleRate * maxSeconds)))
+    guard frames > 0, let src = AVAudioPCMBuffer(pcmFormat: inFmt, frameCapacity: frames) else { return [] }
+    try f.read(into: src, frameCount: frames)
+    let ch = Int(inFmt.channelCount)
+    let target = rate ?? inFmt.sampleRate
+    var buf = src
+    if abs(target - inFmt.sampleRate) > 0.5 {
+        guard let outFmt = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: target, channels: AVAudioChannelCount(ch), interleaved: false),
+              let conv = AVAudioConverter(from: inFmt, to: outFmt),
+              let dst = AVAudioPCMBuffer(pcmFormat: outFmt, frameCapacity: AVAudioFrameCount(Double(frames) * target / inFmt.sampleRate) + 4096)
+        else { throw EngineError(msg: "converter") }
+        var fed = false
+        var err: NSError?
+        _ = conv.convert(to: dst, error: &err) { _, status in
+            if fed { status.pointee = .endOfStream; return nil }
+            fed = true; status.pointee = .haveData; return src
+        }
+        if let err { throw err }
+        buf = dst
+    }
+    guard let d = buf.floatChannelData else { throw EngineError(msg: "not float audio") }
+    return (0..<ch).map { Array(UnsafeBufferPointer(start: d[$0], count: Int(buf.frameLength))) }
+}
+
+extension DateFormatter {
+    static let folder: DateFormatter = { let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd HH.mm.ss"; return f }()
+    static let nice: DateFormatter = { let f = DateFormatter(); f.dateStyle = .medium; f.timeStyle = .short; return f }()
+}
+
+extension JSONEncoder { static let iso: JSONEncoder = { let e = JSONEncoder(); e.dateEncodingStrategy = .iso8601; e.outputFormatting = .prettyPrinted; return e }() }
+extension JSONDecoder { static let iso: JSONDecoder = { let d = JSONDecoder(); d.dateDecodingStrategy = .iso8601; return d }() }
+
+func mmss(_ t: Double) -> String {
+    let s = max(0, Int(t.rounded(.down)))
+    return String(format: "%d:%02d", s / 60, s % 60)
+}
