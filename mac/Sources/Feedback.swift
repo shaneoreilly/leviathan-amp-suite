@@ -37,3 +37,25 @@ struct FeedbackSettings: View {
         }
     }
 }
+
+/// The About group: author credit, version and license (the AGPLv3 "Appropriate Legal Notices"; see NOTICE.md).
+struct AboutSettings: View {
+    let row: (String, AnyView) -> AnyView
+    static let site = URL(string: "https://github.com/\(Updater.repo)")!
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            row("Leviathan", AnyView(HStack(spacing: 6) {
+                Text("by Shane O'Reilly").fontWeight(.semibold)
+                Text("· version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")").foregroundStyle(.secondary)
+            }))
+            row("License", AnyView(HStack {
+                Text("Free software under the GNU AGPLv3, with no warranty.")
+                Button("License") { NSWorkspace.shared.open(AboutSettings.site.appendingPathComponent("blob/main/LICENSE")) }
+                Button("Notice & credits") { NSWorkspace.shared.open(AboutSettings.site.appendingPathComponent("blob/main/NOTICE.md")) }
+                Button("Source code") { NSWorkspace.shared.open(AboutSettings.site) }
+            }))
+            Text("You're free to use, share and change Leviathan. Anything made from it must also be open source under the AGPLv3 and keep the credit \u{201C}Leviathan by Shane O'Reilly\u{201D}.")
+                .font(.system(size: 11 * UI)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}

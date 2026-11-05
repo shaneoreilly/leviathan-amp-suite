@@ -168,3 +168,14 @@ docs/                logo and icon for this README
 ## Credits
 
 The logo is a line drawing based on a classic public-domain *Moby-Dick* illustration of the white whale breaching.
+
+## License
+
+Leviathan is free software by Shane O'Reilly, released under the [GNU AGPLv3](LICENSE) with the additional terms in
+[NOTICE.md](NOTICE.md): you can use, share and change it, but anything made from it must also be open source under the
+AGPLv3 and keep the credit "Leviathan by Shane O'Reilly". The Windows app is built with JUCE (AGPLv3) and the
+Steinberg ASIO SDK (GPLv3).
+
+Found a bug or have an idea? Use **Settings → Help & feedback** in the app, or
+[open an issue](https://github.com/shaneoreilly/leviathan-amp-suite/issues/new/choose).
+

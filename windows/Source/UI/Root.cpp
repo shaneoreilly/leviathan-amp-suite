@@ -508,9 +508,14 @@ void openFeedback(Model& m, const juce::String& templ) {
 struct SettingsScreen : Screen_ {
     explicit SettingsScreen(Model& m) : model(m),
         audioSel(m.devices, 0, 8, 2, 2, false, false, false, false),
-        audio("Audio"), look("Appearance"), tun("Tuner"), upd("Updates"), mid("MIDI"), lib("Library"), fb("Help & feedback") {
+        audio("Audio"), look("Appearance"), tun("Tuner"), upd("Updates"), mid("MIDI"), lib("Library"), fb("Help & feedback"), about("About") {
         addAndMakeVisible(viewport); viewport.setViewedComponent(&inner, false); viewport.setScrollBarsShown(true, false);
-        for (auto* g : { &audio, &look, &tun, &upd, &mid, &lib, &fb }) inner.addAndMakeVisible(g);
+        for (auto* g : { &audio, &look, &tun, &upd, &mid, &lib, &fb, &about }) inner.addAndMakeVisible(g);
+        const juce::String site = juce::String("https://github.com/") + Updater::repo;
+        licB.setButtonText("License"); licB.onClick = [site] { juce::URL(site + "/blob/main/LICENSE").launchInDefaultBrowser(); };
+        noticeB.setButtonText("Notice & credits"); noticeB.onClick = [site] { juce::URL(site + "/blob/main/NOTICE.md").launchInDefaultBrowser(); };
+        srcB.setButtonText("Source code"); srcB.onClick = [site] { juce::URL(site).launchInDefaultBrowser(); };
+        for (auto* b : { &licB, &noticeB, &srcB }) about.addAndMakeVisible(b);
         bugB.setButtonText("Report a bug" + ellipsis); bugB.onClick = [this] { openFeedback(model, "bug_report.yml"); };
         featB.setButtonText("Request a feature" + ellipsis); featB.onClick = [this] { openFeedback(model, "feature_request.yml"); };
         fb.addAndMakeVisible(bugB); fb.addAndMakeVisible(featB);
@@ -597,7 +602,7 @@ struct SettingsScreen : Screen_ {
         pcT.setToggleState(m.midi->programChange, juce::dontSendNotification);
         clearB.setEnabled(!m.midi->maps.empty());
         resized(); repaint();
-        for (auto* g : { &audio, &look, &tun, &upd, &mid, &lib, &fb }) g->repaint();
+        for (auto* g : { &audio, &look, &tun, &upd, &mid, &lib, &fb, &about }) g->repaint();
     }
     void resized() override {
         viewport.setBounds(getLocalBounds());
@@ -676,6 +681,20 @@ struct SettingsScreen : Screen_ {
                              "You can see and change everything before you submit.", 16, 80, 900, 34, juce::Justification::topLeft, 2);
         };
         group(fb, 124);
+        licB.setBounds(192, 80, 90, 28); noticeB.setBounds(290, 80, 140, 28); srcB.setBounds(438, 80, 120, 28);
+        about.labels = { { 44, "Leviathan" }, { 80, "License" } };
+        about.extra = [](juce::Graphics& g) {
+            g.setColour(theme::text); g.setFont(theme::font(10, true));
+            g.drawText("by Shane O'Reilly", 192, 44, 200, 28, juce::Justification::centredLeft);
+            g.setColour(theme::secondary); g.setFont(theme::font(10));
+            g.drawText(juce::String::fromUTF8("\xc2\xb7 version ") + Updater::current(), 372, 44, 200, 28, juce::Justification::centredLeft);
+            g.drawText("Free software under the GNU AGPLv3, with no warranty.", 570, 80, 420, 28, juce::Justification::centredLeft);
+            g.drawFittedText(juce::String::fromUTF8("You're free to use, share and change Leviathan. Anything made from it must also be open source under the AGPLv3 and keep the credit "
+                                                    "\xe2\x80\x9cLeviathan by Shane O'Reilly\xe2\x80\x9d.\n"
+                                                    "Built with JUCE (AGPLv3, \xc2\xa9 Raw Material Software) and the Steinberg ASIO SDK (GPLv3). ASIO is a trademark of Steinberg Media Technologies GmbH."),
+                             16, 118, 960, 76, juce::Justification::topLeft, 4);
+        };
+        group(about, 206);
         inner.setSize(viewport.getMaximumVisibleWidth(), y + 20);
     }
     void paint(juce::Graphics& g) override { drawSectionTitle(g, "SETTINGS", { 24, 12, 200, 28 }); }
@@ -726,8 +745,8 @@ struct SettingsScreen : Screen_ {
     Model& model;
     juce::Viewport viewport; juce::Component inner;
     juce::AudioDeviceSelectorComponent audioSel;
-    Group audio, look, tun, upd, mid, lib, fb;
-    juce::TextButton bugB, featB;
+    Group audio, look, tun, upd, mid, lib, fb, about;
+    juce::TextButton bugB, featB, licB, noticeB, srcB;
     juce::ComboBox inputCh; AudioInfo audioInfo { model };
     std::vector<std::unique_ptr<Swatch>> swatchButtons;
     juce::TextButton followAmp, zoomMinus, zoomPlus;

@@ -508,6 +508,9 @@ struct SettingsView: View {
                         Text("\(m.captures.count) loaded").foregroundStyle(.secondary)
                     }
                 }
+                group("About") {
+                    AboutSettings(row: { label, c in AnyView(row(label) { c }) })
+                }
             }
             .padding(24)
             .frame(maxWidth: 900, alignment: .leading)
