@@ -239,7 +239,7 @@ final class Model: ObservableObject {
             s.cabModel = CAB_LIB; s.cabHighCut = 10000; UserDefaults.standard.set(true, forKey: "godsCabIntro")
         }
         applyAll()
-        engine.onRestartNeeded = { [weak self] in self?.restartIfRunning() }
+        engine.onRestartNeeded = { [weak self] in self?.rateChanged() }
         engine.onOverload = { [weak self] in
             guard let self, let i = self.input, let o = self.output, let prev = self.info else { return }
             self.info = self.engine.currentInfo(input: i, output: o, previous: prev)   // cycle usage went up
@@ -331,6 +331,26 @@ final class Model: ObservableObject {
     }
 
     private func restartIfRunning() { if running { start() } }
+
+    private var rateRestarts: [Date] = []
+    private var rateRestartPending = false
+    /// Something else changed a device's sample rate. Rebuild at the new rate (avoids a hidden resampler), but
+    /// debounced, and at most 3 times in 10 s: if another app keeps changing it back we stop fighting over it.
+    private func rateChanged() {
+        guard running, !rateRestartPending else { return }
+        rateRestarts = rateRestarts.filter { $0.timeIntervalSinceNow > -10 }
+        guard rateRestarts.count < 3 else {
+            status = "Another app keeps changing the audio device's sample rate. Leviathan will keep running, possibly with a little extra latency."
+            return
+        }
+        rateRestartPending = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            guard let self else { return }
+            self.rateRestartPending = false
+            self.rateRestarts.append(Date())
+            self.restartIfRunning()
+        }
+    }
 
     private func saveDevice() {
         UserDefaults.standard.set(inputUID, forKey: "inputUID")

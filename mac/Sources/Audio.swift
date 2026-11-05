@@ -259,7 +259,9 @@ final class HALEngine {
         for id in Set([device, input.id, output.id]) {
             listen(id, kAudioDevicePropertyNominalSampleRate) { [weak self] in
                 guard let self, self.unit != nil, abs(nominalRate(id) - sr) > 0.5 else { return }
-                self.onRestartNeeded?()
+                // never tear the engine down inside a HAL listener: disposing the unit removes listeners, which
+                // waits for running callbacks (this one) to finish, and the app deadlocks. Leave the callback first.
+                DispatchQueue.main.async { self.onRestartNeeded?() }
             }
         }
         return info(input: input, output: output, sr: sr, frames: actualFrames)
