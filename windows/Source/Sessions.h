@@ -54,6 +54,12 @@ public:
     void loadPreset();
     void rename(const juce::String& name);
     void remove();
+    void remove(const juce::File& dir);
+    /// Finish a take that was cut off before Stop (unfinished WAV headers, no session.json) so it shows up again.
+    static void recover(const juce::File& dir);
+    /// Set a WAV file's RIFF and data sizes from its real length; returns seconds (or -1).
+    static double fixWavHeader(const juce::File& f);
+    static juce::Time dateInName(const juce::String& s);
     void reveal();
     void importRecordings();
 

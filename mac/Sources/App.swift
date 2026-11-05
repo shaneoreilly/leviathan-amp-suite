@@ -1736,7 +1736,7 @@ struct LeviathanApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @StateObject private var model = Model()
     var body: some Scene {
-        WindowGroup("Leviathan") {
+        WindowGroup("Leviathan - v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")") {
             RootView().environmentObject(model).environmentObject(model.sessions).environmentObject(model.midi).environmentObject(model.updater)
                 .preferredColorScheme(.dark).frame(minWidth: 900, minHeight: 600)
                 .background(WindowFrameSaver())

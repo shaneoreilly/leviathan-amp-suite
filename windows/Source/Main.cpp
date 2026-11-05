@@ -7,7 +7,7 @@ namespace lev {
 class MainWindow : public juce::DocumentWindow {
 public:
     explicit MainWindow(Model& model)
-        : DocumentWindow("Leviathan", juce::Colour(0xff0d0d0d), DocumentWindow::allButtons), m(model) {
+        : DocumentWindow(juce::String("Leviathan - v") + LEVIATHAN_VERSION, juce::Colour(0xff0d0d0d), DocumentWindow::allButtons), m(model) {
         setUsingNativeTitleBar(true);
         setContentOwned(new Root(m), true);
         setResizable(true, false);

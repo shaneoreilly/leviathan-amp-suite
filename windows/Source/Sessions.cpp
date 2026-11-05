@@ -1,5 +1,6 @@
 #include "Sessions.h"
 #include "Model.h"
+#include <regex>
 
 namespace lev {
 
@@ -12,6 +13,7 @@ Sessions::Sessions(Model& model) : m(model) {
 }
 
 Sessions::~Sessions() {
+    if (recording) stopRecording();   // quitting mid-take: finish it properly
     alive->store(false);
     m.params.recording.store(false);
     m.params.bkPlaying.store(false);
@@ -31,8 +33,69 @@ void Sessions::select(const juce::File& dir) {
     m.changed();
 }
 
+/// A date and time written into a file name: 20261104_181844, 20261104_18:18:44, 2026-11-04 18.18.44, ... (local time).
+juce::Time Sessions::dateInName(const juce::String& s) {
+    static const std::regex re(R"((\d{4})[-_.]?(\d{2})[-_.]?(\d{2})[ _T-]+(\d{2})[:.\-/]?(\d{2})(?:[:.\-/]?(\d{2}))?)");
+    std::smatch m; const std::string str = s.toStdString();
+    if (!std::regex_search(str, m, re)) return {};
+    auto g = [&](int i) { return m[(size_t) i].matched ? std::stoi(m[(size_t) i].str()) : 0; };
+    const int y = g(1), mo = g(2), d = g(3), h = g(4), mi = g(5), sec = g(6);
+    if (y < 1990 || y > 2100 || mo < 1 || mo > 12 || d < 1 || d > 31 || h > 23 || mi > 59 || sec > 59) return {};
+    return juce::Time(y, mo - 1, d, h, mi, sec);
+}
+
+double Sessions::fixWavHeader(const juce::File& f) {
+    juce::FileInputStream in(f);
+    if (!in.openedOk()) return -1;
+    juce::MemoryBlock head; in.readIntoMemoryBlock(head, 65536);
+    const auto* b = static_cast<const char*>(head.getData()); const int n = (int) head.getSize();
+    auto find = [&](const char* tag) { for (int i = 12; i + 8 <= n; ++i) if (std::memcmp(b + i, tag, 4) == 0) return i; return -1; };
+    if (n < 44 || std::memcmp(b, "RIFF", 4) != 0) return -1;
+    const int d = find("data"), fm = find("fmt ");
+    if (d < 0 || fm < 0 || fm + 24 > n) return -1;
+    auto u16 = [&](int o) { uint16_t v; std::memcpy(&v, b + o, 2); return (int) v; };
+    auto u32 = [&](int o) { uint32_t v; std::memcpy(&v, b + o, 4); return v; };
+    const int ch = u16(fm + 10), bits = u16(fm + 22); const double sr = u32(fm + 12);
+    const juce::int64 frame = std::max(ch * bits / 8, 1);
+    const juce::int64 actual = (f.getSize() - (d + 8)) / frame * frame;
+    if ((juce::int64) u32(d + 4) != actual) {
+        juce::FileOutputStream out(f);   // opens for writing at the end; seek back to patch the two sizes
+        if (out.openedOk()) {
+            const uint32_t riff = (uint32_t) (d + 8 + actual - 8), data = (uint32_t) actual;
+            out.setPosition(4); out.write(&riff, 4);
+            out.setPosition(d + 4); out.write(&data, 4);
+            out.flush();
+        }
+    }
+    return sr > 0 ? (double) (actual / frame) / sr : -1;
+}
+
+void Sessions::recover(const juce::File& dir) {
+    const auto dry = dir.getChildFile("dry.wav"), wet = dir.getChildFile("wet.wav"), meta = dir.getChildFile("session.json");
+    if (!dry.existsAsFile() && !wet.existsAsFile()) return;
+    const double dd = dry.existsAsFile() ? fixWavHeader(dry) : -1, wd = wet.existsAsFile() ? fixWavHeader(wet) : -1;
+    if (meta.existsAsFile()) return;
+    // folder names are "YYYY-MM-DD HH.MM.SS[ name]"
+    const auto n = dir.getFileName();
+    juce::Time date = dir.getCreationTime();
+    if (n.length() >= 19) {
+        const auto ymd = juce::StringArray::fromTokens(n.substring(0, 10), "-", ""), hms = juce::StringArray::fromTokens(n.substring(11, 19), ".", "");
+        if (ymd.size() == 3 && hms.size() == 3)
+            date = juce::Time(ymd[0].getIntValue(), ymd[1].getIntValue() - 1, ymd[2].getIntValue(), hms[0].getIntValue(), hms[1].getIntValue(), hms[2].getIntValue());
+    }
+    Session s; s.dir = dir; s.date = date; s.duration = std::max(0.0, dd >= 0 ? dd : wd);
+    s.name = "Recovered " + date.formatted("%b %d %H:%M");
+    auto* o = new juce::DynamicObject();
+    const juce::Time utc(date.toMilliseconds() - (juce::int64) date.getUTCOffsetSeconds() * 1000);
+    o->setProperty("name", s.name); o->setProperty("date", utc.formatted("%Y-%m-%dT%H:%M:%SZ"));
+    o->setProperty("duration", s.duration); o->setProperty("preset", "");
+    meta.replaceWithText(juce::JSON::toString(juce::var(o)));
+}
+
 void Sessions::refresh() {
     list.clear();
+    for (const auto& e : juce::RangedDirectoryIterator(root(), false, "*", juce::File::findDirectories))
+        if (!(recording && e.getFile() == recDir)) recover(e.getFile());
     for (const auto& e : juce::RangedDirectoryIterator(root(), false, "*", juce::File::findDirectories)) {
         const auto d = e.getFile();
         const auto v = juce::JSON::parse(d.getChildFile("session.json").loadFileAsString());
@@ -261,13 +324,28 @@ void Sessions::remove() {
     refresh();
 }
 
+void Sessions::remove(const juce::File& dir) {
+    if (dir == selected) { remove(); return; }
+    dir.moveToTrash();
+    refresh();
+}
+
 void Sessions::reveal() { if (auto* s = current()) s->wet().revealToUser(); }
 
 void Sessions::importRecordings() {
-    auto chooser = std::make_shared<juce::FileChooser>("Choose WAV recordings or folders of them", juce::File(), "*.wav;*.wave;*.aif;*.aiff;*.flac");
-    chooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles
-                             | juce::FileBrowserComponent::canSelectDirectories | juce::FileBrowserComponent::canSelectMultipleItems,
-                         [this, chooser](const juce::FileChooser& fc) { importFiles(fc.getResults()); });
+    // Windows' native dialog picks files or a folder, not both at once: ask which
+    juce::PopupMenu menu;
+    menu.addItem(juce::String::fromUTF8("Choose recordings (WAV)\xe2\x80\xa6"), [this] {
+        auto chooser = std::make_shared<juce::FileChooser>("Choose WAV recordings", juce::File(), "*.wav;*.wave;*.aif;*.aiff;*.flac");
+        chooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::canSelectMultipleItems,
+                             [this, chooser](const juce::FileChooser& fc) { importFiles(fc.getResults()); });
+    });
+    menu.addItem(juce::String::fromUTF8("Choose a folder of recordings\xe2\x80\xa6"), [this] {
+        auto chooser = std::make_shared<juce::FileChooser>("Choose a folder of WAV recordings", juce::File());
+        chooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
+                             [this, chooser](const juce::FileChooser& fc) { importFiles(fc.getResults()); });
+    });
+    menu.showMenuAsync({});
 }
 
 /// Files named as a pair (`Dry_<name>` + `Wet_<name>`, or `<name> dry` + `<name> wet`) become one take; any other
@@ -301,9 +379,13 @@ void Sessions::importFiles(const juce::Array<juce::File>& picked) {
 
     juce::StringArray have; for (const auto& s : list) have.add(s.name);
     int added = 0;
+    juce::Array<juce::File> importedFrom;
     auto add = [&](const juce::String& name, const juce::File& dry, const juce::File& wet) {
         if (have.contains(name)) return;
-        const auto date = wet.getLastModificationTime();
+        // the date in the file name (e.g. Dry_20261104_18:18:44), else when the file was last changed
+        auto date = dateInName(name);
+        if (date == juce::Time()) date = dateInName(wet.getFileNameWithoutExtension());
+        if (date == juce::Time()) date = wet.getLastModificationTime();
         const auto dir = root().getChildFile(date.formatted("%Y-%m-%d %H.%M.%S") + " " + juce::File::createLegalFileName(name));
         if (!dir.createDirectory()) return;
         // stored as WAV whatever came in, so every take in the library is the same format
@@ -320,6 +402,7 @@ void Sessions::importFiles(const juce::Array<juce::File>& picked) {
             s.duration = r->lengthInSamples / r->sampleRate;
         save(s);
         added++;
+        importedFrom.addIfNotAlreadyThere(dry); importedFrom.addIfNotAlreadyThere(wet);
     };
     for (const auto& [n, d] : dries) add(n, d, wets[n]);
     std::sort(singles.begin(), singles.end(), [](auto& a, auto& b) { return a.first < b.first; });
@@ -327,6 +410,21 @@ void Sessions::importFiles(const juce::Array<juce::File>& picked) {
     refresh();
     message = added == 0 ? juce::String("Nothing new to import.") : "Imported " + juce::String(added) + " recording" + (added == 1 ? "" : "s") + ".";
     m.setScreen(Screen::recordings);
+    if (importedFrom.isEmpty()) return;
+    // offer to move the originals to the Recycle Bin so the takes live only in Leviathan (recoverable from there)
+    const int n = importedFrom.size();
+    auto opts = juce::MessageBoxOptions().withIconType(juce::MessageBoxIconType::QuestionIcon)
+        .withTitle("Move the " + juce::String(n) + " original file" + (n == 1 ? "" : "s") + " to the Recycle Bin?")
+        .withMessage("Copies are now in Leviathan's recordings. Moving the originals to the Recycle Bin leaves them only in Leviathan; "
+                     "you can restore them from there. If another app keeps its recordings in that folder, it may no longer find them.")
+        .withButton("Keep Originals", 0).withButton("Move to Recycle Bin", 1);
+    auto aliveFlag = alive;
+    juce::AlertWindow::showAsync(opts, [this, aliveFlag, importedFrom](int result) {
+        if (!aliveFlag->load() || result != 1) return;
+        int moved = 0; for (const auto& f : importedFrom) if (f.moveToTrash()) moved++;
+        message = "Imported, and moved " + juce::String(moved) + " original file" + (moved == 1 ? "" : "s") + " to the Recycle Bin.";
+        m.changed();
+    });
 }
 
 // MARK: - waveform

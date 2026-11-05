@@ -284,9 +284,15 @@ struct RecordingsView: View {
                 }
                 .padding(.vertical, 3)
                 .tag(s.id)
+                .contextMenu {
+                    Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([s.wet]) }
+                    Divider()
+                    Button("Move to Trash", role: .destructive) { rec.delete(s.id) }
+                }
             }
         }
         .listStyle(.sidebar)
+        .onDeleteCommand { rec.delete() }   // Delete key on the selected recording
     }
 
     func detail(_ s: Session) -> some View {
@@ -417,14 +423,69 @@ struct WaveformView: View {
 
 // MARK: - Settings screen
 
+/// Which settings section is showing (remembered between launches).
+final class SettingsUI: ObservableObject {
+    @Published var section = UserDefaults.standard.string(forKey: "settingsSection") ?? "Audio" {
+        didSet { UserDefaults.standard.set(section, forKey: "settingsSection") }
+    }
+}
+
 struct SettingsView: View {
     @EnvironmentObject var m: Model
     @EnvironmentObject var rec: Sessions
+    @EnvironmentObject var updater: Updater
+    @StateObject private var ui = SettingsUI()
+
+    /// Left-hand navigation: groups of sections.
+    static let nav: [(group: String, items: [(name: String, icon: String)])] = [
+        ("Playing", [("Audio", "speaker.wave.2"), ("MIDI", "pianokeys"), ("Tuner", "tuningfork")]),
+        ("Sounds", [("Library", "folder")]),
+        ("App", [("Appearance", "paintpalette"), ("Updates", "arrow.down.circle"), ("Help & feedback", "questionmark.bubble"), ("About", "info.circle")]),
+    ]
 
     var body: some View {
-        ScrollView {
+        HStack(spacing: 0) {
+            navigation
+            Rectangle().fill(line).frame(width: 1)
+            ScrollView { sections }
+        }
+    }
+
+    var navigation: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("SETTINGS").font(.system(size: 10 * UI, weight: .bold)).tracking(2).foregroundStyle(.secondary)
+                .padding(.horizontal, 10).padding(.bottom, 10)
+            ForEach(SettingsView.nav, id: \.group) { g in
+                Text(g.group.uppercased()).font(.system(size: 9 * UI, weight: .semibold)).tracking(1).foregroundStyle(.secondary)
+                    .padding(.horizontal, 10).padding(.top, 12).padding(.bottom, 4)
+                ForEach(g.items, id: \.name) { item in
+                    let on = ui.section == item.name
+                    Button { ui.section = item.name } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: item.icon).frame(width: 18 * Z)
+                            Text(item.name)
+                            Spacer()
+                            if item.name == "Updates" && updater.available != nil { Circle().fill(.red).frame(width: 8, height: 8) }
+                        }
+                        .font(.system(size: 12 * UI))
+                        .foregroundStyle(on ? Color.accentColor : .primary)
+                        .padding(.horizontal, 10).padding(.vertical, 7)
+                        .background(RoundedRectangle(cornerRadius: 7).fill(on ? Color.white.opacity(0.08) : .clear))
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            Spacer()
+        }
+        .padding(14)
+        .frame(width: 220 * Z)
+        .background(Color(white: 0.07))
+    }
+
+    var sections: some View {
             VStack(alignment: .leading, spacing: 18) {
-                Text("SETTINGS").font(.system(size: 10 * UI, weight: .bold)).tracking(2).foregroundStyle(.secondary)
+                if ui.section == "Audio" {
                 group("Audio") {
                     row("Input") {
                         Picker("", selection: $m.inputUID) { ForEach(m.inputs) { Text($0.name).tag($0.uid) } }.labelsHidden().frame(width: 320 * Z)
@@ -461,6 +522,8 @@ struct SettingsView: View {
                         row("Engine") { EngineLoad(mt: m.meters) }
                     }
                 }
+                }
+                if ui.section == "Appearance" {
                 group("Appearance") {
                     row("Accent colour") {
                         ColorPicker("", selection: m.accentBinding, supportsOpacity: false).labelsHidden()
@@ -478,6 +541,8 @@ struct SettingsView: View {
                         Button { m.zoomStep(1) } label: { Image(systemName: "plus") }
                     }
                 }
+                }
+                if ui.section == "Tuner" {
                 group("Tuner") {
                     row("Reference") { Stepper(value: $m.a4, in: 430...450, step: 1) { Text("A4 = \(Int(m.a4)) Hz").monospacedDigit() } }
                     row("Guitar tuning") {
@@ -485,15 +550,23 @@ struct SettingsView: View {
                             .labelsHidden().frame(width: 220 * Z)
                     }
                 }
+                }
+                if ui.section == "Updates" {
                 group("Updates") {
                     UpdateSettings(row: { label, c in AnyView(row(label) { c }) })
                 }
+                }
+                if ui.section == "MIDI" {
                 group("MIDI") {
                     MidiSettings(row: { label, c in AnyView(row(label) { c }) })
                 }
+                }
+                if ui.section == "Help & feedback" {
                 group("Help & feedback") {
                     FeedbackSettings(row: { label, c in AnyView(row(label) { c }) })
                 }
+                }
+                if ui.section == "Library" {
                 group("Library") {
                     row("Recordings") {
                         Button("Import recordings (WAV)…") { rec.importRecordings(); m.screen = .recordings }
@@ -514,13 +587,15 @@ struct SettingsView: View {
                         Text("\(m.captures.count) loaded").foregroundStyle(.secondary)
                     }
                 }
+                }
+                if ui.section == "About" {
                 group("About") {
                     AboutSettings(row: { label, c in AnyView(row(label) { c }) })
+                }
                 }
             }
             .padding(24)
             .frame(maxWidth: 900, alignment: .leading)
-        }
     }
 
     func group<C: View>(_ title: String, @ViewBuilder _ c: () -> C) -> some View {

@@ -53,18 +53,69 @@ final class Sessions: ObservableObject {
         m = model
         try? FileManager.default.createDirectory(at: Sessions.root, withIntermediateDirectories: true)
         refresh()
+        // quitting mid-take: finish the recording properly instead of leaving it unfinished
+        NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { if self?.recording == true { self?.stopRecording() } }
+        }
     }
 
     var current: Session? { list.first { $0.id == selected } }
 
     func refresh() {
         let dirs = (try? FileManager.default.contentsOfDirectory(at: Sessions.root, includingPropertiesForKeys: nil)) ?? []
+        for d in dirs where d != recDir { Sessions.recover(d) }
         list = dirs.compactMap { d in
             guard let data = try? Data(contentsOf: d.appendingPathComponent("session.json")),
                   let meta = try? JSONDecoder.iso.decode(SessionMeta.self, from: data) else { return nil }
             return Session(id: d, meta: meta)
         }.sorted { $0.meta.date > $1.meta.date }
         if let s = selected, !list.contains(where: { $0.id == s }) { selected = nil }
+    }
+
+    /// A date and time written into a file name: 20261104_181844, 20261104_18:18:44, 2026-11-04 18.18.44, ... (local time).
+    nonisolated static func dateInName(_ s: String) -> Date? {
+        let re = try! NSRegularExpression(pattern: #"(\d{4})[-_.]?(\d{2})[-_.]?(\d{2})[ _T-]+(\d{2})[:.\-/]?(\d{2})(?:[:.\-/]?(\d{2}))?"#)
+        guard let m = re.firstMatch(in: s, range: NSRange(s.startIndex..., in: s)) else { return nil }
+        func g(_ i: Int) -> Int? { Range(m.range(at: i), in: s).flatMap { Int(s[$0]) } }
+        var c = DateComponents()
+        c.year = g(1); c.month = g(2); c.day = g(3); c.hour = g(4); c.minute = g(5); c.second = g(6) ?? 0
+        guard let y = c.year, (1990...2100).contains(y), let mo = c.month, (1...12).contains(mo), let d = c.day, (1...31).contains(d),
+              let h = c.hour, h < 24, let mi = c.minute, mi < 60 else { return nil }
+        return Calendar.current.date(from: c)
+    }
+
+    /// A take cut off before Stop (the app quit or crashed) has its audio but unfinished WAV headers and no
+    /// session.json. Finish the headers and add the session file so it shows up again.
+    nonisolated static func recover(_ dir: URL) {
+        let fm = FileManager.default
+        let meta = dir.appendingPathComponent("session.json"), dry = dir.appendingPathComponent("dry.wav"), wet = dir.appendingPathComponent("wet.wav")
+        guard fm.fileExists(atPath: dry.path) || fm.fileExists(atPath: wet.path) else { return }
+        let dryDur = fixWavHeader(dry), wetDur = fixWavHeader(wet)
+        guard !fm.fileExists(atPath: meta.path) else { return }
+        let date = (DateFormatter.folder.date(from: String(dir.lastPathComponent.prefix(19)))) ?? Date()
+        let name = "Recovered " + DateFormatter.recovered.string(from: date)
+        let m = SessionMeta(name: name, date: date, duration: dryDur ?? wetDur ?? 0, preset: "", settings: nil, source: nil)
+        try? JSONEncoder.iso.encode(m).write(to: meta)
+    }
+
+    /// Set a WAV file's RIFF and data sizes from its real length (they're 0 if the writer never closed). Returns seconds.
+    @discardableResult nonisolated static func fixWavHeader(_ url: URL) -> Double? {
+        guard let h = try? FileHandle(forUpdating: url) else { return nil }
+        defer { try? h.close() }
+        guard let head = try? h.read(upToCount: 65536), head.count > 44, head.prefix(4) == Data("RIFF".utf8),
+              let size = try? h.seekToEnd() else { return nil }
+        func find(_ tag: String) -> Int? { head.range(of: Data(tag.utf8)).map { $0.lowerBound } }
+        guard let d = find("data"), let f = find("fmt "), f + 24 <= head.count else { return nil }
+        let u16 = { (o: Int) in head.subdata(in: o..<(o + 2)).withUnsafeBytes { $0.loadUnaligned(as: UInt16.self) } }
+        let u32 = { (o: Int) in head.subdata(in: o..<(o + 4)).withUnsafeBytes { $0.loadUnaligned(as: UInt32.self) } }
+        let ch = Int(u16(f + 10)), sr = Double(u32(f + 12)), bits = Int(u16(f + 22)), frame = max(ch * bits / 8, 1)
+        let actual = (Int(size) - (d + 8)) / frame * frame
+        if Int(u32(d + 4)) != actual {
+            var riff = UInt32(d + 8 + actual - 8), data = UInt32(actual)
+            try? h.seek(toOffset: 4); h.write(Data(bytes: &riff, count: 4))
+            try? h.seek(toOffset: UInt64(d + 4)); h.write(Data(bytes: &data, count: 4))
+        }
+        return sr > 0 ? Double(actual / frame) / sr : nil
     }
 
     private func save(_ s: Session) {
@@ -275,6 +326,12 @@ final class Sessions: ObservableObject {
         s.meta.name = name; save(s); refresh()
     }
 
+    /// Move a recording to the Trash (any one, not just the selected).
+    func delete(_ id: URL) {
+        if id == selected { delete(); return }
+        NSWorkspace.shared.recycle([id]) { [weak self] _, _ in DispatchQueue.main.async { self?.refresh() } }
+    }
+
     func delete() {
         guard let s = current else { return }
         stopPlayback(); stopLiveReamp()
@@ -290,8 +347,10 @@ final class Sessions: ObservableObject {
     func importRecordings() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true; panel.canChooseFiles = true; panel.allowsMultipleSelection = true
-        panel.allowedContentTypes = [.wav, .aiff, .audio]
+        // .folder too: with only audio types listed, macOS greys out folders and "Open" can't be pressed
+        panel.allowedContentTypes = [.wav, .aiff, .audio, .folder]
         panel.message = "Choose WAV recordings or folders of them"
+        panel.prompt = "Import"
         guard panel.runModal() == .OK else { return }
         let audioExt: Set<String> = ["wav", "wave", "aif", "aiff", "caf"]
         var files: [URL] = []
@@ -321,9 +380,12 @@ final class Sessions: ObservableObject {
 
         let have = Set(list.map { $0.meta.name })
         var added = 0
+        var importedFrom: [URL] = []
         func add(_ name: String, dry: URL, wet: URL) {
             guard !have.contains(name) else { return }
-            let date = (try? wet.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? Date()
+            // the date in the file name (e.g. Dry_20261104_18:18:44), else when the file was last changed
+            let date = Sessions.dateInName(name) ?? Sessions.dateInName(wet.deletingPathExtension().lastPathComponent)
+                ?? (try? wet.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? Date()
             let dir = Sessions.root.appendingPathComponent(DateFormatter.folder.string(from: date) + " " + name.replacingOccurrences(of: "/", with: "-"))
             do {
                 try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -333,12 +395,33 @@ final class Sessions: ObservableObject {
                 let dur = (try? AVAudioFile(forReading: dir.appendingPathComponent("wet.wav"))).map { Double($0.length) / $0.processingFormat.sampleRate } ?? 0
                 save(Session(id: dir, meta: SessionMeta(name: name, date: date, duration: dur, preset: "", settings: nil, source: "import")))
                 added += 1
+                importedFrom += dry == wet ? [dry] : [dry, wet]
             } catch {}
         }
         for (n, d) in dries.sorted(by: { $0.key < $1.key }) { if let w = wets[n] { add(n, dry: d, wet: w) } }
         for (n, f) in singles.sorted(by: { $0.0 < $1.0 }) { add(n, dry: f, wet: f) }
         refresh()
         message = added == 0 ? "Nothing new to import." : "Imported \(added) recording\(added == 1 ? "" : "s")."
+        if !importedFrom.isEmpty { offerToRemoveOriginals(importedFrom) }
+    }
+
+    /// After an import, offer to move the original files to the Trash so the takes live only in Leviathan.
+    /// Trash (not delete), so they can be put back; another app (AmpKit, a DAW) may still expect them where they were.
+    private func offerToRemoveOriginals(_ files: [URL]) {
+        let a = NSAlert()
+        a.messageText = "Move the \(files.count) original file\(files.count == 1 ? "" : "s") to the Trash?"
+        a.informativeText = "Copies are now in Leviathan's recordings. Moving the originals to the Trash leaves them only in Leviathan; you can put them back from the Trash. If another app (such as AmpKit) keeps its recordings in that folder, it may no longer find them."
+        a.addButton(withTitle: "Keep Originals")
+        a.addButton(withTitle: "Move to Trash")
+        guard a.runModal() == .alertSecondButtonReturn else { return }
+        NSWorkspace.shared.recycle(files) { [weak self] moved, err in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    self?.message = err == nil ? "Imported, and moved \(moved.count) original file\(moved.count == 1 ? "" : "s") to the Trash."
+                                                : "Imported, but couldn't move the originals: \(err!.localizedDescription)"
+                }
+            }
+        }
     }
 
     private func writeWav(from src: URL, to dst: URL) throws {
@@ -422,6 +505,7 @@ func loadAudio(_ url: URL, rate: Double?, maxSeconds: Double = 900) throws -> [[
 extension DateFormatter {
     static let folder: DateFormatter = { let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd HH.mm.ss"; return f }()
     static let nice: DateFormatter = { let f = DateFormatter(); f.dateStyle = .medium; f.timeStyle = .short; return f }()
+    static let recovered: DateFormatter = { let f = DateFormatter(); f.dateFormat = "MMM d HH:mm"; return f }()
 }
 
 extension JSONEncoder { static let iso: JSONEncoder = { let e = JSONEncoder(); e.dateEncodingStrategy = .iso8601; e.outputFormatting = .prettyPrinted; return e }() }

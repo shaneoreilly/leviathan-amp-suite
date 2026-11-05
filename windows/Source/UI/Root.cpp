@@ -456,7 +456,17 @@ struct RecordingsScreen : Screen_ {
             g.setColour(theme::secondary); g.setFont(theme::font(9)); g.drawText(s->date.toString(true, true, false), 14, 28, getWidth() - 80, 16, juce::Justification::centredLeft);
             g.setFont(theme::font(11)); g.drawText(mmss(s->duration), getWidth() - 70, 0, 56, getHeight(), juce::Justification::centredRight);
         }
-        void mouseUp(const juce::MouseEvent&) override { model.sessions->select(dir); }
+        void mouseUp(const juce::MouseEvent& e) override {
+            if (e.mods.isPopupMenu()) {
+                juce::PopupMenu menu;
+                menu.addItem("Show in Explorer", [this] { dir.getChildFile("wet.wav").revealToUser(); });
+                menu.addSeparator();
+                menu.addItem("Move to Recycle Bin", [this] { model.sessions->remove(dir); });
+                menu.showMenuAsync({});
+                return;
+            }
+            model.sessions->select(dir);
+        }
         Model& model; juce::File dir;
     };
     Model& model; juce::Viewport listView; juce::Component listInner; std::vector<std::unique_ptr<SessionRow>> rows; juce::String listSig;
@@ -510,6 +520,8 @@ struct SettingsScreen : Screen_ {
         audioSel(m.devices, 0, 8, 2, 2, false, false, false, false),
         audio("Audio"), look("Appearance"), tun("Tuner"), upd("Updates"), mid("MIDI"), lib("Library"), fb("Help & feedback"), about("About") {
         addAndMakeVisible(viewport); viewport.setViewedComponent(&inner, false); viewport.setScrollBarsShown(true, false);
+        addAndMakeVisible(nav);
+        section = m.props().getValue("settingsSection", "Audio");
         for (auto* g : { &audio, &look, &tun, &upd, &mid, &lib, &fb, &about }) inner.addAndMakeVisible(g);
         const juce::String site = juce::String("https://github.com/") + Updater::repo;
         licB.setButtonText("License"); licB.onClick = [site] { juce::URL(site + "/blob/main/LICENSE").launchInDefaultBrowser(); };
@@ -608,17 +620,24 @@ struct SettingsScreen : Screen_ {
         for (auto* g : { &audio, &look, &tun, &upd, &mid, &lib, &fb, &about }) g->repaint();
     }
     void resized() override {
-        viewport.setBounds(getLocalBounds());
+        nav.setBounds(getLocalBounds().removeFromLeft(navW));
+        viewport.setBounds(getLocalBounds().withTrimmedLeft(navW + 1));
         const int w = std::min(viewport.getMaximumVisibleWidth() - 48, 1000), x = 24;
-        int y = 48;
-        auto group = [&](Group& g, int h) { g.setBounds(x, y, w, h); y += h + 18; };
+        int y = 24, shownBottom = 0;
+        // every group is laid out as before; only the selected section is shown, at the top
+        auto group = [&](Group& g, int h) {
+            const bool on = g.title == section;
+            g.setVisible(on);
+            if (on) { g.setBounds(x, 24, w, h); shownBottom = 24 + h; }
+            y += h + 18;
+        };
         // audio
         audioSel.setBounds(16, 44, std::min(w - 32, 700), 800);   // it shrinks itself to fit its controls
         const int selH = audioSel.getHeight();
         inputCh.setBounds(16 + 176, 44 + selH + 8, 360, 28);
-        audioInfo.setBounds(16, 44 + selH + 44, w - 32, 70);
+        audioInfo.setBounds(16, 44 + selH + 44, w - 32, 84);
         audio.labels = { { 44 + selH + 8, "Input channel" } };
-        group(audio, 44 + selH + 44 + 80);
+        group(audio, 44 + selH + 44 + 96);
         // appearance
         { int sx = 192; for (auto& b : swatchButtons) { b->setBounds(sx, 48, 24, 24); sx += 30; } followAmp.setBounds(sx + 10, 46, 170, 28); }
         zoomMinus.setBounds(192, 86, 30, 28); zoomPlus.setBounds(290, 86, 30, 28);
@@ -700,9 +719,51 @@ struct SettingsScreen : Screen_ {
                              16, 118, 960, 76, juce::Justification::topLeft, 4);
         };
         group(about, 206);
-        inner.setSize(viewport.getMaximumVisibleWidth(), y + 20);
+        inner.setSize(viewport.getMaximumVisibleWidth(), shownBottom + 24);
+        juce::ignoreUnused(y);
     }
-    void paint(juce::Graphics& g) override { drawSectionTitle(g, "SETTINGS", { 24, 12, 200, 28 }); }
+    void paint(juce::Graphics& g) override { g.setColour(theme::line); g.fillRect(navW, 0, 1, getHeight()); }
+
+    /// Left-hand navigation: groups of sections (same as the Mac app); the last one opened is remembered.
+    static constexpr int navW = 220;
+    juce::String section;
+    struct Nav : juce::Component {
+        explicit Nav(SettingsScreen& o) : owner(o) {}
+        struct Item { const char* group; const char* name; };
+        static constexpr Item items[] = { { "Playing", "Audio" }, { "Playing", "MIDI" }, { "Playing", "Tuner" }, { "Sounds", "Library" },
+                                          { "App", "Appearance" }, { "App", "Updates" }, { "App", "Help & feedback" }, { "App", "About" } };
+        std::vector<std::pair<juce::Rectangle<int>, juce::String>> rows;
+        void paint(juce::Graphics& g) override {
+            g.fillAll(theme::bar);
+            drawSectionTitle(g, "SETTINGS", { 24, 12, 180, 28 });
+            rows.clear();
+            int y = 48; juce::String last;
+            for (const auto& it : items) {
+                if (last != it.group) {
+                    last = it.group; y += 10;
+                    g.setColour(theme::secondary); g.setFont(theme::font(9, true, 1));
+                    g.drawText(juce::String(it.group).toUpperCase(), 24, y, 180, 20, juce::Justification::centredLeft); y += 22;
+                }
+                const juce::Rectangle<int> r(14, y, getWidth() - 28, 32);
+                const bool on = owner.section == it.name;
+                if (on) { g.setColour(juce::Colours::white.withAlpha(0.08f)); g.fillRoundedRectangle(r.toFloat(), 7); }
+                g.setColour(on ? owner.model.accent() : theme::text); g.setFont(theme::font(11));
+                g.drawText(it.name, r.withTrimmedLeft(12), juce::Justification::centredLeft);
+                if (juce::String(it.name) == "Updates" && owner.model.updater->phase == Updater::Phase::available) {
+                    g.setColour(juce::Colours::red); g.fillEllipse((float) r.getRight() - 18, (float) r.getCentreY() - 4, 8, 8);
+                }
+                rows.emplace_back(r, it.name); y += 34;
+            }
+        }
+        void mouseUp(const juce::MouseEvent& e) override {
+            for (auto& [r, n] : rows) if (r.contains(e.getPosition())) {
+                owner.section = n; owner.model.props().setValue("settingsSection", n);
+                owner.resized(); owner.repaint(); repaint();
+            }
+        }
+        SettingsScreen& owner;
+    };
+    Nav nav { *this };
 
     struct MapRow : juce::Component {
         MapRow(Model& m, const MidiMap& mp) : model(m), id(mp.id), x(IconButton::cross, [this] { model.midi->removeMap(id); }, 11) {
@@ -739,7 +800,7 @@ struct SettingsScreen : Screen_ {
                        0, 22, getWidth(), 20, juce::Justification::centredLeft);
             g.setColour(theme::secondary);
             g.drawFittedText("Smallest buffer that never crackles is best. ASIO (your interface's own driver) is fastest; \"Windows Audio (Exclusive Mode)\" is next. "
-                             "Bluetooth headphones and monitor speakers add delay you can't see here.", 0, 44, getWidth(), 30, juce::Justification::topLeft, 2);
+                             "Bluetooth headphones and monitor speakers add delay you can't see here.", 0, 44, getWidth(), 40, juce::Justification::topLeft, 3);
         }
         Model& model;
     };
@@ -867,6 +928,7 @@ bool Root::keyPressed(const juce::KeyPress& k) {
     if (!cmd && (k.getKeyCode() == 'T' || k.getKeyCode() == 't')) { model.setTuner(!model.tunerOn); return true; }
     if (k == juce::KeyPress::escapeKey && model.midi->learning) { model.midi->setLearning(false); return true; }
     if (k == juce::KeyPress::returnKey && model.screen == Screen::recordings) { model.sessions->togglePlay(); return true; }
+    if ((k == juce::KeyPress::deleteKey || k == juce::KeyPress::backspaceKey) && model.screen == Screen::recordings && model.sessions->current()) { model.sessions->remove(); return true; }
     return false;
 }
 
