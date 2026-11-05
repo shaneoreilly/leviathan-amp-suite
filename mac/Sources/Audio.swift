@@ -94,8 +94,15 @@ func listDevices() -> [AudioDevice] {
 
 func onDeviceListChange(_ block: @escaping () -> Void) {
     var a = addr(kAudioHardwarePropertyDevices)
-    AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &a, DispatchQueue.main) { _, _ in block() }
+    AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &a, halListenerQueue) { _, _ in
+        DispatchQueue.main.async { block() }
+    }
 }
+
+/// CoreAudio runs property listeners *synchronously* on the queue they're registered with. If that were the
+/// main queue, a notification arriving while the main thread is stopping the engine (which waits on CoreAudio)
+/// would deadlock both. So listeners run on this private queue and only hop to main asynchronously.
+let halListenerQueue = DispatchQueue(label: "leviathan.hal-listeners")
 
 private func sampleRates(_ id: AudioDeviceID) -> [AudioValueRange] {
     getArray(id, kAudioDevicePropertyAvailableNominalSampleRates, kAudioObjectPropertyScopeGlobal, AudioValueRange())
@@ -259,9 +266,7 @@ final class HALEngine {
         for id in Set([device, input.id, output.id]) {
             listen(id, kAudioDevicePropertyNominalSampleRate) { [weak self] in
                 guard let self, self.unit != nil, abs(nominalRate(id) - sr) > 0.5 else { return }
-                // never tear the engine down inside a HAL listener: disposing the unit removes listeners, which
-                // waits for running callbacks (this one) to finish, and the app deadlocks. Leave the callback first.
-                DispatchQueue.main.async { self.onRestartNeeded?() }
+                self.onRestartNeeded?()
             }
         }
         return info(input: input, output: output, sr: sr, frames: actualFrames)
@@ -287,12 +292,12 @@ final class HALEngine {
 
     private func listen(_ id: AudioObjectID, _ sel: AudioObjectPropertySelector, _ body: @escaping () -> Void) {
         var a = addr(sel)
-        let block: AudioObjectPropertyListenerBlock = { _, _ in body() }
-        if AudioObjectAddPropertyListenerBlock(id, &a, DispatchQueue.main, block) == noErr { listeners.append((id, a, block)) }
+        let block: AudioObjectPropertyListenerBlock = { _, _ in DispatchQueue.main.async { body() } }
+        if AudioObjectAddPropertyListenerBlock(id, &a, halListenerQueue, block) == noErr { listeners.append((id, a, block)) }
     }
 
     func stop() {
-        for (id, a, block) in listeners { var a = a; AudioObjectRemovePropertyListenerBlock(id, &a, DispatchQueue.main, block) }
+        for (id, a, block) in listeners { var a = a; AudioObjectRemovePropertyListenerBlock(id, &a, halListenerQueue, block) }
         listeners = []
         if device != 0 && aggregate == 0 { setValue(device, kAudioDevicePropertyIOCycleUsage, Float32(1)) }
         device = 0
