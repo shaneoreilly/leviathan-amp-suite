@@ -494,12 +494,26 @@ struct Swatch : juce::Component {
     Model& model; juce::Colour colour;
 };
 
+/// Bug reports and feature requests: GitHub issue forms, prefilled (you see and edit them before submitting).
+void openFeedback(Model& m, const juce::String& templ) {
+    juce::URL u(juce::String("https://github.com/") + Updater::repo + "/issues/new");
+    u = u.withParameter("template", templ).withParameter("version", Updater::current())
+         .withParameter("os", juce::SystemStats::getOperatingSystemName());
+    if (templ == "bug_report.yml" && m.info.sampleRate > 0)
+        u = u.withParameter("audio", m.info.inName + " in, " + m.info.outName + " out, " + m.info.type + ", "
+                                         + juce::String(m.info.sampleRate / 1000, 1) + " kHz, " + juce::String(m.info.buffer) + " samples");
+    u.launchInDefaultBrowser();
+}
+
 struct SettingsScreen : Screen_ {
     explicit SettingsScreen(Model& m) : model(m),
         audioSel(m.devices, 0, 8, 2, 2, false, false, false, false),
-        audio("Audio"), look("Appearance"), tun("Tuner"), upd("Updates"), mid("MIDI"), lib("Library") {
+        audio("Audio"), look("Appearance"), tun("Tuner"), upd("Updates"), mid("MIDI"), lib("Library"), fb("Help & feedback") {
         addAndMakeVisible(viewport); viewport.setViewedComponent(&inner, false); viewport.setScrollBarsShown(true, false);
-        for (auto* g : { &audio, &look, &tun, &upd, &mid, &lib }) inner.addAndMakeVisible(g);
+        for (auto* g : { &audio, &look, &tun, &upd, &mid, &lib, &fb }) inner.addAndMakeVisible(g);
+        bugB.setButtonText("Report a bug" + ellipsis); bugB.onClick = [this] { openFeedback(model, "bug_report.yml"); };
+        featB.setButtonText("Request a feature" + ellipsis); featB.onClick = [this] { openFeedback(model, "feature_request.yml"); };
+        fb.addAndMakeVisible(bugB); fb.addAndMakeVisible(featB);
         audio.addAndMakeVisible(audioSel);
         audio.addAndMakeVisible(inputCh); audio.addAndMakeVisible(audioInfo);
         inputCh.onChange = [this] { if (inputCh.getSelectedId() > 0) model.set("inputChannel", inputCh.getSelectedId() - 1); };
@@ -583,7 +597,7 @@ struct SettingsScreen : Screen_ {
         pcT.setToggleState(m.midi->programChange, juce::dontSendNotification);
         clearB.setEnabled(!m.midi->maps.empty());
         resized(); repaint();
-        for (auto* g : { &audio, &look, &tun, &upd, &mid, &lib }) g->repaint();
+        for (auto* g : { &audio, &look, &tun, &upd, &mid, &lib, &fb }) g->repaint();
     }
     void resized() override {
         viewport.setBounds(getLocalBounds());
@@ -654,6 +668,14 @@ struct SettingsScreen : Screen_ {
                        340, 116, 700, 28, juce::Justification::centredLeft);
         };
         group(lib, 160);
+        bugB.setBounds(192, 44, 150, 28); featB.setBounds(350, 44, 170, 28);
+        fb.labels = { { 44, "GitHub" } };
+        fb.extra = [](juce::Graphics& g) {
+            g.setColour(theme::secondary);
+            g.drawFittedText("Opens a form on GitHub (a free account is needed) with your Leviathan version, Windows version and audio devices filled in. "
+                             "You can see and change everything before you submit.", 16, 80, 900, 34, juce::Justification::topLeft, 2);
+        };
+        group(fb, 124);
         inner.setSize(viewport.getMaximumVisibleWidth(), y + 20);
     }
     void paint(juce::Graphics& g) override { drawSectionTitle(g, "SETTINGS", { 24, 12, 200, 28 }); }
@@ -704,7 +726,8 @@ struct SettingsScreen : Screen_ {
     Model& model;
     juce::Viewport viewport; juce::Component inner;
     juce::AudioDeviceSelectorComponent audioSel;
-    Group audio, look, tun, upd, mid, lib;
+    Group audio, look, tun, upd, mid, lib, fb;
+    juce::TextButton bugB, featB;
     juce::ComboBox inputCh; AudioInfo audioInfo { model };
     std::vector<std::unique_ptr<Swatch>> swatchButtons;
     juce::TextButton followAmp, zoomMinus, zoomPlus;

@@ -1,0 +1,26 @@
+name: Feature request
+description: An idea for something Leviathan should do
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like?
+      description: Describe the feature and how you'd use it.
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why?
+      description: What are you trying to do that's hard or impossible today?
+  - type: input
+    id: version
+    attributes:
+      label: Leviathan version
+      placeholder: "0.2.1"
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "macOS / Windows"

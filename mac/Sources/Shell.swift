@@ -491,6 +491,9 @@ struct SettingsView: View {
                 group("MIDI") {
                     MidiSettings(row: { label, c in AnyView(row(label) { c }) })
                 }
+                group("Help & feedback") {
+                    FeedbackSettings(row: { label, c in AnyView(row(label) { c }) })
+                }
                 group("Library") {
                     row("Recordings") {
                         Button("Import recordings (WAV)…") { rec.importRecordings(); m.screen = .recordings }

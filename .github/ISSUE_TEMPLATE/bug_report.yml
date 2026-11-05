@@ -1,0 +1,48 @@
+name: Bug report
+description: Something doesn't work or sounds wrong
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. The **Report a bug** button in Leviathan's Settings fills in the version and audio setup for you.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Load the "Modern Metal Rhythm" preset
+        2. Turn on the delay
+        3. ...
+  - type: input
+    id: version
+    attributes:
+      label: Leviathan version
+      placeholder: "0.2.1"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "macOS 26.1 / Windows 11 24H2"
+    validations:
+      required: true
+  - type: input
+    id: audio
+    attributes:
+      label: Audio setup
+      description: Interface or input/output devices, driver type, sample rate and buffer size.
+      placeholder: "iRig HD in, MacBook speakers out, 48 kHz, 32 samples"
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Screenshots, a recording, or an exported preset (.leviathan) help a lot. Drag files in here.
