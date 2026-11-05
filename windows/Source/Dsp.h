@@ -228,6 +228,10 @@ private:
 
     std::vector<Comb> combs; std::vector<Allpass> aps; Smooth rSend; float rWet = 0;
 
+    // output limiter: stops a hot Master from hard-clipping (which sounds like crackle)
+    float limG = 1, limRel = 0;
+    static constexpr float limCeiling = 0.891f;   // -1 dBFS
+
     void update(bool force = false);
 };
 

@@ -84,3 +84,12 @@ target_include_directories(dsp_render PRIVATE Source)
 if(NOT MSVC)
   target_compile_options(dsp_render PRIVATE -O2)
 endif()
+
+# Preset check: renders a DI take through every factory preset and reports loudness (level-matching new presets).
+juce_add_console_app(preset_check PRODUCT_NAME "preset_check")
+juce_generate_juce_header(preset_check)
+target_sources(preset_check PRIVATE tools/preset_check.cpp Source/Dsp.cpp Source/Settings.cpp Source/Library.cpp)
+target_include_directories(preset_check PRIVATE Source)
+target_compile_definitions(preset_check PRIVATE JUCE_USE_CURL=0 JUCE_WEB_BROWSER=0 LEVIATHAN_VERSION="${LEVIATHAN_VERSION}")
+target_link_libraries(preset_check PRIVATE juce::juce_audio_formats juce::juce_gui_basics juce::juce_dsp PUBLIC juce::juce_recommended_config_flags)
+

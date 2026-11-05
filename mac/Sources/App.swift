@@ -72,13 +72,29 @@ struct Settings: Codable, Equatable {
 }
 
 let FACTORY: [(String, (inout Settings) -> Void)] = [
-    ("Tight Rhythm (Gojira-ish)", { _ in }),
+    ("Tight Rhythm (Gojira-ish)", { s in
+        // tone fitted to the Rammstein-ish balance (real lows, no 2-5 kHz honk), measured on a DI take
+        s.depth = 0.86; s.presence = 0.72; s.treble = 0.54; s.mid = 0.24; s.eqOn = true
+        s.eq = [-0.5, 1, -0.5, -0.5, 1.5, 1.5, -2.5, 0.5]
+        s.ampVolume = 0.483   // level-matched
+    }),
     ("Sludge Crunch (Mastodon-ish)", { s in
         s.odOn = false; s.ampChannel = 1; s.ampGain = 0.8; s.bass = 0.65; s.mid = 0.6; s.treble = 0.5; s.presence = 0.45; s.depth = 0.65
-        s.eq = [1, 1, 0, 0, 0, 0, -1, -3]; s.irA = "SM57/NO-TS/57_2_inch_cone_far_pres_2.wav"; s.irBlend = 0.5 }),
+        s.ampVolume = 0.29   // level-matched (was clipping)
+        s.eq = [1, 1, 0, 0, 0, 0, -1, -3]; s.irA = "SM57/NO-TS/57_2_inch_cone_far_pres_2.wav"; s.irBlend = 0.5
+        // tone fitted to the Rammstein-ish balance (real lows, no 2-5 kHz honk), measured on a DI take
+        s.depth = 0.26; s.presence = 0.75; s.treble = 0.9; s.mid = 0.56; s.eqOn = true
+        s.eq = [6, 0, -3, -3, 2, 4.5, -2.5, -6]
+        s.ampVolume = 0.418   // level-matched
+    }),
     ("Screaming Lead", { s in
-        s.gateThresh = -64; s.odDrive = 0.2; s.ampGain = 0.7; s.mid = 0.65; s.treble = 0.5
-        s.eq = [-2, -1, 0, 1, 2, 1, -1, -4]; s.irA = "SM57/TS/57_TS_1_inch_edge_pres_3.wav"; s.delayOn = true; s.delayTime = 450; s.delayMix = 0.22; s.revOn = true; s.revMix = 0.15 }),
+        s.gateThresh = -64; s.odDrive = 0.2; s.ampGain = 0.7; s.mid = 0.65; s.treble = 0.5; s.ampVolume = 0.44
+        s.eq = [-2, -1, 0, 1, 2, 1, -1, -4]; s.irA = "SM57/TS/57_TS_1_inch_edge_pres_3.wav"; s.delayOn = true; s.delayTime = 450; s.delayMix = 0.22; s.revOn = true; s.revMix = 0.15
+        // tone fitted to the Rammstein-ish balance (real lows, no 2-5 kHz honk), measured on a DI take
+        s.depth = 0.93; s.presence = 0.9; s.treble = 0.53; s.mid = 0.1; s.eqOn = true
+        s.eq = [-6, -0.5, -1.5, -0.5, 2, 2, -2.5, 3.5]
+        s.ampVolume = 0.491   // level-matched
+    }),
     // Tight modern rhythm: tight gate -> boosted TS-style overdrive -> hot channel with scooped mids
     // (EQ cut from 320 Hz to 2.5 kHz) -> 4x12 with a 57 on the cap.
     ("Modern Metal Rhythm", { s in
@@ -89,11 +105,160 @@ let FACTORY: [(String, (inout Settings) -> Void)] = [
         s.eqOn = true; s.eq = [0, 0, -3.5, -4.9, -4.3, -1.8, 0, 0]
         s.cabOn = true; s.cabModel = CAB_LIB; s.irA = "SM57/NO-TS/57_1_inch_cap_pres_4.wav"; s.irB = ""; s.irBlend = 0
         s.cabLowCut = 80; s.cabHighCut = 10000
-        s.delayOn = false; s.revOn = false }),
+        s.delayOn = false; s.revOn = false
+        // tone fitted to the Rammstein-ish balance (real lows, no 2-5 kHz honk), measured on a DI take
+        s.depth = 0.78; s.presence = 0.12; s.treble = 0.49; s.mid = 0.46; s.eqOn = true
+        s.eq = [2, 0, -3, -4.5, -4, -3, 0.5, -2.5]
+        s.ampVolume = 0.686   // level-matched
+    }),
     ("Ambient Clean", { s in
-        s.gateThresh = -72; s.odOn = false; s.ampChannel = 0; s.ampGain = 0.4; s.bass = 0.5; s.mid = 0.5; s.treble = 0.6; s.ampVolume = 0.55
+        s.gateThresh = -72; s.odOn = false; s.ampChannel = 0; s.ampGain = 0.4; s.bass = 0.5; s.mid = 0.5; s.treble = 0.6; s.ampVolume = 0.44
         s.eq = [0, 0, 0, 0, 0, 1, 1, 0]; s.cabModel = 2; s.cabHighCut = 10000
-        s.delayOn = true; s.delayTime = 520; s.delayFeedback = 0.42; s.delayMix = 0.3; s.revOn = true; s.revSize = 0.8; s.revMix = 0.35 }),
+        s.delayOn = true; s.delayTime = 520; s.delayFeedback = 0.42; s.delayMix = 0.3; s.revOn = true; s.revSize = 0.8; s.revMix = 0.35
+        // tone fitted to the Rammstein-ish balance (real lows, no 2-5 kHz honk), measured on a DI take
+        s.depth = 0.1; s.presence = 0.9; s.treble = 0.47; s.mid = 0.36; s.eqOn = true
+        s.eq = [-6, -6, -6, -6, 1.5, -4.5, 3, 6]
+        s.cabOn = true; s.cabModel = CAB_LIB; s.irA = "C414/NO-TS/C414_1_inch_cone_near_pres_3.wav"; s.irB = "SM57/NO-TS/57_1_inch_cone_near_pres_3.wav"; s.irBlend = 0.4; s.cabHighCut = 12000
+        s.ampVolume = 0.551   // level-matched
+    }),
+    // Band-inspired tones: the well-known rigs behind each sound (amp type, boost, EQ shape, mics), level-matched.
+    // Mark IIC+ style: no boost, deep V on the graphic EQ, 57 on the cap with a far 421.
+    ("Thrash Rhythm (Metallica-ish)", { s in
+        s.gateThresh = -50.0; s.gateRelease = 80.0; s.chain = []
+        s.ampChannel = 2; s.ampGain = 0.7
+        s.bass = 0.65; s.mid = 0.3; s.treble = 0.65; s.presence = 0.6; s.depth = 0.5; s.ampVolume = 0.47
+        s.eq = [2, 2, 0, -3, -5, -2, 1, 0]
+        s.cabOn = true; s.cabModel = CAB_LIB; s.irA = "SM57/NO-TS/57_1_inch_cap_pres_3.wav"; s.irB = "MD421/NO-TS/MD421_1_inch_cone_far_pres_3.wav"; s.irBlend = 0.3
+        // tone fitted to the Rammstein-ish balance (real lows, no 2-5 kHz honk), measured on a DI take
+        s.depth = 0.24; s.presence = 0.46; s.treble = 0.9; s.mid = 0.63; s.eqOn = true
+        s.eq = [6, -1.5, -4.5, -5, -2.5, 0, -1, -5]
+        s.ampVolume = 0.6   // level-matched
+    }),
+    // Hot-rodded Marshall with a clean boost: mids stay in, bright and biting.
+    ("Thrash Attack (Slayer-ish)", { s in
+        s.gateThresh = -55.0; s.gateRelease = 70.0
+        s.chain = [PedalKind.od.rawValue]; s.odOn = true; s.odDrive = 0.1; s.odTone = 0.6; s.odLevel = 0.85
+        s.ampChannel = 2; s.ampGain = 0.6
+        s.bass = 0.5; s.mid = 0.6; s.treble = 0.7; s.presence = 0.7; s.depth = 0.4; s.ampVolume = 0.5
+        s.eq = [0, 0, 0, 1, 2, 2, 0, -2]
+        s.cabOn = true; s.cabModel = CAB_LIB; s.irA = "SM57/NO-TS/57_1_inch_edge_pres_4.wav"; s.irB = ""; s.irBlend = 0.0
+        // tone fitted to the Rammstein-ish balance (real lows, no 2-5 kHz honk), measured on a DI take
+        s.depth = 0.95; s.presence = 0.57; s.treble = 0.6; s.mid = 0.27; s.eqOn = true
+        s.eq = [-2.5, 1, 0.5, 0, 1.5, 2.5, 0, -0.5]
+        s.ampVolume = 0.494   // level-matched
+    }),
+    // Solid-state crunch scooped hard, big low end, very tight gate.
+    ("Groove Scoop (Pantera-ish)", { s in
+        s.gateThresh = -48.0; s.gateRelease = 50.0; s.chain = []
+        s.ampChannel = 2; s.ampGain = 0.75
+        s.bass = 0.7; s.mid = 0.15; s.treble = 0.75; s.presence = 0.7; s.depth = 0.6; s.ampVolume = 0.59
+        s.eq = [3, 2, -2, -6, -6, -2, 2, 1]
+        s.cabOn = true; s.cabModel = CAB_LIB; s.irA = "SM57/NO-TS/57_1_inch_cap_pres_5.wav"; s.irB = "SM7B/NO-TS/SM7B_1_inch_cap_pres_4.wav"; s.irBlend = 0.2
+        // tone fitted to the Rammstein-ish balance (real lows, no 2-5 kHz honk), measured on a DI take
+        s.depth = 0.38; s.presence = 0.1; s.treble = 0.87; s.mid = 0.87; s.eqOn = true
+        s.eq = [6, -1, -3, -3.5, -3, -2.5, 0.5, -6]
+        s.ampVolume = 0.726   // level-matched
+    }),
+    // Modded JCM800 pushed by a drive pedal: tighter and more mid-forward than the Mark-style scoop.
+    ("Speed Metal (Megadeth-ish)", { s in
+        s.gateThresh = -55.0; s.gateRelease = 70.0
+        s.chain = [PedalKind.od.rawValue]; s.odOn = true; s.odDrive = 0.3; s.odTone = 0.65; s.odLevel = 0.6
+        s.ampChannel = 2; s.ampGain = 0.6
+        s.bass = 0.5; s.mid = 0.5; s.treble = 0.7; s.presence = 0.65; s.depth = 0.45; s.ampVolume = 0.51
+        s.eq = [0, 0, -1, 0, 1, 2, 0, -2]
+        s.cabOn = true; s.cabModel = CAB_LIB; s.irA = "SM57/NO-TS/57_1_inch_edge_pres_4.wav"; s.irB = "MD421/NO-TS/MD421_1_inch_cone_near_pres_3.wav"; s.irBlend = 0.25
+        // tone fitted to the Rammstein-ish balance (real lows, no 2-5 kHz honk), measured on a DI take
+        s.depth = 0.89; s.presence = 0.55; s.treble = 0.53; s.mid = 0.28; s.eqOn = true
+        s.eq = [-5, 1, 0, -0.5, 1, 2, 0, 1.5]
+        s.ampVolume = 0.496   // level-matched
+    }),
+    // Treble booster into a cranked British head: thick mids, loose gate, a little room.
+    ("Doom Riff (Sabbath-ish)", { s in
+        s.gateThresh = -66.0; s.gateRelease = 150.0
+        s.chain = [PedalKind.od.rawValue]; s.odOn = true; s.odDrive = 0.35; s.odTone = 0.75; s.odLevel = 0.7
+        s.ampChannel = 1; s.ampGain = 0.8
+        s.bass = 0.6; s.mid = 0.65; s.treble = 0.5; s.presence = 0.45; s.depth = 0.65; s.ampVolume = 0.35
+        s.eq = [1, 1, 1, 1, 0, 0, -1, -3]
+        s.cabOn = true; s.cabModel = CAB_LIB; s.irA = "MD421/NO-TS/MD421_1_inch_cone_near_pres_2.wav"; s.irB = "C414/NO-TS/C414_2_foot_pres_2.wav"; s.irBlend = 0.3
+        s.revOn = true; s.revSize = 0.4; s.revMix = 0.1
+        // tone fitted to the Rammstein-ish balance (real lows, no 2-5 kHz honk), measured on a DI take
+        s.depth = 0.81; s.presence = 0.52; s.treble = 0.9; s.mid = 0.39; s.eqOn = true
+        s.eq = [2.5, 1, -1, -4.5, 4.5, 4, -5.5, -0.5]
+        s.ampVolume = 0.397   // level-matched
+    }),
+    // Marshall crunch, mid-forward for twin harmonies, with lead delay and reverb.
+    ("Twin Lead (Maiden-ish)", { s in
+        s.gateThresh = -66.0; s.gateRelease = 120.0; s.chain = []
+        s.ampChannel = 1; s.ampGain = 0.55
+        s.bass = 0.45; s.mid = 0.7; s.treble = 0.6; s.presence = 0.55; s.depth = 0.4; s.ampVolume = 0.43
+        s.eq = [-1, 0, 1, 2, 2, 1, 0, -2]
+        s.cabOn = true; s.cabModel = CAB_LIB; s.irA = "SM57/NO-TS/57_1_inch_edge_pres_3.wav"; s.irB = "MD421/NO-TS/MD421_1_inch_cone_near_pres_3.wav"; s.irBlend = 0.35
+        s.delayOn = true; s.delayTime = 380.0; s.delayFeedback = 0.25; s.delayMix = 0.15
+        s.revOn = true; s.revSize = 0.5; s.revMix = 0.12
+        // tone fitted to the Rammstein-ish balance (real lows, no 2-5 kHz honk), measured on a DI take
+        s.depth = 0.42; s.presence = 0.73; s.treble = 0.85; s.mid = 0.64; s.eqOn = true
+        s.eq = [5.5, -1, -2, 0.5, 2.5, 2, -2.5, -2]
+        s.ampVolume = 0.47   // level-matched
+    }),
+    // Clean boost into high gain for an ultra-tight low end, hard gate, clanky upper mids.
+    ("Djent Clank (Meshuggah-ish)", { s in
+        s.gateThresh = -45.0; s.gateRelease = 35.0
+        s.chain = [PedalKind.od.rawValue]; s.odOn = true; s.odDrive = 0.0; s.odTone = 0.6; s.odLevel = 0.9
+        s.ampChannel = 2; s.ampGain = 0.6
+        s.bass = 0.45; s.mid = 0.45; s.treble = 0.65; s.presence = 0.75; s.depth = 0.7; s.ampVolume = 0.5
+        s.eq = [-2, -1, -3, -1, 1, 3, 1, -2]
+        s.cabOn = true; s.cabModel = CAB_LIB; s.irA = "SM57/NO-TS/57_1_inch_cap_pres_4.wav"; s.irB = "MD421/NO-TS/MD421_1_inch_cone_near_pres_3.wav"; s.irBlend = 0.3
+        s.cabLowCut = 110.0; s.cabHighCut = 8000.0
+        // tone fitted to the Rammstein-ish balance (real lows, no 2-5 kHz honk), measured on a DI take
+        s.depth = 0.95; s.presence = 0.52; s.treble = 0.42; s.mid = 0.31; s.eqOn = true
+        s.eq = [-2, -1, -2.5, -1.5, -1, 1.5, 0, 2.5]
+        s.ampVolume = 0.572   // level-matched
+    }),
+    // HM-2 style "all knobs up": fuzz into a crunchy amp with the lows and upper mids pushed hard.
+    ("Chainsaw Death (Entombed-ish)", { s in
+        s.gateThresh = -55.0; s.gateRelease = 80.0
+        s.chain = [PedalKind.fuzz.rawValue]; s.fuzzOn = true; s.fuzzAmt = 0.7; s.fuzzTone = 0.7; s.fuzzLevel = 0.55
+        s.odOn = false
+        s.ampChannel = 1; s.ampGain = 0.4
+        s.bass = 0.55; s.mid = 0.6; s.treble = 0.6; s.presence = 0.55; s.depth = 0.5; s.ampVolume = 0.35
+        s.eq = [5, 3, 0, 0, 6, 6, 3, -2]
+        s.cabOn = true; s.cabModel = CAB_LIB; s.irA = "SM57/NO-TS/57_1_inch_edge_pres_3.wav"; s.irB = ""; s.irBlend = 0.0
+        // tone fitted to the Rammstein-ish balance (real lows, no 2-5 kHz honk), measured on a DI take
+        s.depth = 0.6; s.presence = 0.9; s.treble = 0.1; s.mid = 0.51; s.eqOn = true
+        s.eq = [6, -0.5, -3, 3.5, -0.5, 2.5, 2, 6]
+        s.ampVolume = 0.47   // level-matched
+    }),
+    // Compressed and wide: thick low end, a drive pedal for density, gated to silence between hits.
+    ("Industrial Wall (Rammstein-ish)", { s in
+        s.gateThresh = -48.0; s.gateRelease = 45.0
+        s.chain = [PedalKind.comp.rawValue, PedalKind.od.rawValue]
+        s.compOn = true; s.compSustain = 0.4; s.compAttack = 5.0; s.compLevel = 0.0; s.compBlend = 0.7
+        s.odOn = true; s.odDrive = 0.2; s.odTone = 0.5; s.odLevel = 0.6
+        s.ampChannel = 2; s.ampGain = 0.7
+        s.bass = 0.65; s.mid = 0.4; s.treble = 0.55; s.presence = 0.5; s.depth = 0.75; s.ampVolume = 0.49
+        s.eq = [2, 2, -1, -2, 0, 1, 0, -3]
+        s.cabOn = true; s.cabModel = CAB_LIB; s.irA = "SM7B/NO-TS/SM7B_1_inch_cap_pres_3.wav"; s.irB = "MD421/NO-TS/MD421_1_inch_cone_near_pres_3.wav"; s.irBlend = 0.35
+        s.ampVolume = 0.511   // level-matched
+    }),
+    // Clean channel with light compression, chorus, delay and a big room: the quiet parts of prog metal.
+    ("Prog Clean (Opeth-ish)", { s in
+        s.gateThresh = -72.0; s.gateRelease = 120.0
+        s.chain = [PedalKind.comp.rawValue, PedalKind.chorus.rawValue]
+        s.compOn = true; s.compSustain = 0.35; s.compAttack = 12.0; s.compBlend = 0.6
+        s.chorusOn = true; s.chorusRate = 0.6; s.chorusDepth = 0.4; s.chorusMix = 0.35
+        s.odOn = false
+        s.ampChannel = 0; s.ampGain = 0.35
+        s.bass = 0.5; s.mid = 0.5; s.treble = 0.6; s.presence = 0.5; s.depth = 0.5; s.ampVolume = 0.33
+        s.eq = [0, 0, 0, 0, 0, 1, 1, 0]
+        s.cabOn = true; s.cabModel = CAB_LIB; s.irA = "U87/NO-TS/U87_grill_cone_far_pres_3.wav"; s.irB = ""; s.irBlend = 0.0
+        s.delayOn = true; s.delayTime = 450.0; s.delayFeedback = 0.3; s.delayMix = 0.2
+        s.revOn = true; s.revSize = 0.6; s.revMix = 0.25
+        // tone fitted to the Rammstein-ish balance (real lows, no 2-5 kHz honk), measured on a DI take
+        s.depth = 0.1; s.presence = 0.9; s.treble = 0.39; s.mid = 0.28; s.eqOn = true
+        s.eq = [-6, -6, -6, -6, 2, -4.5, 4, 6]
+        s.cabOn = true; s.cabModel = CAB_LIB; s.irA = "C414/NO-TS/C414_2_inch_cone_near_pres_3.wav"; s.irB = "SM57/NO-TS/57_2_inch_edge_pres_3.wav"; s.irBlend = 0.35; s.cabHighCut = 12000
+        s.ampVolume = 0.698   // level-matched
+    }),
 ]
 
 // MARK: - Captures
@@ -337,7 +502,7 @@ final class Model: ObservableObject {
         do {
             info = try engine.start(input: i, output: o, buffer: bufferSize)
             running = true
-            adviseOverloads = true; recentOverloads = []
+            adviseOverloads = true; recentOverloads = []; startedAt = Date()
             status = latencyAdvice(i, o)
             updateIR()
         } catch {
@@ -366,7 +531,7 @@ final class Model: ObservableObject {
 
     private func restartIfRunning() { if running { start() } }
 
-    private var lastOverloadInfo = Date.distantPast, recentOverloads: [Date] = [], adviseOverloads = true
+    private var lastOverloadInfo = Date.distantPast, recentOverloads: [Date] = [], adviseOverloads = true, startedAt = Date.distantPast
 
     /// Dropouts (heard as crackles). The engine backs off on its own; here we refresh the latency readout at most once a
     /// second (each refresh asks CoreAudio several questions) and, if they keep coming, say what will fix it.
@@ -377,14 +542,21 @@ final class Model: ObservableObject {
             lastOverloadInfo = now
             info = engine.currentInfo(input: i, output: o, previous: prev)   // cycle usage went up
         }
-        recentOverloads = recentOverloads.filter { now.timeIntervalSince($0) < 5 } + [now]
-        guard adviseOverloads, recentOverloads.count >= 10, let i = input, let o = output else { return }
-        adviseOverloads = false   // once per start
-        let bigger = [16, 32, 64, 128, 256].first { $0 > bufferSize }
-        var tip = "Audio is dropping out (crackles)."
-        if let bigger { tip += " Raise Buffer to \(bigger) samples in Settings." }
-        if i.uid != o.uid { tip += " Input (\(i.name)) and output (\(o.name)) are separate devices with separate clocks, which needs more buffer; one interface for both is the most stable." }
-        status = tip
+        // ignore the first seconds after a start: the engine backs off its timing margin on its own then
+        guard now.timeIntervalSince(startedAt) > 3, let i = input, let o = output else { return }
+        recentOverloads = recentOverloads.filter { now.timeIntervalSince($0) < 10 } + [now]
+        guard recentOverloads.count >= 4 else { return }
+        recentOverloads = []
+        let separate = i.uid != o.uid
+        let why = separate ? " Input (\(i.name)) and output (\(o.name)) are separate devices with separate clocks; one interface for both, or the Mac's own speakers or headphones, is the most stable." : ""
+        // keep dropouts from going on: step the buffer up (it restarts the engine), up to 256 samples
+        if let bigger = [16, 32, 64, 128, 256].first(where: { $0 > bufferSize }) {
+            status = "Audio was dropping out (crackles), so the buffer is now \(bigger) samples (Settings → Audio)." + why
+            DispatchQueue.main.async { [weak self] in self?.bufferSize = bigger }
+        } else if adviseOverloads {
+            adviseOverloads = false
+            status = "Audio is still dropping out at the largest buffer." + why
+        }
     }
 
     private var rateRestarts: [Date] = []

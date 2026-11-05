@@ -164,6 +164,7 @@ private:
     int saveCountdown = -1, tunerTick = 0, lastXRuns = 0;
     std::vector<double> recentOverloads;
     bool adviseOverloads = true;
+    double startedAt = 0;
     std::vector<double> taps;
 
     void applyAll();

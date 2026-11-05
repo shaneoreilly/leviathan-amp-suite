@@ -297,6 +297,7 @@ DSP::DSP(double sampleRate, Params& params)
       hist(maxIR + maxN, 0.0f),
       dSize((int) (sampleRate * 2.1)) {
     for (int k = 0; k < kPedalCount; ++k) pedals.push_back(makePedal((PedalKind) k, (float) sampleRate));
+    limRel = 1 - std::exp(-1 / (0.08f * (float) sampleRate));
     dBuf.assign((size_t) dSize, 0.0f);
     irs[0].assign(maxIR, 0.0f); irs[1].assign(maxIR, 0.0f);
     irs[0][0] = 1; irLen[0] = 1;
@@ -521,6 +522,10 @@ void DSP::process(const float* input, float* outL, float* outR, int frames) {
         for (auto& ap : aps) l = ap.run(l);
         for (auto& ap : aps) r = ap.peekRun(r);
         float yl = (x + l * rWet) * vol, yr = (x + r * rWet) * vol;
+        // peak limiter: gain drops at once to keep the peak at the ceiling, then recovers over ~80 ms
+        const float pk = std::max(std::abs(yl), std::abs(yr)), target = pk > limCeiling ? limCeiling / pk : 1.0f;
+        limG = target < limG ? target : limG + (target - limG) * limRel;
+        yl *= limG; yr *= limG;
         yl = std::min(std::max(yl, -1.0f), 1.0f); yr = std::min(std::max(yr, -1.0f), 1.0f);
         outPk = std::max(outPk, std::abs(yl));
         wl[(size_t) i] = yl; wr[(size_t) i] = yr;

@@ -446,11 +446,16 @@ final class DSP {
     private var combs: [Comb] = [], aps: [Allpass] = []
     private var rSend = Smooth(), rWet: Float = 0
 
+    // output limiter: stops a hot Master from hard-clipping (which sounds like crackle)
+    private var limG: Float = 1, limRel: Float = 0
+    static let limCeiling: Float = 0.891   // -1 dBFS
+
     init(sampleRate: Double, params: Params) {
         sr = Float(sampleRate); p = params
         shifter = PitchShifter(sr: sampleRate)
         pedals = PedalKind.allCases.map { makePedal($0, sr: Float(sampleRate)) }
         fade = 1 - expf(-1 / (0.006 * Float(sampleRate)))
+        limRel = 1 - expf(-1 / (0.08 * Float(sampleRate)))
         dSize = Int(sampleRate * 2.1)
         dBuf = .allocate(capacity: dSize); dBuf.initialize(repeating: 0, count: dSize)
         hist.initialize(repeating: 0, count: DSP.maxIR + DSP.maxN)
@@ -669,6 +674,10 @@ final class DSP {
             for ap in aps { l = ap.run(l) }
             for ap in aps { r = ap.peekRun(r) }
             var yl = (x + l * rWet) * vol, yr = (x + r * rWet) * vol
+            // peak limiter: gain drops at once to keep the peak at the ceiling, then recovers over ~80 ms
+            let pk = max(abs(yl), abs(yr)), target = pk > DSP.limCeiling ? DSP.limCeiling / pk : 1
+            limG = target < limG ? target : limG + (target - limG) * limRel
+            yl *= limG; yr *= limG
             yl = min(max(yl, -1), 1); yr = min(max(yr, -1), 1)
             outPk = max(outPk, abs(yl))
             wl[i] = yl; wr[i] = yr

@@ -173,7 +173,7 @@ void Model::start() {
     }
     devices.addAudioCallback(this);
     running = true;
-    adviseOverloads = true; recentOverloads.clear();
+    adviseOverloads = true; recentOverloads.clear(); startedAt = juce::Time::getMillisecondCounterHiRes() / 1000.0;
     lastXRuns = devices.getXRunCount();
     refreshInfo();
     changed();
@@ -244,18 +244,32 @@ void Model::audioDeviceIOCallbackWithContext(const float* const* in, int numIn, 
 
 void Model::overloaded() {
     const double now = juce::Time::getMillisecondCounterHiRes() / 1000.0;
-    recentOverloads.erase(std::remove_if(recentOverloads.begin(), recentOverloads.end(), [&](double t) { return now - t > 5; }),
+    if (now - startedAt < 3) return;   // the first seconds after a start settle on their own
+    recentOverloads.erase(std::remove_if(recentOverloads.begin(), recentOverloads.end(), [&](double t) { return now - t > 10; }),
                           recentOverloads.end());
     recentOverloads.push_back(now);
-    if (!adviseOverloads || recentOverloads.size() < 10) return;
-    adviseOverloads = false;   // once per start
-    juce::String tip = "Audio is dropping out (crackles). Raise the buffer size in Settings.";
+    if (recentOverloads.size() < 4) return;
+    recentOverloads.clear();
+    juce::String why;
     if (info.type.isNotEmpty() && info.type != "ASIO")
-        tip << " An ASIO driver for your interface (or \"Windows Audio (Exclusive Mode)\") is usually much more stable at low latency.";
+        why << " An ASIO driver for your interface (or \"Windows Audio (Exclusive Mode)\") is usually much more stable at low latency.";
     if (info.inName.isNotEmpty() && info.outName.isNotEmpty() && info.inName != info.outName)
-        tip << " Input (" << info.inName << ") and output (" << info.outName << ") are separate devices with separate clocks; one interface for both is most stable.";
-    status = tip;
-    changed();
+        why << " Input (" << info.inName << ") and output (" << info.outName << ") are separate devices with separate clocks; one interface for both is most stable.";
+    // keep dropouts from going on: step the buffer up to the next size the driver offers, up to 1024 samples
+    if (auto* d = devices.getCurrentAudioDevice()) {
+        const int cur = d->getCurrentBufferSizeSamples();
+        int bigger = 0;
+        for (int b : d->getAvailableBufferSizes()) if (b > cur && b <= 1024 && (bigger == 0 || b < bigger)) bigger = b;
+        if (bigger > 0) {
+            auto setup = devices.getAudioDeviceSetup();
+            setup.bufferSize = bigger;
+            juce::MessageManager::callAsync([this, setup] { devices.setAudioDeviceSetup(setup, true); startedAt = juce::Time::getMillisecondCounterHiRes() / 1000.0; refreshInfo(); saveState(); changed(); });
+            status = "Audio was dropping out (crackles), so the buffer is now " + juce::String(bigger) + " samples (Settings > Audio)." + why;
+            changed();
+            return;
+        }
+    }
+    if (adviseOverloads) { adviseOverloads = false; status = "Audio is still dropping out at the largest buffer." + why; changed(); }
 }
 
 void Model::timerCallback() {

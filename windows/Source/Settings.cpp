@@ -145,18 +145,40 @@ void Settings::apply(Params& p) const {
 
 // MARK: - Factory presets (same as FACTORY in App.swift)
 
+namespace {
+void eqs(Settings& s, std::initializer_list<double> e) { int k = 0; for (double x : e) s.setEq(k++, x); }
+void cab(Settings& s, const char* a, const char* b, double blend) {
+    s.set("cabOn", true); s.set("cabModel", CAB_LIB); s.set("irA", a); s.set("irB", b); s.set("irBlend", blend);
+}
+} // namespace
+
 const std::vector<Factory> FACTORY = {
-    { "Tight Rhythm (Gojira-ish)", [](Settings&) {} },
+    { "Tight Rhythm (Gojira-ish)", [](Settings& s) {
+        // tone fitted to the Rammstein-ish balance (real lows, no 2-5 kHz honk), measured on a DI take
+        s.set("depth", 0.86); s.set("presence", 0.72); s.set("treble", 0.54); s.set("mid", 0.24); s.set("eqOn", true);
+        eqs(s, { -0.5, 1, -0.5, -0.5, 1.5, 1.5, -2.5, 0.5 });
+        s.set("ampVolume", 0.483);   // level-matched
+    } },
     { "Sludge Crunch (Mastodon-ish)", [](Settings& s) {
         s.set("odOn", false); s.set("ampChannel", 1); s.set("ampGain", 0.8); s.set("bass", 0.65); s.set("mid", 0.6); s.set("treble", 0.5);
-        s.set("presence", 0.45); s.set("depth", 0.65);
+        s.set("presence", 0.45); s.set("depth", 0.65); s.set("ampVolume", 0.29);   // level-matched (was clipping)
         double e[] = { 1, 1, 0, 0, 0, 0, -1, -3 }; for (int k = 0; k < 8; ++k) s.setEq(k, e[k]);
-        s.set("irA", "SM57/NO-TS/57_2_inch_cone_far_pres_2.wav"); s.set("irBlend", 0.5); } },
+        s.set("irA", "SM57/NO-TS/57_2_inch_cone_far_pres_2.wav"); s.set("irBlend", 0.5);
+        // tone fitted to the Rammstein-ish balance (real lows, no 2-5 kHz honk), measured on a DI take
+        s.set("depth", 0.26); s.set("presence", 0.75); s.set("treble", 0.9); s.set("mid", 0.56); s.set("eqOn", true);
+        eqs(s, { 6, 0, -3, -3, 2, 4.5, -2.5, -6 });
+        s.set("ampVolume", 0.418);   // level-matched
+    } },
     { "Screaming Lead", [](Settings& s) {
-        s.set("gateThresh", -64.0); s.set("odDrive", 0.2); s.set("ampGain", 0.7); s.set("mid", 0.65); s.set("treble", 0.5);
+        s.set("gateThresh", -64.0); s.set("odDrive", 0.2); s.set("ampGain", 0.7); s.set("mid", 0.65); s.set("treble", 0.5); s.set("ampVolume", 0.44);
         double e[] = { -2, -1, 0, 1, 2, 1, -1, -4 }; for (int k = 0; k < 8; ++k) s.setEq(k, e[k]);
         s.set("irA", "SM57/TS/57_TS_1_inch_edge_pres_3.wav"); s.set("delayOn", true); s.set("delayTime", 450.0); s.set("delayMix", 0.22);
-        s.set("revOn", true); s.set("revMix", 0.15); } },
+        s.set("revOn", true); s.set("revMix", 0.15);
+        // tone fitted to the Rammstein-ish balance (real lows, no 2-5 kHz honk), measured on a DI take
+        s.set("depth", 0.93); s.set("presence", 0.9); s.set("treble", 0.53); s.set("mid", 0.1); s.set("eqOn", true);
+        eqs(s, { -6, -0.5, -1.5, -0.5, 2, 2, -2.5, 3.5 });
+        s.set("ampVolume", 0.491);   // level-matched
+    } },
     // Tight modern rhythm: tight gate -> boosted TS-style overdrive -> hot channel with scooped mids
     // (EQ cut from 320 Hz to 2.5 kHz) -> 4x12 with a 57 on the cap.
     { "Modern Metal Rhythm", [](Settings& s) {
@@ -167,14 +189,164 @@ const std::vector<Factory> FACTORY = {
         s.set("eqOn", true); double e[] = { 0, 0, -3.5, -4.9, -4.3, -1.8, 0, 0 }; for (int k = 0; k < 8; ++k) s.setEq(k, e[k]);
         s.set("cabOn", true); s.set("cabModel", CAB_LIB); s.set("irA", "SM57/NO-TS/57_1_inch_cap_pres_4.wav"); s.set("irB", ""); s.set("irBlend", 0.0);
         s.set("cabLowCut", 80.0); s.set("cabHighCut", 10000.0);
-        s.set("delayOn", false); s.set("revOn", false); } },
+        s.set("delayOn", false); s.set("revOn", false);
+        // tone fitted to the Rammstein-ish balance (real lows, no 2-5 kHz honk), measured on a DI take
+        s.set("depth", 0.78); s.set("presence", 0.12); s.set("treble", 0.49); s.set("mid", 0.46); s.set("eqOn", true);
+        eqs(s, { 2, 0, -3, -4.5, -4, -3, 0.5, -2.5 });
+        s.set("ampVolume", 0.686);   // level-matched
+    } },
     { "Ambient Clean", [](Settings& s) {
         s.set("gateThresh", -72.0); s.set("odOn", false); s.set("ampChannel", 0); s.set("ampGain", 0.4); s.set("bass", 0.5); s.set("mid", 0.5);
-        s.set("treble", 0.6); s.set("ampVolume", 0.55);
+        s.set("treble", 0.6); s.set("ampVolume", 0.44);
         double e[] = { 0, 0, 0, 0, 0, 1, 1, 0 }; for (int k = 0; k < 8; ++k) s.setEq(k, e[k]);
         s.set("cabModel", 2); s.set("cabHighCut", 10000.0);
         s.set("delayOn", true); s.set("delayTime", 520.0); s.set("delayFeedback", 0.42); s.set("delayMix", 0.3);
-        s.set("revOn", true); s.set("revSize", 0.8); s.set("revMix", 0.35); } },
+        s.set("revOn", true); s.set("revSize", 0.8); s.set("revMix", 0.35);
+        // tone fitted to the Rammstein-ish balance (real lows, no 2-5 kHz honk), measured on a DI take
+        s.set("depth", 0.1); s.set("presence", 0.9); s.set("treble", 0.47); s.set("mid", 0.36); s.set("eqOn", true);
+        eqs(s, { -6, -6, -6, -6, 1.5, -4.5, 3, 6 });
+        cab(s, "C414/NO-TS/C414_1_inch_cone_near_pres_3.wav", "SM57/NO-TS/57_1_inch_cone_near_pres_3.wav", 0.4); s.set("cabHighCut", 12000);
+        s.set("ampVolume", 0.551);   // level-matched
+    } },
+
+    // Band-inspired tones: the well-known rigs behind each sound (amp type, boost, EQ shape, mics), level-matched.
+    // Mark IIC+ style: no boost, deep V on the graphic EQ, 57 on the cap with a far 421.
+    { "Thrash Rhythm (Metallica-ish)", [](Settings& s) {
+        s.set("gateThresh", -50.0); s.set("gateRelease", 80.0); s.setChain({});
+        s.set("ampChannel", 2); s.set("ampGain", 0.7);
+        s.set("bass", 0.65); s.set("mid", 0.3); s.set("treble", 0.65); s.set("presence", 0.6); s.set("depth", 0.5); s.set("ampVolume", 0.47);
+        eqs(s, { 2, 2, 0, -3, -5, -2, 1, 0 });
+        cab(s, "SM57/NO-TS/57_1_inch_cap_pres_3.wav", "MD421/NO-TS/MD421_1_inch_cone_far_pres_3.wav", 0.3);
+        // tone fitted to the Rammstein-ish balance (real lows, no 2-5 kHz honk), measured on a DI take
+        s.set("depth", 0.24); s.set("presence", 0.46); s.set("treble", 0.9); s.set("mid", 0.63); s.set("eqOn", true);
+        eqs(s, { 6, -1.5, -4.5, -5, -2.5, 0, -1, -5 });
+        s.set("ampVolume", 0.6);   // level-matched
+    } },
+    // Hot-rodded Marshall with a clean boost: mids stay in, bright and biting.
+    { "Thrash Attack (Slayer-ish)", [](Settings& s) {
+        s.set("gateThresh", -55.0); s.set("gateRelease", 70.0);
+        s.setChain({ (int) PedalKind::od }); s.set("odOn", true); s.set("odDrive", 0.1); s.set("odTone", 0.6); s.set("odLevel", 0.85);
+        s.set("ampChannel", 2); s.set("ampGain", 0.6);
+        s.set("bass", 0.5); s.set("mid", 0.6); s.set("treble", 0.7); s.set("presence", 0.7); s.set("depth", 0.4); s.set("ampVolume", 0.5);
+        eqs(s, { 0, 0, 0, 1, 2, 2, 0, -2 });
+        cab(s, "SM57/NO-TS/57_1_inch_edge_pres_4.wav", "", 0.0);
+        // tone fitted to the Rammstein-ish balance (real lows, no 2-5 kHz honk), measured on a DI take
+        s.set("depth", 0.95); s.set("presence", 0.57); s.set("treble", 0.6); s.set("mid", 0.27); s.set("eqOn", true);
+        eqs(s, { -2.5, 1, 0.5, 0, 1.5, 2.5, 0, -0.5 });
+        s.set("ampVolume", 0.494);   // level-matched
+    } },
+    // Solid-state crunch scooped hard, big low end, very tight gate.
+    { "Groove Scoop (Pantera-ish)", [](Settings& s) {
+        s.set("gateThresh", -48.0); s.set("gateRelease", 50.0); s.setChain({});
+        s.set("ampChannel", 2); s.set("ampGain", 0.75);
+        s.set("bass", 0.7); s.set("mid", 0.15); s.set("treble", 0.75); s.set("presence", 0.7); s.set("depth", 0.6); s.set("ampVolume", 0.59);
+        eqs(s, { 3, 2, -2, -6, -6, -2, 2, 1 });
+        cab(s, "SM57/NO-TS/57_1_inch_cap_pres_5.wav", "SM7B/NO-TS/SM7B_1_inch_cap_pres_4.wav", 0.2);
+        // tone fitted to the Rammstein-ish balance (real lows, no 2-5 kHz honk), measured on a DI take
+        s.set("depth", 0.38); s.set("presence", 0.1); s.set("treble", 0.87); s.set("mid", 0.87); s.set("eqOn", true);
+        eqs(s, { 6, -1, -3, -3.5, -3, -2.5, 0.5, -6 });
+        s.set("ampVolume", 0.726);   // level-matched
+    } },
+    // Modded JCM800 pushed by a drive pedal: tighter and more mid-forward than the Mark-style scoop.
+    { "Speed Metal (Megadeth-ish)", [](Settings& s) {
+        s.set("gateThresh", -55.0); s.set("gateRelease", 70.0);
+        s.setChain({ (int) PedalKind::od }); s.set("odOn", true); s.set("odDrive", 0.3); s.set("odTone", 0.65); s.set("odLevel", 0.6);
+        s.set("ampChannel", 2); s.set("ampGain", 0.6);
+        s.set("bass", 0.5); s.set("mid", 0.5); s.set("treble", 0.7); s.set("presence", 0.65); s.set("depth", 0.45); s.set("ampVolume", 0.51);
+        eqs(s, { 0, 0, -1, 0, 1, 2, 0, -2 });
+        cab(s, "SM57/NO-TS/57_1_inch_edge_pres_4.wav", "MD421/NO-TS/MD421_1_inch_cone_near_pres_3.wav", 0.25);
+        // tone fitted to the Rammstein-ish balance (real lows, no 2-5 kHz honk), measured on a DI take
+        s.set("depth", 0.89); s.set("presence", 0.55); s.set("treble", 0.53); s.set("mid", 0.28); s.set("eqOn", true);
+        eqs(s, { -5, 1, 0, -0.5, 1, 2, 0, 1.5 });
+        s.set("ampVolume", 0.496);   // level-matched
+    } },
+    // Treble booster into a cranked British head: thick mids, loose gate, a little room.
+    { "Doom Riff (Sabbath-ish)", [](Settings& s) {
+        s.set("gateThresh", -66.0); s.set("gateRelease", 150.0);
+        s.setChain({ (int) PedalKind::od }); s.set("odOn", true); s.set("odDrive", 0.35); s.set("odTone", 0.75); s.set("odLevel", 0.7);
+        s.set("ampChannel", 1); s.set("ampGain", 0.8);
+        s.set("bass", 0.6); s.set("mid", 0.65); s.set("treble", 0.5); s.set("presence", 0.45); s.set("depth", 0.65); s.set("ampVolume", 0.35);
+        eqs(s, { 1, 1, 1, 1, 0, 0, -1, -3 });
+        cab(s, "MD421/NO-TS/MD421_1_inch_cone_near_pres_2.wav", "C414/NO-TS/C414_2_foot_pres_2.wav", 0.3);
+        s.set("revOn", true); s.set("revSize", 0.4); s.set("revMix", 0.1);
+        // tone fitted to the Rammstein-ish balance (real lows, no 2-5 kHz honk), measured on a DI take
+        s.set("depth", 0.81); s.set("presence", 0.52); s.set("treble", 0.9); s.set("mid", 0.39); s.set("eqOn", true);
+        eqs(s, { 2.5, 1, -1, -4.5, 4.5, 4, -5.5, -0.5 });
+        s.set("ampVolume", 0.397);   // level-matched
+    } },
+    // Marshall crunch, mid-forward for twin harmonies, with lead delay and reverb.
+    { "Twin Lead (Maiden-ish)", [](Settings& s) {
+        s.set("gateThresh", -66.0); s.set("gateRelease", 120.0); s.setChain({});
+        s.set("ampChannel", 1); s.set("ampGain", 0.55);
+        s.set("bass", 0.45); s.set("mid", 0.7); s.set("treble", 0.6); s.set("presence", 0.55); s.set("depth", 0.4); s.set("ampVolume", 0.43);
+        eqs(s, { -1, 0, 1, 2, 2, 1, 0, -2 });
+        cab(s, "SM57/NO-TS/57_1_inch_edge_pres_3.wav", "MD421/NO-TS/MD421_1_inch_cone_near_pres_3.wav", 0.35);
+        s.set("delayOn", true); s.set("delayTime", 380.0); s.set("delayFeedback", 0.25); s.set("delayMix", 0.15);
+        s.set("revOn", true); s.set("revSize", 0.5); s.set("revMix", 0.12);
+        // tone fitted to the Rammstein-ish balance (real lows, no 2-5 kHz honk), measured on a DI take
+        s.set("depth", 0.42); s.set("presence", 0.73); s.set("treble", 0.85); s.set("mid", 0.64); s.set("eqOn", true);
+        eqs(s, { 5.5, -1, -2, 0.5, 2.5, 2, -2.5, -2 });
+        s.set("ampVolume", 0.47);   // level-matched
+    } },
+    // Clean boost into high gain for an ultra-tight low end, hard gate, clanky upper mids.
+    { "Djent Clank (Meshuggah-ish)", [](Settings& s) {
+        s.set("gateThresh", -45.0); s.set("gateRelease", 35.0);
+        s.setChain({ (int) PedalKind::od }); s.set("odOn", true); s.set("odDrive", 0.0); s.set("odTone", 0.6); s.set("odLevel", 0.9);
+        s.set("ampChannel", 2); s.set("ampGain", 0.6);
+        s.set("bass", 0.45); s.set("mid", 0.45); s.set("treble", 0.65); s.set("presence", 0.75); s.set("depth", 0.7); s.set("ampVolume", 0.5);
+        eqs(s, { -2, -1, -3, -1, 1, 3, 1, -2 });
+        cab(s, "SM57/NO-TS/57_1_inch_cap_pres_4.wav", "MD421/NO-TS/MD421_1_inch_cone_near_pres_3.wav", 0.3);
+        s.set("cabLowCut", 110.0); s.set("cabHighCut", 8000.0);
+        // tone fitted to the Rammstein-ish balance (real lows, no 2-5 kHz honk), measured on a DI take
+        s.set("depth", 0.95); s.set("presence", 0.52); s.set("treble", 0.42); s.set("mid", 0.31); s.set("eqOn", true);
+        eqs(s, { -2, -1, -2.5, -1.5, -1, 1.5, 0, 2.5 });
+        s.set("ampVolume", 0.572);   // level-matched
+    } },
+    // HM-2 style "all knobs up": fuzz into a crunchy amp with the lows and upper mids pushed hard.
+    { "Chainsaw Death (Entombed-ish)", [](Settings& s) {
+        s.set("gateThresh", -55.0); s.set("gateRelease", 80.0);
+        s.setChain({ (int) PedalKind::fuzz }); s.set("fuzzOn", true); s.set("fuzzAmt", 0.7); s.set("fuzzTone", 0.7); s.set("fuzzLevel", 0.55);
+        s.set("odOn", false);
+        s.set("ampChannel", 1); s.set("ampGain", 0.4);
+        s.set("bass", 0.55); s.set("mid", 0.6); s.set("treble", 0.6); s.set("presence", 0.55); s.set("depth", 0.5); s.set("ampVolume", 0.35);
+        eqs(s, { 5, 3, 0, 0, 6, 6, 3, -2 });
+        cab(s, "SM57/NO-TS/57_1_inch_edge_pres_3.wav", "", 0.0);
+        // tone fitted to the Rammstein-ish balance (real lows, no 2-5 kHz honk), measured on a DI take
+        s.set("depth", 0.6); s.set("presence", 0.9); s.set("treble", 0.1); s.set("mid", 0.51); s.set("eqOn", true);
+        eqs(s, { 6, -0.5, -3, 3.5, -0.5, 2.5, 2, 6 });
+        s.set("ampVolume", 0.47);   // level-matched
+    } },
+    // Compressed and wide: thick low end, a drive pedal for density, gated to silence between hits.
+    { "Industrial Wall (Rammstein-ish)", [](Settings& s) {
+        s.set("gateThresh", -48.0); s.set("gateRelease", 45.0);
+        s.setChain({ (int) PedalKind::comp, (int) PedalKind::od });
+        s.set("compOn", true); s.set("compSustain", 0.4); s.set("compAttack", 5.0); s.set("compLevel", 0.0); s.set("compBlend", 0.7);
+        s.set("odOn", true); s.set("odDrive", 0.2); s.set("odTone", 0.5); s.set("odLevel", 0.6);
+        s.set("ampChannel", 2); s.set("ampGain", 0.7);
+        s.set("bass", 0.65); s.set("mid", 0.4); s.set("treble", 0.55); s.set("presence", 0.5); s.set("depth", 0.75); s.set("ampVolume", 0.49);
+        eqs(s, { 2, 2, -1, -2, 0, 1, 0, -3 });
+        cab(s, "SM7B/NO-TS/SM7B_1_inch_cap_pres_3.wav", "MD421/NO-TS/MD421_1_inch_cone_near_pres_3.wav", 0.35);
+        s.set("ampVolume", 0.511);   // level-matched
+    } },
+    // Clean channel with light compression, chorus, delay and a big room: the quiet parts of prog metal.
+    { "Prog Clean (Opeth-ish)", [](Settings& s) {
+        s.set("gateThresh", -72.0); s.set("gateRelease", 120.0);
+        s.setChain({ (int) PedalKind::comp, (int) PedalKind::chorus });
+        s.set("compOn", true); s.set("compSustain", 0.35); s.set("compAttack", 12.0); s.set("compBlend", 0.6);
+        s.set("chorusOn", true); s.set("chorusRate", 0.6); s.set("chorusDepth", 0.4); s.set("chorusMix", 0.35);
+        s.set("odOn", false);
+        s.set("ampChannel", 0); s.set("ampGain", 0.35);
+        s.set("bass", 0.5); s.set("mid", 0.5); s.set("treble", 0.6); s.set("presence", 0.5); s.set("depth", 0.5); s.set("ampVolume", 0.33);
+        eqs(s, { 0, 0, 0, 0, 0, 1, 1, 0 });
+        cab(s, "U87/NO-TS/U87_grill_cone_far_pres_3.wav", "", 0.0);
+        s.set("delayOn", true); s.set("delayTime", 450.0); s.set("delayFeedback", 0.3); s.set("delayMix", 0.2);
+        s.set("revOn", true); s.set("revSize", 0.6); s.set("revMix", 0.25);
+        // tone fitted to the Rammstein-ish balance (real lows, no 2-5 kHz honk), measured on a DI take
+        s.set("depth", 0.1); s.set("presence", 0.9); s.set("treble", 0.39); s.set("mid", 0.28); s.set("eqOn", true);
+        eqs(s, { -6, -6, -6, -6, 2, -4.5, 4, 6 });
+        cab(s, "C414/NO-TS/C414_2_inch_cone_near_pres_3.wav", "SM57/NO-TS/57_2_inch_edge_pres_3.wav", 0.35); s.set("cabHighCut", 12000);
+        s.set("ampVolume", 0.698);   // level-matched
+    } },
 };
 
 // MARK: - Tunings
