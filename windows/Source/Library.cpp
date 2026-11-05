@@ -53,13 +53,12 @@ WavData loadAudio(const juce::File& f, double rate, double maxSeconds) {
 
 bool writeWav(const juce::File& f, const std::vector<const float*>& ch, int frames, double rate) {
     f.deleteFile();
-    auto stream = f.createOutputStream();
+    std::unique_ptr<juce::OutputStream> stream = f.createOutputStream();
     if (!stream) return false;
-    juce::WavAudioFormat wav;
-    std::unique_ptr<juce::AudioFormatWriter> w(wav.createWriterFor(stream.get(), rate, (unsigned) ch.size(), 32, {}, 0));
-    if (!w) return false;
-    stream.release();                                   // the writer owns it now
-    return w->writeFromFloatArrays(ch.data(), (int) ch.size(), frames);
+    juce::WavAudioFormat wav;   // 32-bit float, like the Mac app's recordings
+    auto w = wav.createWriterFor(stream, juce::AudioFormatWriterOptions{}.withSampleRate(rate).withNumChannels((int) ch.size()).withBitsPerSample(32)
+                                         .withSampleFormat(juce::AudioFormatWriterOptions::SampleFormat::floatingPoint));
+    return w && w->writeFromFloatArrays(ch.data(), (int) ch.size(), frames);
 }
 
 // MARK: - IR library

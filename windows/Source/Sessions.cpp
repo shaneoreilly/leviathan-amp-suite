@@ -64,12 +64,11 @@ void Sessions::save(const Session& s) {
 
 std::unique_ptr<juce::AudioFormatWriter> Sessions::openWriter(const juce::File& f, double rate, int channels) {
     f.deleteFile();
-    auto stream = f.createOutputStream();
+    std::unique_ptr<juce::OutputStream> stream = f.createOutputStream();
     if (!stream) return nullptr;
-    juce::WavAudioFormat wav;
-    std::unique_ptr<juce::AudioFormatWriter> w(wav.createWriterFor(stream.get(), rate, (unsigned) channels, 32, {}, 0));
-    if (w) stream.release();
-    return w;
+    juce::WavAudioFormat wav;   // 32-bit float, like the Mac app's recordings
+    return wav.createWriterFor(stream, juce::AudioFormatWriterOptions{}.withSampleRate(rate).withNumChannels(channels).withBitsPerSample(32)
+                                         .withSampleFormat(juce::AudioFormatWriterOptions::SampleFormat::floatingPoint));
 }
 
 // MARK: - recording

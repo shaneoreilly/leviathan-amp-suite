@@ -57,7 +57,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed" }
           $exe = Get-Item "windows\dist\Leviathan-Setup-$env:VERSION.exe"
           $h = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
-          Set-Content -NoNewline "$($exe.FullName).sha256" "$h  $($exe.Name)`n"
+          Set-Content -NoNewline -Path ($exe.FullName + ".sha256") -Value ($h + "  " + $exe.Name + "`n")
           Get-ChildItem windows\dist
 
       - uses: actions/upload-artifact@v4

@@ -69,10 +69,13 @@ target_link_libraries(Leviathan PRIVATE
   juce::juce_recommended_lto_flags
   juce::juce_recommended_warning_flags)
 
+# Fast math only for the audio engine (it vectorises the cab convolution). Not app-wide: file parsing relies on
+# std::isfinite to reject malformed numbers, which fast math is allowed to optimise away.
 if(MSVC)
-  target_compile_options(Leviathan PRIVATE /fp:fast)
+  set_source_files_properties(Source/Dsp.cpp PROPERTIES COMPILE_OPTIONS "/fp:fast")
 else()
-  target_compile_options(Leviathan PRIVATE -ffast-math -Wno-shadow -Wno-float-equal)
+  set_source_files_properties(Source/Dsp.cpp PROPERTIES COMPILE_OPTIONS "-ffast-math")
+  target_compile_options(Leviathan PRIVATE -Wno-shadow -Wno-float-equal)
 endif()
 
 # Offline engine check: renders test signals through the C++ engine (compared against the Swift engine).
