@@ -52,7 +52,35 @@ std::unique_ptr<juce::TextButton> textButton(const juce::String& t, std::functio
 }
 } // namespace
 
+namespace {
+struct HelpStrip : juce::Component {
+    explicit HelpStrip(Model& m) : model(m) {}
+    void paint(juce::Graphics& g) override {
+        g.fillAll(theme::bar);
+        g.setColour(theme::line); g.fillRect(0, 0, getWidth(), 1);
+        auto r = getLocalBounds().reduced(14, 6);
+        g.setColour(theme::secondary);
+        g.drawEllipse(juce::Rectangle<float>((float) r.getX(), (float) r.getCentreY() - 7, 14, 14), 1.2f);
+        g.setFont(theme::font(10, true)); g.drawText("i", r.getX(), r.getCentreY() - 7, 14, 14, juce::Justification::centred);
+        r.removeFromLeft(24);
+        if (model.hoverText.isEmpty()) {
+            g.setFont(theme::font(12));
+            g.drawText(juce::String::fromUTF8("Hover over any control for an explanation. Scroll or drag a dial to change it; \xe2\x86\xba resets it."), r, juce::Justification::centredLeft, true);
+            return;
+        }
+        g.setColour(theme::text); g.setFont(theme::font(12, true));
+        const int tw = juce::GlyphArrangement::getStringWidthInt(theme::font(12, true), model.hoverTitle) + 12;
+        g.drawText(model.hoverTitle, r.removeFromLeft(tw), juce::Justification::centredLeft, true);
+        g.setColour(theme::secondary); g.setFont(theme::font(12));
+        g.drawFittedText(model.hoverText, r, juce::Justification::centredLeft, 2);
+    }
+    Model& model;
+};
+} // namespace
+
 RigView::RigView(Model& m) : model(m) {
+    helpStrip = std::make_unique<HelpStrip>(m);
+    addChildComponent(*helpStrip);
     addAndMakeVisible(viewport);
     viewport.setViewedComponent(&canvas, false);
     viewport.setScrollBarsShown(true, false);
@@ -60,9 +88,19 @@ RigView::RigView(Model& m) : model(m) {
     refresh();
 }
 
-void RigView::resized() { viewport.setBounds(getLocalBounds()); layout(); }
+void RigView::resized() {
+    auto r = getLocalBounds();
+    helpStrip->setVisible(model.explainOnHover);
+    if (model.explainOnHover) helpStrip->setBounds(r.removeFromBottom(44));
+    viewport.setBounds(r);
+    layout();
+}
 
-void RigView::timerCallback() { for (auto* c : live) c->repaint(); }
+void RigView::timerCallback() {
+    for (auto* c : live) c->repaint();
+    static juce::String shown = "-";
+    if (helpStrip->isVisible() && shown != model.hoverId) { shown = model.hoverId; helpStrip->repaint(); }
+}
 
 juce::String RigView::currentSignature() const {
     const auto& s = model.s();
@@ -70,6 +108,8 @@ juce::String RigView::currentSignature() const {
     auto chain = s.chain(); std::sort(chain.begin(), chain.end());
     for (int k : chain) sig.add("p" + juce::String(k));
     sig.add(model.collapsed.joinIntoString("|"));
+    sig.add(model.explainOnHover ? "help" : "nohelp"); sig.add(model.panelOrder.joinIntoString(","));
+    sig.add(model.inputDeviceName() + "/" + juce::String(model.inputChannelCount()));
     sig.add(s.s("capture")); sig.add(juce::String((int) model.captures.size()));
     sig.add(s.s("nam")); sig.add(model.namFiles.joinIntoString(",")); sig.add(model.namReady() ? "namok" : "");
     sig.add(s.b("wahAuto") ? "wa" : "wm");
@@ -105,7 +145,11 @@ void RigView::rebuild() {
     live.clear();
     panels.clear(); pedals.clear(); tunerView.reset(); pedalHeader.reset(); emptyPedals.reset(); tip.reset();
     if (model.tunerOn) { tunerView = makeTuner(); canvas.addAndMakeVisible(*tunerView); }
-    for (const auto& id : model.panelOrder) { auto p = makePanel(id); canvas.addAndMakeVisible(*p); panels[id] = std::move(p); }
+    for (const auto& id : model.panelOrder) {
+        if (id == "|") continue;   // row break
+        auto p = makePanel(id); canvas.addAndMakeVisible(*p); panels[id] = std::move(p);
+    }
+    if (helpStrip->isVisible() != model.explainOnHover) resized();
 
     // pedalboard header: chevron, title, add menu (A-Z)
     struct Header : juce::Component {
@@ -155,7 +199,10 @@ void RigView::layout() {
     const juce::Rectangle<int> full(padding, 0, w - 2 * padding, 0);
     if (tunerView) { tunerView->setBounds(full.getX(), y, full.getWidth(), 300); y += 312; }
     std::vector<UnitBox*> items;
-    for (const auto& id : model.panelOrder) if (auto it = panels.find(id); it != panels.end()) items.push_back(it->second.get());
+    for (const auto& id : model.panelOrder) {
+        if (id == "|") items.push_back(nullptr);
+        else if (auto it = panels.find(id); it != panels.end()) items.push_back(it->second.get());
+    }
     int used = 0;
     layoutGrid(items, { full.getX(), y, full.getWidth(), 0 }, used);
     y += used + 12;
@@ -180,8 +227,11 @@ std::unique_ptr<UnitBox> RigView::makePanel(const juce::String& id) {
     std::unique_ptr<UnitBox> box;
 
     if (id == "input") {
+        auto c = col(8);
+        c->add(inputPickers());
         auto r = row(); r->add(knob("Gain", "inGain", -24, 24, 0, dbSigned, "INPUT"));
-        box = std::make_unique<UnitBox>(m, "INPUT", std::move(r), "", "panel:input");
+        c->add(std::move(r));
+        box = std::make_unique<UnitBox>(m, "INPUT", std::move(c), "", "panel:input");
     } else if (id == "gate") {
         auto r = row();
         r->add(knob("Thresh", "gateThresh", -90, -20, -60, intUnit("dB"), "GATE"));
@@ -399,6 +449,27 @@ private:
     juce::StringArray hits;
 };
 } // namespace
+
+/// Interface and channel pickers for the Input panel (the same choices as Settings -> Audio).
+std::unique_ptr<juce::Component> RigView::inputPickers() {
+    auto& m = model;
+    auto c = col(6);
+    const auto names = m.inputDeviceNames();
+    auto dev = std::make_unique<Picker>((int) (190 * theme::W), [&m, names] { return names.indexOf(m.inputDeviceName()) + 1; },
+                                        [&m, names](int i) { if (juce::isPositiveAndBelow(i - 1, names.size())) m.setInputDevice(names[i - 1]); });
+    for (int i = 0; i < names.size(); ++i) dev->addItem(names[i], i + 1);
+    dev->setTextWhenNothingSelected(names.isEmpty() ? "No input device" : "Choose an interface");
+    dev->setTooltip(Model::explain("inputDevice"));
+    c->add(std::move(dev));
+    const int n = std::min(m.inputChannelCount(), 8);
+    if (n > 1) {
+        auto ch = std::make_unique<Picker>((int) (190 * theme::W), [&m] { return m.s().i("inputChannel") + 1; }, [&m](int i) { m.set("inputChannel", i - 1); });
+        for (int i = 0; i < n; ++i) ch->addItem("Channel " + juce::String(i + 1), i + 1);
+        ch->setTooltip(Model::explain("inputChannel"));
+        c->add(std::move(ch));
+    }
+    return c;
+}
 
 /// The IR library's current IR (click to search and pick), plus prev/next for quick auditioning.
 std::unique_ptr<juce::Component> RigView::irLibraryRow() {

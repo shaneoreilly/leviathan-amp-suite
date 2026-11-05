@@ -10,6 +10,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp Info.plist "$APP/Contents/Info.plist"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+cp ../shared/help/explanations.json "$APP/Contents/Resources/explanations.json"
 # bundled NAM captures (GPLv3, credits in shared/nam/captures/CREDITS.md)
 mkdir -p "$APP/Contents/Resources/NAM" && cp ../shared/nam/captures/*.nam ../shared/nam/captures/CREDITS.md ../shared/nam/captures/COPYING "$APP/Contents/Resources/NAM/"
 if [ -n "$VERSION" ]; then

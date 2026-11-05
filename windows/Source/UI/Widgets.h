@@ -66,9 +66,16 @@ public:
     void mouseDown(const juce::MouseEvent&) override;
     void mouseDrag(const juce::MouseEvent&) override;
     void mouseDoubleClick(const juce::MouseEvent&) override;
+    void mouseUp(const juce::MouseEvent&) override;
+    void mouseEnter(const juce::MouseEvent&) override;
+    void mouseExit(const juce::MouseEvent&) override;
+    void mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
     void sync() { overlay.sync(); repaint(); }
 private:
-    Model& model; juce::String label, key; double lo, hi, def; Fmt fmt; double dragStart = 0;
+    Model& model; juce::String label, key, scope; double lo, hi, def; Fmt fmt; double dragStart = 0;
+    juce::uint32 enteredAt = 0;
+    bool onReset = false;
+    juce::Rectangle<float> resetArea() const { return { (float) getWidth() / 2 - 11, 102, 22, 16 }; }
     LearnOverlay overlay;
     double value() const { return model.s().d(key); }
     juce::Rectangle<float> dial() const;
@@ -131,6 +138,8 @@ public:
     void paint(juce::Graphics&) override;
     void resized() override;
     void paintOverChildren(juce::Graphics&) override;
+    void mouseMove(const juce::MouseEvent&) override;
+    void mouseExit(const juce::MouseEvent&) override;
     juce::String title, onKey, dragId;
     bool isInterestedInDragSource(const SourceDetails& d) override;
     void itemDragEnter(const SourceDetails& d) override;
@@ -146,6 +155,7 @@ private:
 };
 
 /// Panels snap to a 24-column grid; expanded panels in a row share the row's height.
+/// A nullptr item starts a new row.
 void layoutGrid(std::vector<UnitBox*> items, juce::Rectangle<int> area, int& usedHeight, int columns = 24, int spacing = 12);
 
 /// Draws the Leviathan logo (white whale over the sea), strokes scaled to the size.

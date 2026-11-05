@@ -163,6 +163,20 @@ public:
     void toggleCollapsed(const juce::String& key);
     void setPanelOrder(const juce::StringArray& o);
 
+    /// Explanations on hover (Settings -> Appearance): shared/help/explanations.json, the same text as the Mac app.
+    bool explainOnHover = true;
+    void setExplainOnHover(bool on);
+    static juce::String explain(const juce::String& key);
+    juce::String hoverId, hoverTitle, hoverText;
+    void showHover(const juce::String& id, const juce::String& title, const juce::String& text);
+    void clearHover(const juce::String& id = {});
+
+    /// Input device and channel, for the Input panel (Settings -> Audio has the full device panel).
+    juce::StringArray inputDeviceNames();
+    juce::String inputDeviceName() const;
+    int inputChannelCount() const;
+    void setInputDevice(const juce::String& name);
+
     Screen screen = Screen::rig;
     void setScreen(Screen s) { screen = s; changed(); }
 

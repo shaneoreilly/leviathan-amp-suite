@@ -509,14 +509,19 @@ final class Model: ObservableObject {
     lazy var midi = Midi(model: self)
 
     // Rig layout (not part of presets): panel order and collapsed sections.
-    static let defaultPanels = ["input", "gate", "pitch", "amp", "master", "cab", "eq", "delay", "reverb"]
+    /// "|" starts a new row.
+    static let defaultPanels = ["input", "master", "gate", "pitch", "eq", "|", "amp", "cab", "reverb", "delay"]
     /// Each panel's UnitBox title (also its collapse key).
     static let panelTitles = ["input": "INPUT", "gate": "GATE", "pitch": "PITCH", "amp": "AMP", "master": "MASTER",
                               "cab": "CABINET", "eq": "GRAPHIC EQ", "delay": "DELAY", "reverb": "REVERB"]
     @Published var panelOrder: [String] = {
-        let saved = (UserDefaults.standard.stringArray(forKey: "panelOrder") ?? []).filter(Model.defaultPanels.contains)
+        let saved = (UserDefaults.standard.stringArray(forKey: "panelOrder2") ?? []).filter(Model.defaultPanels.contains)
         return saved + Model.defaultPanels.filter { !saved.contains($0) }
-    }() { didSet { UserDefaults.standard.set(panelOrder, forKey: "panelOrder") } }
+    }() { didSet { UserDefaults.standard.set(panelOrder, forKey: "panelOrder2") } }
+    /// Show an explanation of the control under the pointer, in a strip at the bottom of the rig.
+    @Published var explainOnHover = UserDefaults.standard.object(forKey: "explainOnHover") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(explainOnHover, forKey: "explainOnHover"); if !explainOnHover { HoverHelp.shared.clear() } }
+    }
     @Published var collapsed = Set(UserDefaults.standard.stringArray(forKey: "collapsed") ?? []) {
         didSet { UserDefaults.standard.set(Array(collapsed), forKey: "collapsed") }
     }
@@ -630,6 +635,7 @@ final class Model: ObservableObject {
     func toggle() { running ? stop() : start() }
 
     func start() {
+        if ProcessInfo.processInfo.environment["LEVIATHAN_NO_AUDIO"] != nil { return }   // UI testing: never open audio devices
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
         case .authorized: break
         case .notDetermined:
@@ -1119,10 +1125,25 @@ struct Knob: View {
                 value = min(max(drag.start! - g.translation.height / (fine ? 800 : 180) * span, range.lowerBound), range.upperBound)
             }.onEnded { _ in drag.start = nil })
             .simultaneousGesture(TapGesture(count: 2).onEnded { value = def })
-            .help("Drag up/down · Shift = fine · double-click resets")
+            .background(ScrollCatcher { d, fine in
+                value = min(max(value + Double(d) / (fine ? 2400 : 480) * span, range.lowerBound), range.upperBound)
+            })
+            .onHover { inside in
+                if inside { HoverHelp.shared.show(id: "\(scope)·\(label)", title: scope.isEmpty ? label : "\(scope) · \(label)", text: key.flatMap { EXPLAIN[$0] }) }
+                else { HoverHelp.shared.clear(id: "\(scope)·\(label)") }
+            }
+            .help("Drag or scroll · Shift = fine · double-click resets")
             .overlay { if let key { MidiLearnOverlay(armed: MidiArmed(key: key, name: "\(scope) · \(label)", lo: range.lowerBound, hi: range.upperBound, toggle: false)) } }
             Text(fmt(value)).font(.system(size: 11 * UI).monospacedDigit())
             Text(label.uppercased()).font(.system(size: 9 * UI, weight: .semibold)).foregroundStyle(.secondary).tracking(0.6)
+            Button { value = def } label: {
+                Image(systemName: "arrow.counterclockwise").font(.system(size: 9 * UI, weight: .semibold))
+                    .frame(width: 22 * Z, height: 14 * Z).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(value == def ? Color(white: 0.3) : color)
+            .disabled(value == def)
+            .help("Reset to \(fmt(def))")
         }
         .frame(width: 60 * W)
     }
@@ -1171,7 +1192,7 @@ struct UnitBox<Content: View>: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 CollapseChevron(key: title)
-                if let panelID {
+                if let panelID, panelID != "|" {
                     Grip().onDrag { drag.panel = panelID; return NSItemProvider(object: panelID as NSString) }
                 }
                 leading
@@ -1179,6 +1200,11 @@ struct UnitBox<Content: View>: View {
                 trailing
                 Spacer(minLength: 12)
                 if let on { Footswitch(on: on, color: color, key: onKey, name: title) }
+            }
+            .contentShape(Rectangle())
+            .onHover { inside in
+                let k = "panel:" + (panelID ?? (title == "PEDALS" ? "pedals" : ""))
+                if inside { HoverHelp.shared.show(id: "panel·" + title, title: title.capitalized, text: EXPLAIN[k]) } else { HoverHelp.shared.clear(id: "panel·" + title) }
             }
             if !folded {
                 content.opacity(on?.wrappedValue == false ? 0.4 : 1).environment(\.midiScope, title)
@@ -1352,6 +1378,7 @@ struct ContentView: View {
                         panelView(id).environment(\.panelID, id)
                             .onDrop(of: [.text], delegate: PanelDrop(target: id, m: m, drag: drag))
                             .layoutValue(key: FoldedKey.self, value: m.collapsed.contains(Model.panelTitles[id] ?? ""))
+                            .layoutValue(key: RowBreakKey.self, value: id == "|")
                     }
                 }
                 pedalboard
@@ -1360,6 +1387,7 @@ struct ContentView: View {
             }
             .padding(14)
         }
+        .safeAreaInset(edge: .bottom, spacing: 0) { if m.explainOnHover { HoverHelpStrip() } }
         .environmentObject(drag)
     }
 
@@ -1374,6 +1402,7 @@ struct ContentView: View {
         case "eq": AnyView(eq)
         case "delay": AnyView(delay)
         case "reverb": AnyView(reverb)
+        case "|": AnyView(Color.clear.frame(width: 0, height: 0))
         default: AnyView(EmptyView())
         }
     }
@@ -1421,7 +1450,23 @@ struct ContentView: View {
     // MARK: units
     var inputUnit: some View {
         UnitBox(title: "INPUT") {
-            Knob(label: "Gain", value: $m.s.inGain, key: "inGain", range: -24...24, def: 0, fmt: { String(format: "%+.1f dB", $0) }, color: ch)
+            VStack(spacing: 8) {
+                Picker("", selection: $m.inputUID) { ForEach(m.inputs) { Text($0.name).tag($0.uid) } }
+                    .labelsHidden().frame(width: 190 * W)
+                    .onHover { inside in
+                        if inside { HoverHelp.shared.show(id: "inputDevice", title: "Input · Interface", text: EXPLAIN["inputDevice"]) } else { HoverHelp.shared.clear(id: "inputDevice") }
+                    }
+                if (m.input?.ins ?? 1) > 1 {
+                    Picker("", selection: $m.s.inputChannel) {
+                        ForEach(0..<min(m.input?.ins ?? 1, 8), id: \.self) { Text("Channel \($0 + 1)").tag($0) }
+                    }
+                    .labelsHidden().frame(width: 190 * W)
+                    .onHover { inside in
+                        if inside { HoverHelp.shared.show(id: "inputChannel", title: "Input · Channel", text: EXPLAIN["inputChannel"]) } else { HoverHelp.shared.clear(id: "inputChannel") }
+                    }
+                }
+                Knob(label: "Gain", value: $m.s.inGain, key: "inGain", range: -24...24, def: 0, fmt: { String(format: "%+.1f dB", $0) }, color: ch)
+            }
         }
     }
 
@@ -1788,3 +1833,95 @@ struct LeviathanApp: App {
     }
 }
 
+
+
+// MARK: - Explanations on hover (Settings → Appearance), text shared with the Windows app
+
+let EXPLAIN: [String: String] = {
+    guard let u = Bundle.main.url(forResource: "explanations", withExtension: "json"), let d = try? Data(contentsOf: u),
+          let j = try? JSONSerialization.jsonObject(with: d) as? [String: String] else { return [:] }
+    return j
+}()
+
+/// What the pointer is over. Kept out of Model so hovering redraws only the strip.
+@MainActor
+final class HoverHelp: ObservableObject {
+    static let shared = HoverHelp()
+    @Published private(set) var title = ""
+    @Published private(set) var text = ""
+    private var id = ""
+    func show(id: String, title: String, text: String?) {
+        guard let text, !text.isEmpty else { return }
+        self.id = id; self.title = title; self.text = text
+    }
+    /// Clears only if `id` is still what's shown (moving from one control straight onto another keeps the new one).
+    func clear(id: String? = nil) {
+        if let id, id != self.id { return }
+        self.id = ""; title = ""; text = ""
+    }
+}
+
+struct HoverHelpStrip: View {
+    @ObservedObject private var h = HoverHelp.shared
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Image(systemName: "info.circle").foregroundStyle(.secondary)
+            if h.text.isEmpty {
+                Text("Hover over any control for an explanation. Scroll or drag a dial to change it; ↺ resets it.").foregroundStyle(.secondary)
+            } else {
+                Text(h.title).fontWeight(.semibold)
+                Text(h.text).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .font(.system(size: 12 * UI))
+        .lineLimit(2)
+        .padding(.horizontal, 14).padding(.vertical, 8)
+        .frame(minHeight: 44 * Z, alignment: .leading)
+        .background(Color(white: 0.07))
+        .overlay(alignment: .top) { Rectangle().fill(line).frame(height: 1) }
+    }
+}
+
+// MARK: - Scroll wheel on dials
+
+/// Turns scroll-wheel / trackpad scrolling over a view into knob changes. A scroll gesture that started elsewhere
+/// (for example scrolling the page) passes over dials without turning them, and momentum never turns them.
+struct ScrollCatcher: NSViewRepresentable {
+    let onScroll: (CGFloat, Bool) -> Void
+    func makeNSView(context: Context) -> CatcherView { let v = CatcherView(); v.onScroll = onScroll; return v }
+    func updateNSView(_ v: CatcherView, context: Context) { v.onScroll = onScroll }
+
+    final class CatcherView: NSView {
+        var onScroll: ((CGFloat, Bool) -> Void)?
+        private var monitor: Any?
+        private static var owner: ObjectIdentifier?
+        private static var ownerStamp: TimeInterval = -1
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }   // clicks and drags go to the knob
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let monitor { NSEvent.removeMonitor(monitor); self.monitor = nil }
+            guard window != nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] e in
+                guard let self, let w = self.window, e.window === w, !self.isHiddenOrHasHiddenAncestor else { return e }
+                let inside = self.bounds.contains(self.convert(e.locationInWindow, from: nil))
+                if e.momentumPhase != [] { return e }
+                if e.phase == .began || e.phase == .mayBegin {
+                    if inside { Self.owner = ObjectIdentifier(self); Self.ownerStamp = e.timestamp }
+                    else if Self.ownerStamp != e.timestamp { Self.owner = nil; Self.ownerStamp = e.timestamp }
+                    return inside ? nil : e
+                }
+                let mine = e.phase == [] ? inside : Self.owner == ObjectIdentifier(self)
+                guard mine else { return e }
+                var d = e.scrollingDeltaY != 0 ? e.scrollingDeltaY : -e.scrollingDeltaX   // Shift + mouse wheel scrolls sideways
+                if !e.hasPreciseScrollingDeltas { d *= 8 }
+                if e.isDirectionInvertedFromDevice { d = -d }   // now > 0 = fingers or wheel moving up/away: turn the dial up
+                self.onScroll?(d, e.modifierFlags.contains(.shift))
+                return nil
+            }
+        }
+        deinit { if let monitor { NSEvent.removeMonitor(monitor) } }
+    }
+}

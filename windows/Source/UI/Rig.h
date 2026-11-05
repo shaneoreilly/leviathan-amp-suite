@@ -41,6 +41,7 @@ private:
     std::unique_ptr<juce::Component> tunerView, pedalHeader, emptyPedals, tip;
     juce::String signature;
     std::vector<juce::Component*> live;     // repainted ~15x/s (meters, readouts)
+    std::unique_ptr<juce::Component> helpStrip;   // explanation of the control under the pointer
 
     juce::String currentSignature() const;
     void rebuild();
@@ -49,6 +50,7 @@ private:
     void timerCallback() override;
 
     std::unique_ptr<UnitBox> makePanel(const juce::String& id);
+    std::unique_ptr<juce::Component> inputPickers();
     std::unique_ptr<UnitBox> makePedal(PedalKind k);
     std::unique_ptr<juce::Component> makeTuner();
     std::unique_ptr<juce::Component> irLibraryRow();

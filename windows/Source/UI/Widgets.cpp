@@ -142,13 +142,13 @@ void LearnOverlay::mouseUp(const juce::MouseEvent& e) {
 // MARK: - knob
 
 Knob::Knob(Model& m, juce::String l, juce::String k, double low, double high, double d, Fmt f, juce::String scope)
-    : model(m), label(std::move(l)), key(std::move(k)), lo(low), hi(high), def(d), fmt(std::move(f)),
+    : model(m), label(std::move(l)), key(std::move(k)), scope(scope), lo(low), hi(high), def(d), fmt(std::move(f)),
       overlay(m, MidiArmed { key, scope + juce::String::fromUTF8(" \xc2\xb7 ") + label, low, high, false }, 10) {
     if (!fmt) fmt = [](double v) { return juce::String(v * 10, 1); };
     addAndMakeVisible(overlay);
     overlay.sync();
-    setPref(*this, (int) (60 * theme::W), 104);
-    setTooltip(juce::String::fromUTF8("Drag up/down \xc2\xb7 Shift = fine \xc2\xb7 double-click resets"));
+    setPref(*this, (int) (60 * theme::W), 120);
+    setTooltip(juce::String::fromUTF8("Drag or scroll \xc2\xb7 Shift = fine \xc2\xb7 double-click or \xe2\x86\xba resets"));
 }
 
 juce::Rectangle<float> Knob::dial() const { return juce::Rectangle<float>((float) getWidth() / 2 - 33, 0, 66, 66); }
@@ -180,11 +180,38 @@ void Knob::paint(juce::Graphics& g) {
     g.drawText(fmt(value()), juce::Rectangle<float>(0, 68, (float) getWidth(), 18), juce::Justification::centred);
     g.setColour(theme::secondary); g.setFont(theme::font(9, true, 0.6f));
     g.drawText(label.toUpperCase(), juce::Rectangle<float>(0, 86, (float) getWidth(), 16), juce::Justification::centred);
+    // reset: bright when the knob is away from its default
+    const bool atDef = std::abs(value() - def) < 1e-9;
+    g.setColour(atDef ? juce::Colour(0xff4d4d4d) : acc);
+    g.strokePath(IconButton::pathFor(IconButton::reset, resetArea().withSizeKeepingCentre(13, 13)), juce::PathStrokeType(1.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 }
 
-void Knob::mouseDown(const juce::MouseEvent&) { dragStart = value(); }
+void Knob::mouseDown(const juce::MouseEvent& e) { dragStart = value(); onReset = resetArea().expanded(4).contains(e.position); }
+
+void Knob::mouseUp(const juce::MouseEvent& e) {
+    if (onReset && !e.mouseWasDraggedSinceMouseDown() && resetArea().expanded(4).contains(e.position)) model.set(key, def);
+    onReset = false;
+}
+
+void Knob::mouseEnter(const juce::MouseEvent&) {
+    enteredAt = juce::Time::getMillisecondCounter();
+    model.showHover(scope + label, scope.isEmpty() ? label : scope.substring(0, 1) + scope.substring(1).toLowerCase() + juce::String::fromUTF8(" \xc2\xb7 ") + label, Model::explain(key));
+}
+
+void Knob::mouseExit(const juce::MouseEvent&) { model.clearHover(scope + label); }
+
+/// Scroll to turn. While the page is scrolling, dials slide under the pointer: those only take the wheel once the
+/// pointer has rested on them briefly, and momentum scrolling never turns them.
+void Knob::mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& w) {
+    if (w.isInertial || juce::Time::getMillisecondCounter() - enteredAt < 250) { Component::mouseWheelMove(e, w); return; }
+    float d = std::abs(w.deltaY) >= std::abs(w.deltaX) ? w.deltaY : -w.deltaX;   // Shift + wheel scrolls sideways on some systems
+    if (w.isReversed) d = -d;
+    const double step = e.mods.isShiftDown() ? 0.05 : 0.25;   // a mouse-wheel notch (~0.1) moves ~2.5% of the range
+    model.set(key, juce::jlimit(lo, hi, value() + (double) d * step * (hi - lo)));
+}
 
 void Knob::mouseDrag(const juce::MouseEvent& e) {
+    if (onReset) return;
     const bool fine = e.mods.isShiftDown();
     const double v = juce::jlimit(lo, hi, dragStart - e.getDistanceFromDragStartY() / (fine ? 800.0 : 180.0) * (hi - lo));
     model.set(key, v);
@@ -362,6 +389,14 @@ void UnitBox::paintOverChildren(juce::Graphics& g) {
     }
 }
 
+void UnitBox::mouseMove(const juce::MouseEvent& e) {
+    if (e.y > pad + headerH + 4) { model.clearHover("panel:" + title); return; }
+    const auto key = dragId.startsWith("panel:") ? dragId : juce::String("panel:pedals");
+    model.showHover("panel:" + title, title.substring(0, 1) + title.substring(1).toLowerCase(), Model::explain(key));
+}
+
+void UnitBox::mouseExit(const juce::MouseEvent&) { model.clearHover("panel:" + title); }
+
 void UnitBox::resized() {
     int x = pad;
     chevron.setBounds(x, pad + (headerH - 18) / 2, 14, 18); x += 18;
@@ -408,6 +443,7 @@ void layoutGrid(std::vector<UnitBox*> items, juce::Rectangle<int> area, int& use
     std::vector<std::vector<Item>> rows(1);
     int col = 0;
     for (auto* b : items) {
+        if (b == nullptr) { if (col > 0) { rows.emplace_back(); col = 0; } continue; }
         const auto s = b->idealSize();
         const int span = std::min(columns, std::max(1, (int) std::ceil(((float) s.x + (float) spacing) / (unit + (float) spacing) - 0.001f)));
         if (col > 0 && col + span > columns) { rows.emplace_back(); col = 0; }

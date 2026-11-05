@@ -83,7 +83,11 @@ add_custom_command(TARGET Leviathan POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/../shared/nam/captures"
           "$<IF:$<BOOL:${APPLE}>,$<TARGET_BUNDLE_CONTENT_DIR:Leviathan>/Resources/NAM,$<TARGET_FILE_DIR:Leviathan>/NAM>")
 
+# control explanations, shared with the Mac app
+juce_add_binary_data(LeviathanData SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/../shared/help/explanations.json")
+
 target_link_libraries(Leviathan PRIVATE
+  LeviathanData
   levnam
   juce::juce_gui_extra
   juce::juce_audio_utils

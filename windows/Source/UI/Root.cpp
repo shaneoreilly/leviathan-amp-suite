@@ -96,13 +96,13 @@ struct Meters : juce::Component {
 
 struct TopBar : juce::Component {
     explicit TopBar(Model& m) : model(m),
-        power(""), rec(""), tuner("Tuner"), midi("MIDI"), save("Save"), presetMenu(""),
+        power(""), rec(""), tuner("Tuner"), midi("MIDI"), save("Save"), saveAs("Save as..."), presetMenu(""),
         metro(IconButton::metronome, [&m] { m.setMetro(!m.metroOn); }, 16),
         prev(IconButton::chevronLeft, [&m] { m.stepPreset(-1); }, 13), next(IconButton::chevronRight, [&m] { m.stepPreset(1); }, 13),
         tap(m, "Tap", [&m] { m.tap(); }, MidiArmed::action("@tap", "Tap tempo")), bpm(""), meters(m),
         tunerLearn(m, MidiArmed::action("@tuner", "Tuner"), 6), metroLearn(m, MidiArmed::action("@metro", "Metronome"), 6),
         prevLearn(m, MidiArmed::action("@prev", "Previous preset"), 6), nextLearn(m, MidiArmed::action("@next", "Next preset"), 6) {
-        for (auto* c : std::initializer_list<juce::Component*> { &power, &rec, &tuner, &midi, &save, &presetMenu, &metro, &prev, &next, &tap, &bpm, &meters })
+        for (auto* c : std::initializer_list<juce::Component*> { &power, &rec, &tuner, &midi, &save, &saveAs, &presetMenu, &metro, &prev, &next, &tap, &bpm, &meters })
             addAndMakeVisible(c);
         for (auto* o : { &tunerLearn, &metroLearn, &prevLearn, &nextLearn }) addAndMakeVisible(o);
         power.onClick = [&m] { m.toggle(); };
@@ -111,6 +111,9 @@ struct TopBar : juce::Component {
         midi.onClick = [&m] { m.midi->setLearning(!m.midi->learning); if (m.midi->learning) m.setScreen(Screen::rig); };
         midi.setTooltip("MIDI learn: click a knob or switch, then move a control on your MIDI device");
         save.onClick = [&m] { m.saveCurrent(); }; save.setTooltip("Save changes to this preset (Ctrl+S)");
+        saveAs.setButtonText("Save as" + juce::String::fromUTF8("\xe2\x80\xa6"));
+        saveAs.onClick = [&m] { askText("Save preset as", m.presetName.isEmpty() ? juce::String() : m.presetName + " copy", "Save", [&m](juce::String n) { m.savePreset(n); }); };
+        saveAs.setTooltip("Save as a new preset, leaving this one unchanged (Ctrl+Shift+S)");
         metro.setTooltip("Metronome"); prev.setTooltip("Previous preset"); next.setTooltip("Next preset");
         bpm.onClick = [this] { showTempo(); }; bpm.setTooltip("Tempo and metronome settings");
         presetMenu.onClick = [this] { showPresetMenu(); };
@@ -139,6 +142,7 @@ struct TopBar : juce::Component {
         place(power, 80); place(meters, 170, 36); x += 100;   // latency text
         int r = getWidth() - 14;
         auto placeR = [&](juce::Component& c, int w, int h = 28) { r -= w; c.setBounds(r, (getHeight() - h) / 2, w, h); r -= 10; };
+        placeR(saveAs, 80);
         placeR(save, 60);
         placeR(next, 26); nextLearn.setBounds(next.getBounds());
         placeR(presetMenu, juce::jlimit(140, 300, juce::GlyphArrangement::getStringWidthInt(theme::font(10), presetMenu.getButtonText()) + 40));
@@ -211,7 +215,7 @@ struct TopBar : juce::Component {
         juce::CallOutBox::launchAsynchronously(std::make_unique<Tempo>(model), bpm.getScreenBounds(), nullptr);
     }
     Model& model;
-    juce::TextButton power, rec, tuner, midi, save, presetMenu;
+    juce::TextButton power, rec, tuner, midi, save, saveAs, presetMenu;
     IconButton metro, prev, next;
     ActionButton tap;
     juce::TextButton bpm;
@@ -545,7 +549,9 @@ struct SettingsScreen : Screen_ {
         followAmp.setButtonText("Follow amp channel"); followAmp.onClick = [this] { model.setAccent(std::nullopt); };
         zoomMinus.setButtonText(juce::String::fromUTF8("\xe2\x88\x92")); zoomMinus.onClick = [this] { model.zoomStep(-1); };
         zoomPlus.setButtonText("+"); zoomPlus.onClick = [this] { model.zoomStep(1); };
-        for (auto* c : std::initializer_list<juce::Component*> { &followAmp, &zoomMinus, &zoomPlus }) look.addAndMakeVisible(c);
+        explain.setButtonText("Explain controls on hover (a strip at the bottom of the rig shows what the dial or section under the pointer does)");
+        explain.onClick = [this] { model.setExplainOnHover(explain.getToggleState()); };
+        for (auto* c : std::initializer_list<juce::Component*> { &followAmp, &zoomMinus, &zoomPlus, &explain }) look.addAndMakeVisible(c);
 
         // tuner
         a4.setSliderStyle(juce::Slider::IncDecButtons); a4.setRange(430, 450, 1); a4.setTextValueSuffix(" Hz");
@@ -613,6 +619,7 @@ struct SettingsScreen : Screen_ {
         tuning.setSelectedId(m.tuningIndex + 1, juce::dontSendNotification);
         followAmp.setEnabled(m.accentPick.has_value());
         autoUpd.setToggleState(m.updater->autoCheck, juce::dontSendNotification);
+        explain.setToggleState(m.explainOnHover, juce::dontSendNotification);
         checkNow.setEnabled(!m.updater->busy());
         const bool avail = m.updater->phase == Updater::Phase::available;
         installB.setVisible(avail); pageB.setVisible(m.updater->release.has_value()); notes.setVisible(avail && notes.getText().isNotEmpty());
@@ -644,9 +651,10 @@ struct SettingsScreen : Screen_ {
         // appearance
         { int sx = 192; for (auto& b : swatchButtons) { b->setBounds(sx, 48, 24, 24); sx += 30; } followAmp.setBounds(sx + 10, 46, 170, 28); }
         zoomMinus.setBounds(192, 86, 30, 28); zoomPlus.setBounds(290, 86, 30, 28);
-        look.labels = { { 46, "Accent colour" }, { 86, "Zoom" } };
+        explain.setBounds(192, 126, 760, 28);
+        look.labels = { { 46, "Accent colour" }, { 86, "Zoom" }, { 126, "Explanations" } };
         look.extra = [this](juce::Graphics& g) { g.setColour(theme::text); g.drawText(juce::String(juce::roundToInt(model.zoom * 100)) + "%", 222, 86, 68, 28, juce::Justification::centred); };
-        group(look, 130);
+        group(look, 170);
         a4.setBounds(192, 44, 160, 28); tuning.setBounds(192, 80, 320, 28);
         tun.labels = { { 44, "Reference (A4)" }, { 80, "Guitar tuning" } };
         group(tun, 124);
@@ -821,6 +829,7 @@ struct SettingsScreen : Screen_ {
     juce::ComboBox inputCh; AudioInfo audioInfo { model };
     std::vector<std::unique_ptr<Swatch>> swatchButtons;
     juce::TextButton followAmp, zoomMinus, zoomPlus;
+    juce::ToggleButton explain;
     juce::Slider a4; juce::ComboBox tuning;
     juce::TextButton checkNow, installB, pageB; juce::ToggleButton autoUpd; juce::TextEditor notes;
     double progressValue = 0; juce::ProgressBar updProgress { progressValue };
@@ -930,6 +939,10 @@ bool Root::keyPressed(const juce::KeyPress& k) {
     const bool cmd = k.getModifiers().isCommandDown();
     if (k == juce::KeyPress::spaceKey && !cmd) { model.toggle(); return true; }
     if (cmd && k.getKeyCode() == 'R') { model.sessions->toggleRecord(); return true; }
+    if (cmd && k.getKeyCode() == 'S' && k.getModifiers().isShiftDown()) {
+        askText("Save preset as", model.presetName.isEmpty() ? juce::String() : model.presetName + " copy", "Save", [this](juce::String n) { model.savePreset(n); });
+        return true;
+    }
     if (cmd && k.getKeyCode() == 'S') { model.saveCurrent(); return true; }
     if (cmd && (k.getKeyCode() == '=' || k.getKeyCode() == '+')) { model.zoomStep(1); return true; }
     if (cmd && k.getKeyCode() == '-') { model.zoomStep(-1); return true; }

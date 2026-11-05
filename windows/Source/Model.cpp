@@ -1,4 +1,5 @@
 #include "Model.h"
+#include <BinaryData.h>
 #include "Sessions.h"
 #include "Midi.h"
 #include "Updater.h"
@@ -6,7 +7,8 @@
 namespace lev {
 
 const std::vector<double> Model::zoomSteps = { 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.25, 1.4, 1.6 };
-static const juce::StringArray defaultPanels { "input", "gate", "pitch", "amp", "master", "cab", "eq", "delay", "reverb" };
+/// "|" starts a new row.
+static const juce::StringArray defaultPanels { "input", "master", "gate", "pitch", "eq", "|", "amp", "cab", "reverb", "delay" };
 static const juce::Colour channelColours[3] = { juce::Colour::fromFloatRGBA(0.35f, 0.7f, 1, 1), juce::Colour::fromFloatRGBA(0.91f, 0.57f, 0.23f, 1),
                                                 juce::Colour::fromFloatRGBA(1, 0.3f, 0.3f, 1) };
 
@@ -35,8 +37,9 @@ Model::Model() {
     bpm = p.getDoubleValue("bpm", 120); beatsPerBar = p.getIntValue("beatsPerBar", 4); metroVol = p.getDoubleValue("metroVol", -12);
     if (p.containsKey("accent")) accentPick = juce::Colour::fromString(p.getValue("accent"));
     zoom = p.getDoubleValue("zoom", 1.0);
+    explainOnHover = p.getBoolValue("explainOnHover", true);
     {
-        auto saved = juce::StringArray::fromTokens(p.getValue("panelOrder"), ",", "");
+        auto saved = juce::StringArray::fromTokens(p.getValue("panelOrder2"), ",", "");
         for (const auto& id : saved) if (defaultPanels.contains(id)) panelOrder.addIfNotAlreadyThere(id);
         for (const auto& id : defaultPanels) panelOrder.addIfNotAlreadyThere(id);
     }
@@ -140,7 +143,8 @@ void Model::saveState() {
     p.setValue("bpm", bpm); p.setValue("beatsPerBar", beatsPerBar); p.setValue("metroVol", metroVol);
     if (accentPick) p.setValue("accent", accentPick->toString()); else p.removeValue("accent");
     p.setValue("zoom", zoom);
-    p.setValue("panelOrder", panelOrder.joinIntoString(","));
+    p.setValue("panelOrder2", panelOrder.joinIntoString(","));
+    p.setValue("explainOnHover", explainOnHover);
     p.setValue("collapsed", collapsed.joinIntoString("\n"));
     p.setValue("favorites", favorites.joinIntoString("\n"));
     if (auto xml = devices.createStateXml()) p.setValue("audioState", xml->toString());
@@ -813,5 +817,50 @@ void Model::toggleCollapsed(const juce::String& key) {
 }
 
 void Model::setPanelOrder(const juce::StringArray& o) { panelOrder = o; saveState(); changed(); }
+
+// MARK: - explanations on hover
+
+juce::String Model::explain(const juce::String& key) {
+    static const juce::var all = juce::JSON::parse(juce::String::fromUTF8(BinaryData::explanations_json, BinaryData::explanations_jsonSize));
+    return all.getProperty(juce::Identifier(key.isEmpty() ? juce::String("_") : key), {}).toString();
+}
+
+void Model::showHover(const juce::String& id, const juce::String& title, const juce::String& text) {
+    if (!explainOnHover || text.isEmpty()) return;
+    hoverId = id; hoverTitle = title; hoverText = text;
+}
+
+void Model::clearHover(const juce::String& id) {
+    if (id.isNotEmpty() && id != hoverId) return;
+    hoverId.clear(); hoverTitle.clear(); hoverText.clear();
+}
+
+void Model::setExplainOnHover(bool on) { explainOnHover = on; clearHover(); saveState(); changed(); }
+
+// MARK: - input device (Input panel)
+
+juce::StringArray Model::inputDeviceNames() {
+    auto* t = devices.getCurrentDeviceTypeObject();
+    return t ? t->getDeviceNames(true) : juce::StringArray();
+}
+
+juce::String Model::inputDeviceName() const { return devices.getAudioDeviceSetup().inputDeviceName; }
+
+int Model::inputChannelCount() const {
+    if (auto* d = devices.getCurrentAudioDevice()) return d->getInputChannelNames().size();
+    return 0;
+}
+
+void Model::setInputDevice(const juce::String& name) {
+    auto setup = devices.getAudioDeviceSetup();
+    if (setup.inputDeviceName == name) return;
+    setup.inputDeviceName = name;
+    if (auto* t = devices.getCurrentDeviceTypeObject(); t && !t->hasSeparateInputsAndOutputs()) setup.outputDeviceName = name;   // ASIO: one device
+    setup.useDefaultInputChannels = true;
+    const auto err = devices.setAudioDeviceSetup(setup, true);
+    if (err.isNotEmpty()) status = "Couldn't open " + name + ": " + err;
+    restartAudio();
+    changed();
+}
 
 } // namespace lev

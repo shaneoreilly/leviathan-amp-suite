@@ -147,6 +147,8 @@ struct TopBar: View {
                     .overlay { MidiLearnOverlay(armed: .action("@next", "Next preset"), cornerRadius: 6) }
             }
             Button("Save") { m.saveCurrent() }.keyboardShortcut("s").disabled(!m.presetModified).help("Save changes to this preset (⌘S)")
+            Button("Save as…") { m.newPresetName = m.presetName.isEmpty ? "" : m.presetName + " copy"; m.savingPreset = true }
+                .keyboardShortcut("s", modifiers: [.command, .shift]).help("Save as a new preset, leaving this one unchanged (⇧⌘S)")
         }
         .lineLimit(1)
         .padding(.horizontal, 14).padding(.vertical, 10)
@@ -537,6 +539,10 @@ struct SettingsView: View {
                         }
                         Button("Follow amp channel") { m.accentRGB = nil }.disabled(m.accentRGB == nil)
                     }
+                    row("Explanations") {
+                        Toggle("Explain controls on hover", isOn: $m.explainOnHover)
+                        Text("Shows what the dial or section under the pointer does, in a strip at the bottom of the rig.").foregroundStyle(.secondary)
+                    }
                     row("Zoom") {
                         Button { m.zoomStep(-1) } label: { Image(systemName: "minus") }
                         Text("\(Int((m.zoom * 100).rounded()))%").monospacedDigit().frame(width: 60 * Z)
@@ -629,6 +635,8 @@ struct SettingsView: View {
 
 /// Collapsed panels keep their header height instead of stretching to the row.
 struct FoldedKey: LayoutValueKey { static let defaultValue = false }
+/// A zero-size item that starts a new row ("|" in the panel order).
+struct RowBreakKey: LayoutValueKey { static let defaultValue = false }
 
 /// Each item spans as many columns as its natural width needs; items wrap to a new row when the columns run out.
 /// Expanded items in a row share the row's height, so tops and bottoms line up too.
@@ -644,6 +652,7 @@ struct GridFlow: Layout {
         let u = unit(width)
         var rows: [[Item]] = [[]], col = 0
         for (i, v) in subviews.enumerated() {
+            if v[RowBreakKey.self] { if col > 0 { rows.append([]); col = 0 }; continue }
             let s = v.sizeThatFits(.unspecified)
             let span = min(columns, max(1, Int(((s.width + spacing) / (u + spacing) - 0.001).rounded(.up))))
             if col > 0 && col + span > columns { rows.append([]); col = 0 }
@@ -662,6 +671,7 @@ struct GridFlow: Layout {
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         let u = unit(bounds.width)
+        for v in subviews where v[RowBreakKey.self] { v.place(at: bounds.origin, proposal: .zero) }
         var y = bounds.minY
         for row in rows(bounds.width, subviews) {
             let rh = row.map(\.size.height).max() ?? 0

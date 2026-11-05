@@ -111,6 +111,28 @@ Most of the delay you feel comes from the audio devices, not the DSP. The full r
 
 The latency figure in the top bar turns orange above 15 ms. Hover over it for the breakdown.
 
+## Where to get amp captures and cab IRs
+
+Leviathan plays two kinds of file:
+
+| Kind | File | What it is | Add it with |
+| --- | --- | --- | --- |
+| **NAM capture** | `.nam` | A neural model of a real amp, pedal or full rig | **Amp → Add .nam…** |
+| **Impulse response (IR)** | `.wav` | A speaker cabinet and microphone (or a band's tone curve) | **Cabinet → Add IRs…** (files or folders) or **IR file…** |
+
+**NAM captures (`.nam`)**
+- [TONE3000](https://www.tone3000.com): the largest free library, with thousands of amps, pedals and rigs. Filter by **NAM**; tones marked **IR** download as WAV cab files instead.
+- [pelennor2170/NAM_models](https://github.com/pelennor2170/NAM_models): a big community collection on GitHub, and the source of the captures bundled with Leviathan. **Code → Download ZIP** gets them all.
+- [Neural Amp Modeler](https://www.neuralampmodeler.com): the project behind the format, with links to more captures and to the trainer for capturing your own amp.
+
+**Cabinet IRs (`.wav`)**
+- [TONE3000](https://www.tone3000.com): free cab IRs and band-tone IR packs (filter by **IR**).
+- [God's Cab](https://wilkinsonaudio.com/products/gods-cab) by Wilkinson Audio: a free multi-mic Mesa 4x12 pack; Leviathan has a dedicated browser for it (see below).
+- [Seacow Cabs](https://www.seacowcabs.com) and [OwnHammer](https://www.ownhammer.com): free and paid cab packs.
+- [ML Sound Lab](https://ml-sound-lab.com) and [York Audio](https://www.yorkaudio.com): more free and paid cab packs.
+
+Amp-only captures need a cab IR after them. Full-rig captures already include a cab, so switch Leviathan's Cabinet off for those.
+
 ## NAM captures
 
 - **Pick a capture** from the amp's model picker. **Input** sets how hard you hit it; **Output** sets its level.
