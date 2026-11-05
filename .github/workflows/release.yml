@@ -30,6 +30,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Use the newest Xcode
+        # the runner's default Swift can time out type-checking SwiftUI view bodies
+        run: |
+          X=$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)
+          sudo xcode-select -s "$X"
+          swiftc --version
+
       - name: Version
         run: |
           V="${{ github.event.inputs.version }}"

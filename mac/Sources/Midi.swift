@@ -209,24 +209,47 @@ struct MidiLearnOverlay: View {
     var cornerRadius: CGFloat = 10
 
     var body: some View {
-        let isArmed = midi.armed == armed, mapped = midi.map(for: armed.key)
-        if midi.learning {
-            RoundedRectangle(cornerRadius: cornerRadius)
-                .fill(isArmed ? Color.accentColor.opacity(0.35) : mapped != nil ? Color.accentColor.opacity(0.15) : Color.white.opacity(0.04))
-                .overlay(RoundedRectangle(cornerRadius: cornerRadius)
-                    .stroke(isArmed ? Color.accentColor : Color.white.opacity(0.35), style: StrokeStyle(lineWidth: isArmed ? 2 : 1, dash: isArmed ? [] : [3, 3])))
-                .overlay {
-                    Text(isArmed ? "move a\ncontrol" : mapped.map { "CC \($0.cc)" } ?? "")
-                        .font(.system(size: 9 * UI, weight: .bold)).multilineTextAlignment(.center)
-                        .padding(2).background(Color.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 3))
-                        .opacity(isArmed || mapped != nil ? 1 : 0)
-                }
-                .contentShape(Rectangle())
-                .onTapGesture { midi.arm(armed) }
-                .contextMenu { if mapped != nil { Button("Forget MIDI") { midi.forget(armed.key) } } }
-                .help(mapped.map { "\(armed.name): CC \($0.cc), channel \($0.channel + 1). Click, then move another control to reassign." }
-                      ?? "Click, then move a control on your MIDI device")
-        }
+        if midi.learning { box } else { EmptyView() }
+    }
+
+    // Split into small typed pieces: long chained ternaries here time out older Swift type checkers (CI).
+    private var isArmed: Bool { midi.armed == armed }
+    private var mapped: MidiMap? { midi.map(for: armed.key) }
+
+    private var fillColor: Color {
+        if isArmed { return Color.accentColor.opacity(0.35) }
+        if mapped != nil { return Color.accentColor.opacity(0.15) }
+        return Color.white.opacity(0.04)
+    }
+
+    private var label: String {
+        if isArmed { return "move a\ncontrol" }
+        if let m = mapped { return "CC \(m.cc)" }
+        return ""
+    }
+
+    private var tip: String {
+        guard let m = mapped else { return "Click, then move a control on your MIDI device" }
+        return "\(armed.name): CC \(m.cc), channel \(m.channel + 1). Click, then move another control to reassign."
+    }
+
+    private var box: some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius)
+        let stroke: Color = isArmed ? Color.accentColor : Color.white.opacity(0.35)
+        let style = StrokeStyle(lineWidth: isArmed ? 2 : 1, dash: isArmed ? [] : [3, 3])
+        let showLabel = isArmed || mapped != nil
+        return shape.fill(fillColor)
+            .overlay(shape.stroke(stroke, style: style))
+            .overlay {
+                Text(label)
+                    .font(.system(size: 9 * UI, weight: .bold)).multilineTextAlignment(.center)
+                    .padding(2).background(Color.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 3))
+                    .opacity(showLabel ? 1 : 0)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { midi.arm(armed) }
+            .contextMenu { if mapped != nil { Button("Forget MIDI") { midi.forget(armed.key) } } }
+            .help(tip)
     }
 }
 
