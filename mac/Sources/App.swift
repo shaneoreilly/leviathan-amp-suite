@@ -434,6 +434,14 @@ func tuningName(_ strings: [Int]) -> String {
     return strings.map(n).joined(separator: " ")
 }
 
+/// The open-string notes, low to high: "D A D G B E".
+func tuningNotes(_ strings: [Int], flats: Bool) -> String { strings.map { noteName($0, flats: flats) }.joined(separator: " ") }
+
+extension Tuning {
+    /// Name with its notes, for pickers: "Drop D · D A D G B E".
+    var label: String { name + " \u{00B7} " + tuningNotes(strings, flats: flats) }
+}
+
 func noteName(_ midi: Int, flats: Bool) -> String {
     let sharp = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
     let flat = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"]
@@ -1355,7 +1363,7 @@ struct ContentView: View {
         let t = m.tuning, inTune = abs(m.tunerCents) < 3
         return VStack(spacing: 10) {
             HStack {
-                Picker("Tuning", selection: $m.tuningIndex) { ForEach(TUNINGS.indices, id: \.self) { Text(TUNINGS[$0].name).tag($0) } }.frame(width: 220 * W)
+                Picker("Tuning", selection: $m.tuningIndex) { ForEach(TUNINGS.indices, id: \.self) { Text(TUNINGS[$0].label).tag($0) } }.frame(width: 300 * W)
                 Stepper(value: $m.a4, in: 430...450, step: 1) { Text("A4 = \(Int(m.a4)) Hz").monospacedDigit() }
                 Spacer()
                 Toggle("Mute while tuning", isOn: $m.tunerMute)
@@ -1410,17 +1418,18 @@ struct ContentView: View {
     var pitch: some View {
         UnitBox(title: "PITCH", on: $m.s.pitchOn, onKey: "pitchOn", color: ch, trailing: AnyView(PitchLatency(mt: m.meters))) {
             VStack(alignment: .center, spacing: 8) {
-                Picker("Guitar", selection: $m.tuningIndex) { ForEach(TUNINGS.indices, id: \.self) { Text(TUNINGS[$0].name).tag($0) } }
-                    .frame(width: 190 * W)
+                Picker("Guitar", selection: $m.tuningIndex) { ForEach(TUNINGS.indices, id: \.self) { Text(TUNINGS[$0].label).tag($0) } }
+                    .frame(width: 260 * W)
                 HStack(spacing: 4) {
                     Button { m.playAs(max(Int(m.s.pitchSemis.rounded()) - 1, -12)) } label: { Image(systemName: "minus") }
                         .help("Down a semitone")
                     Menu("Play as: \(m.soundsLike)") {
                         ForEach(m.playAsOptions, id: \.semis) { o in
-                            Button(o.semis == 0 ? "\(o.name) (no shift)" : String(format: "%@  (%+d)", o.name, o.semis)) { m.playAs(o.semis) }
+                            let notes = tuningNotes(m.tuning.strings.map { $0 + o.semis }, flats: m.tuning.flats)
+                            Button(o.semis == 0 ? "\(o.name) \u{00B7} \(notes) (no shift)" : String(format: "%@ \u{00B7} %@  (%+d)", o.name, notes, o.semis)) { m.playAs(o.semis) }
                         }
                     }
-                    .frame(width: 150 * W)
+                    .frame(width: 250 * W)
                     Button { m.playAs(min(Int(m.s.pitchSemis.rounded()) + 1, 12)) } label: { Image(systemName: "plus") }
                         .help("Up a semitone")
                 }

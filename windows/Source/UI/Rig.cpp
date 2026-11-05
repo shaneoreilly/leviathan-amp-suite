@@ -192,15 +192,18 @@ std::unique_ptr<UnitBox> RigView::makePanel(const juce::String& id) {
         auto c = col(8);
         auto r1 = row(8);
         r1->add(std::make_unique<LiveLabel>([] { return juce::String("Guitar"); }, 12, theme::secondary));
-        auto tune = std::make_unique<Picker>((int) (150 * theme::W), [&m] { return m.tuningIndex + 1; }, [&m](int i) { m.setTuningIndex(i - 1); });
-        for (size_t i = 0; i < TUNINGS.size(); ++i) tune->addItem(TUNINGS[i].name, (int) i + 1);
+        auto tune = std::make_unique<Picker>((int) (215 * theme::W), [&m] { return m.tuningIndex + 1; }, [&m](int i) { m.setTuningIndex(i - 1); });
+        for (size_t i = 0; i < TUNINGS.size(); ++i) tune->addItem(tuningLabel(TUNINGS[i]), (int) i + 1);
         r1->add(std::move(tune));
         c->add(std::move(r1));
         auto r2 = row(4);
         r2->add(std::make_unique<IconButton>(IconButton::minus, [&m] { m.playAs(std::max((int) std::round(m.s().d("pitchSemis")) - 1, -12)); }, 12))->setTooltip("Down a semitone");
-        auto playAs = std::make_unique<Picker>((int) (150 * theme::W), [&m] { return 13 - (int) std::round(m.s().d("pitchSemis")); }, [&m](int i) { m.playAs(13 - i); });
-        for (auto& [name, semis] : m.playAsOptions())
-            playAs->addItem(semis == 0 ? name + " (no shift)" : name + juce::String::formatted("  (%+d)", semis), 13 - semis);
+        auto playAs = std::make_unique<Picker>((int) (235 * theme::W), [&m] { return 13 - (int) std::round(m.s().d("pitchSemis")); }, [&m](int i) { m.playAs(13 - i); });
+        for (auto& [name, semis] : m.playAsOptions()) {
+            auto st = m.tuning().strings; for (auto& n : st) n += semis;
+            const auto label = name + juce::String::fromUTF8(" \xc2\xb7 ") + tuningNotes(st, m.tuning().flats);
+            playAs->addItem(semis == 0 ? label + " (no shift)" : label + juce::String::formatted("  (%+d)", semis), 13 - semis);
+        }
         playAs->setTextWhenNothingSelected("Play as");
         r2->add(std::move(playAs));
         r2->add(std::make_unique<IconButton>(IconButton::plus, [&m] { m.playAs(std::min((int) std::round(m.s().d("pitchSemis")) + 1, 12)); }, 12))->setTooltip("Up a semitone");
@@ -450,7 +453,7 @@ std::unique_ptr<UnitBox> RigView::makePedal(PedalKind k) {
 std::unique_ptr<juce::Component> RigView::makeTuner() {
     struct Tuner : juce::Component {
         explicit Tuner(Model& m) : model(m) {
-            tuning.addItemList([] { juce::StringArray a; for (auto& t : TUNINGS) a.add(t.name); return a; }(), 1);
+            tuning.addItemList([] { juce::StringArray a; for (auto& t : TUNINGS) a.add(tuningLabel(t)); return a; }(), 1);
             tuning.setSelectedId(m.tuningIndex + 1, juce::dontSendNotification);
             tuning.onChange = [this] { model.setTuningIndex(tuning.getSelectedId() - 1); };
             addAndMakeVisible(tuning);
@@ -462,7 +465,7 @@ std::unique_ptr<juce::Component> RigView::makeTuner() {
             addAndMakeVisible(mute);
         }
         void resized() override {
-            tuning.setBounds(16, 16, 220, 28); a4.setBounds(250, 16, 160, 28); mute.setBounds(getWidth() - 200, 16, 184, 28);
+            tuning.setBounds(16, 16, 320, 28); a4.setBounds(350, 16, 160, 28); mute.setBounds(getWidth() - 200, 16, 184, 28);
         }
         void paint(juce::Graphics& g) override {
             auto r = getLocalBounds().toFloat().reduced(0.5f);

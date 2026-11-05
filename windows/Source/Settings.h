@@ -44,6 +44,10 @@ struct Tuning { const char* name; std::array<int, 6> strings; bool flats; };
 extern const std::vector<Tuning> TUNINGS;
 juce::String tuningName(const std::array<int, 6>& strings);
 juce::String noteName(int midi, bool flats);
+/// The open-string notes, low to high: "D A D G B E".
+juce::String tuningNotes(const std::array<int, 6>& strings, bool flats);
+/// Name with its notes, for pickers: "Drop D · D A D G B E".
+juce::String tuningLabel(const Tuning& t);
 
 struct DelayDiv { const char* name; double beats; };
 extern const std::vector<DelayDiv> DELAY_DIVS;

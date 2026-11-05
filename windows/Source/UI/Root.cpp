@@ -550,7 +550,7 @@ struct SettingsScreen : Screen_ {
         // tuner
         a4.setSliderStyle(juce::Slider::IncDecButtons); a4.setRange(430, 450, 1); a4.setTextValueSuffix(" Hz");
         a4.onValueChange = [this] { model.setA4(a4.getValue()); };
-        for (size_t i = 0; i < TUNINGS.size(); ++i) tuning.addItem(TUNINGS[i].name, (int) i + 1);
+        for (size_t i = 0; i < TUNINGS.size(); ++i) tuning.addItem(tuningLabel(TUNINGS[i]), (int) i + 1);
         tuning.onChange = [this] { model.setTuningIndex(tuning.getSelectedId() - 1); };
         tun.addAndMakeVisible(a4); tun.addAndMakeVisible(tuning);
 
@@ -644,7 +644,7 @@ struct SettingsScreen : Screen_ {
         look.labels = { { 46, "Accent colour" }, { 86, "Zoom" } };
         look.extra = [this](juce::Graphics& g) { g.setColour(theme::text); g.drawText(juce::String(juce::roundToInt(model.zoom * 100)) + "%", 222, 86, 68, 28, juce::Justification::centred); };
         group(look, 130);
-        a4.setBounds(192, 44, 160, 28); tuning.setBounds(192, 80, 220, 28);
+        a4.setBounds(192, 44, 160, 28); tuning.setBounds(192, 80, 320, 28);
         tun.labels = { { 44, "Reference (A4)" }, { 80, "Guitar tuning" } };
         group(tun, 124);
         checkNow.setBounds(260, 44, 110, 28); autoUpd.setBounds(192, 80, 400, 26);

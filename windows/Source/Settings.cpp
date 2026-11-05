@@ -485,6 +485,13 @@ juce::String tuningName(const std::array<int, 6>& s) {
     return parts.joinIntoString(" ");
 }
 
+juce::String tuningNotes(const std::array<int, 6>& strings, bool flats) {
+    juce::StringArray a; for (int m : strings) a.add(noteName(m, flats));
+    return a.joinIntoString(" ");
+}
+
+juce::String tuningLabel(const Tuning& t) { return juce::String(t.name) + juce::String::fromUTF8(" \xc2\xb7 ") + tuningNotes(t.strings, t.flats); }
+
 juce::String noteName(int midi, bool flats) {
     static const char* sharp[] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
     static const char* flat[] = { "C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B" };

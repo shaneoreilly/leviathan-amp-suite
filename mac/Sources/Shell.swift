@@ -546,8 +546,8 @@ struct SettingsView: View {
                 group("Tuner") {
                     row("Reference") { Stepper(value: $m.a4, in: 430...450, step: 1) { Text("A4 = \(Int(m.a4)) Hz").monospacedDigit() } }
                     row("Guitar tuning") {
-                        Picker("", selection: $m.tuningIndex) { ForEach(TUNINGS.indices, id: \.self) { Text(TUNINGS[$0].name).tag($0) } }
-                            .labelsHidden().frame(width: 220 * Z)
+                        Picker("", selection: $m.tuningIndex) { ForEach(TUNINGS.indices, id: \.self) { Text(TUNINGS[$0].label).tag($0) } }
+                            .labelsHidden().frame(width: 320 * Z)
                     }
                 }
                 }
