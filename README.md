@@ -127,9 +127,8 @@ Leviathan plays two kinds of file:
 
 **Cabinet IRs (`.wav`)**
 - [TONE3000](https://www.tone3000.com): free cab IRs and band-tone IR packs (filter by **IR**).
-- [God's Cab](https://wilkinsonaudio.com/products/gods-cab) by Wilkinson Audio: a free multi-mic Mesa 4x12 pack; Leviathan has a dedicated browser for it (see below).
-- [Seacow Cabs](https://www.seacowcabs.com) and [OwnHammer](https://www.ownhammer.com): free and paid cab packs.
-- [ML Sound Lab](https://ml-sound-lab.com) and [York Audio](https://www.yorkaudio.com): more free and paid cab packs.
+- [OwnHammer](https://www.ownhammer.com) and [ML Sound Lab](https://ml-sound-lab.com): free and paid cab packs.
+- *God's Cab* by Wilkinson Audio: a free multi-mic Mesa 4x12 pack that Leviathan has a dedicated browser for (see below). Its original site is offline; search for "God's Cab IR" to find a copy.
 
 Amp-only captures need a cab IR after them. Full-rig captures already include a cab, so switch Leviathan's Cabinet off for those.
 
