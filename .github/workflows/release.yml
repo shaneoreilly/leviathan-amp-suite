@@ -6,7 +6,7 @@
 #   MACOS_CERT_P12_BASE64   base64 of your "Developer ID Application" certificate exported as .p12
 #   MACOS_CERT_PASSWORD     password of that .p12
 #   APPLE_ID, APPLE_TEAM_ID, APPLE_APP_PASSWORD   for notarization (app-specific password)
-# Without them the app is signed with a self-signed certificate (users approve it once, see README).
+# Without them the app is ad-hoc signed (users click "Open Anyway" once, see README).
 name: Release
 
 on:

@@ -22,6 +22,14 @@ if [ -n "$LEVIATHAN_SIGN_IDENTITY" ]; then
   exit 0
 fi
 
+# CI without a real identity: a throwaway local certificate would differ on every run anyway, so it buys
+# nothing over an ad-hoc signature there.
+if [ -n "$CI" ]; then
+  codesign --force --options runtime --entitlements "$ENT" -s - "$APP"
+  echo "Signed ad-hoc (CI build without a Developer ID)"
+  exit 0
+fi
+
 NAME="Leviathan Local Signing"
 DIR="$HOME/Library/Application Support/Leviathan/Signing"
 KC="$DIR/leviathan-signing.keychain-db"
@@ -50,9 +58,9 @@ keyUsage = critical,digitalSignature
 extendedKeyUsage = critical,codeSigning
 CNF
   $OPENSSL req -x509 -newkey rsa:2048 -nodes -days 3650 -config "$TMP/cert.cnf" \
-    -keyout "$TMP/key.pem" -out "$TMP/cert.pem" >/dev/null 2>&1
+    -keyout "$TMP/key.pem" -out "$TMP/cert.pem" >/dev/null
   $OPENSSL pkcs12 -export -inkey "$TMP/key.pem" -in "$TMP/cert.pem" -name "$NAME" \
-    -out "$TMP/id.p12" -passout pass:"$PASS" >/dev/null 2>&1
+    -out "$TMP/id.p12" -passout pass:"$PASS" >/dev/null
   security create-keychain -p "$PASS" "$KC" >/dev/null
   security set-keychain-settings "$KC"                      # no auto-lock timeout
   security unlock-keychain -p "$PASS" "$KC"

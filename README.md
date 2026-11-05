@@ -35,7 +35,7 @@ Bring any amp: built-in models, your own captures, any cab IR. Free, open source
 2. Open it and drag **Leviathan** into **Applications**.
 3. Open it the first time:
    - If the release is signed with a Developer ID, it just opens.
-   - Otherwise it's signed with a self-signed certificate. Double-click it once; macOS says it can't be checked. Go to **System Settings → Privacy & Security** and click **Open Anyway**. After that it opens normally.
+   - Otherwise it isn't notarized by Apple. Double-click it once; macOS says it can't be checked. Go to **System Settings → Privacy & Security** and click **Open Anyway**. After that it opens normally.
 4. Allow microphone access when asked. Leviathan needs it to hear your audio interface. macOS remembers the choice.
 
 Requires macOS 13 Ventura or later, on Apple silicon or Intel. Use an audio interface for your guitar, ideally one with its own headphone output.
