@@ -20,12 +20,21 @@ bool Updater::newer(const juce::String& a, const juce::String& b) {
 
 void Updater::setAutoCheck(bool on) { autoCheck = on; m.props().setValue("autoUpdateCheck", on); m.changed(); }
 
-/// At launch, at most once every 12 hours.
+/// Check at every launch, then every 6 hours while running.
 void Updater::checkOnLaunch() {
+    dismissedVersion = m.props().getValue("updateDismissed");
     if (!autoCheck) return;
-    const auto last = juce::Time(m.props().getValue("lastUpdateCheck", "0").getLargeIntValue());
-    if ((juce::Time::getCurrentTime() - last).inHours() < 12) return;
     check(true);
+    startTimer(6 * 3600 * 1000);
+}
+
+void Updater::timerCallback() {
+    if (autoCheck && phase != Phase::available && !busy()) check(true);
+}
+
+void Updater::dismiss() {
+    if (release) { dismissedVersion = release->version; m.props().setValue("updateDismissed", dismissedVersion); }
+    m.changed();
 }
 
 void Updater::check(bool quiet) {

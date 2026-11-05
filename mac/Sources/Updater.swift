@@ -28,13 +28,29 @@ final class Updater: ObservableObject {
 
     let current = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
     var available: Release? { if case .available(let r) = phase { return r }; return nil }
+    var isBusy: Bool {
+        switch phase { case .checking, .downloading, .installing: return true; default: return false }
+    }
 
     /// At launch, at most once every 12 hours.
+    /// The update banner was closed for this version (it comes back for the next one).
+    @Published var dismissedVersion = UserDefaults.standard.string(forKey: "updateDismissed") ?? "" {
+        didSet { UserDefaults.standard.set(dismissedVersion, forKey: "updateDismissed") }
+    }
+    var showBanner: Bool { if let r = available { return r.version != dismissedVersion }; return false }
+    private var periodic: Timer?
+
+    /// Check at every launch, then every 6 hours while running (each copy checks for itself).
     func checkOnLaunch() {
         guard autoCheck else { return }
-        let last = UserDefaults.standard.object(forKey: "lastUpdateCheck") as? Date ?? .distantPast
-        guard Date().timeIntervalSince(last) > 12 * 3600 else { return }
         Task { await check(quiet: true) }
+        periodic = Timer.scheduledTimer(withTimeInterval: 6 * 3600, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                // not while an update is already known, downloading or installing
+                guard let self, self.autoCheck, self.available == nil, !self.isBusy else { return }
+                Task { await self.check(quiet: true) }
+            }
+        }
     }
 
     func check(quiet: Bool = false) async {

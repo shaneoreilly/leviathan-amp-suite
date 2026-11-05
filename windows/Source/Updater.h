@@ -7,7 +7,7 @@ namespace lev {
 
 class Model;
 
-class Updater : private juce::URL::DownloadTaskListener {
+class Updater : private juce::URL::DownloadTaskListener, private juce::Timer {
 public:
     static constexpr const char* repo = "shaneoreilly/leviathan-amp-suite";
     explicit Updater(Model& m);
@@ -29,6 +29,10 @@ public:
     void check(bool quiet = false);
     void install();
     void setAutoCheck(bool on);
+    /// Hide the update banner until the next version.
+    void dismiss();
+    bool showBanner() const { return phase == Phase::available && release && release->version != dismissedVersion; }
+    juce::String dismissedVersion;
 
 private:
     Model& m;
@@ -36,6 +40,7 @@ private:
     juce::File download;
     std::shared_ptr<std::atomic<bool>> alive = std::make_shared<std::atomic<bool>>(true);
 
+    void timerCallback() override;
     void finished(juce::URL::DownloadTask*, bool success) override;
     void progress(juce::URL::DownloadTask*, juce::int64 done, juce::int64 total) override;
     void fail(const juce::String& msg);

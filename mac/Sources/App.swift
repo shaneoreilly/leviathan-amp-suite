@@ -1744,6 +1744,17 @@ struct ContentView: View {
 struct LeviathanApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @StateObject private var model = Model()
+
+    init() {
+        // Only one copy at a time (two would fight over the audio interface): bring the running one forward and quit.
+        // Runs before the model exists, so this copy never opens the audio device.
+        let me = NSRunningApplication.current
+        if let id = Bundle.main.bundleIdentifier,
+           let other = NSRunningApplication.runningApplications(withBundleIdentifier: id).first(where: { $0.processIdentifier != me.processIdentifier }) {
+            other.activate()
+            exit(0)
+        }
+    }
     var body: some Scene {
         WindowGroup("Leviathan - v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")") {
             RootView().environmentObject(model).environmentObject(model.sessions).environmentObject(model.midi).environmentObject(model.updater)

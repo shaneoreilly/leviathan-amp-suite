@@ -872,11 +872,15 @@ void Root::timerCallback() {
 
 void Root::rebuildBanners() {
     auto& m = model;
-    juce::StringArray sig { m.status, m.sessions->message, (m.midi->learning && m.screen == Screen::rig) ? "learn" + (m.midi->armed ? m.midi->armed->key : juce::String()) : juce::String() };
+    juce::StringArray sig { m.updater->showBanner() ? "upd" + m.updater->release->version : juce::String(), m.status, m.sessions->message, (m.midi->learning && m.screen == Screen::rig) ? "learn" + (m.midi->armed ? m.midi->armed->key : juce::String()) : juce::String() };
     if (sig.joinIntoString("|") == bannerSig) return;
     bannerSig = sig.joinIntoString("|");
     banners.clear();
     const juce::Colour warnBg(0xff291f0f), warnFg(0xffffd999);
+    if (m.updater->showBanner())
+        banners.add(new Banner("Leviathan " + m.updater->release->version + " is available (you have " + Updater::current() + ").",
+                               m.accent().withAlpha(0.18f).overlaidWith(theme::bg.withAlpha(0.0f)), theme::text,
+                               [&m] { m.updater->dismiss(); }, "Update", [&m] { m.updater->install(); }));
     if (m.status.isNotEmpty()) banners.add(new Banner(m.status, warnBg, warnFg, [&m] { m.status = {}; m.changed(); }));
     if (m.sessions->message.isNotEmpty()) banners.add(new Banner(m.sessions->message, warnBg, warnFg, [&m] { m.sessions->message = {}; m.changed(); }));
     if (m.midi->learning && m.screen == Screen::rig) {

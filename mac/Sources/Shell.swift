@@ -6,6 +6,7 @@ import AppKit
 struct RootView: View {
     @EnvironmentObject var m: Model
     @EnvironmentObject var rec: Sessions
+    @EnvironmentObject var updater: Updater
     @EnvironmentObject var midi: Midi
 
     var ch: Color { m.accent }
@@ -16,6 +17,7 @@ struct RootView: View {
             Rectangle().fill(line).frame(width: 1)
             VStack(spacing: 0) {
                 TopBar()
+                if updater.showBanner, let r = updater.available { UpdateBanner(release: r) }
                 ForEach([m.status, rec.message].filter { !$0.isEmpty }, id: \.self) { msg in
                     HStack {
                         Text(msg).font(.system(size: 12 * UI))
@@ -775,3 +777,23 @@ struct WindowFrameSaver: NSViewRepresentable {
     }
     func updateNSView(_ nsView: NSView, context: Context) {}
 }
+
+/// "A new version is available" across the top of the window, until you update or close it.
+struct UpdateBanner: View {
+    @EnvironmentObject var m: Model
+    @EnvironmentObject var updater: Updater
+    let release: Updater.Release
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "arrow.down.circle.fill").foregroundStyle(Color.accentColor)
+            Text("Leviathan \(release.version) is available (you have \(updater.current)).").font(.system(size: 12 * UI))
+            Spacer()
+            Button("What\u{2019}s new") { NSWorkspace.shared.open(release.page) }
+            Button("Update and relaunch") { updater.install(release) }.buttonStyle(.borderedProminent)
+            Button { updater.dismissedVersion = release.version } label: { Image(systemName: "xmark") }.buttonStyle(.borderless).help("Hide until the next version")
+        }
+        .padding(10)
+        .background(Color.accentColor.opacity(0.15))
+    }
+}
+
