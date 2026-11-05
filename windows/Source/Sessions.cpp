@@ -325,6 +325,65 @@ void Sessions::loadPreset() {
     m.setSettings(*s->settings);
 }
 
+// MARK: - trim
+
+std::optional<double> Sessions::trimFiles(const juce::File& dir, double start, double end) {
+    const auto backup = dir.getChildFile("untrimmed");
+    juce::Array<juce::File> files;
+    for (auto* n : { "dry.wav", "wet.wav", "wet-original.wav" }) if (dir.getChildFile(n).existsAsFile()) files.add(dir.getChildFile(n));
+    if (!backup.isDirectory()) {
+        if (!backup.createDirectory()) return std::nullopt;
+        for (auto& f : files) if (!f.copyFileTo(backup.getChildFile(f.getFileName()))) return std::nullopt;
+    }
+    std::optional<double> length;
+    for (auto& f : files) {
+        auto w = loadAudio(f, 0, 24 * 3600);
+        if (w.rate <= 0 || w.channels.empty()) return std::nullopt;
+        const int total = (int) w.channels[0].size();
+        const int a = juce::jlimit(0, total, (int) (start * w.rate)), b = juce::jlimit(a, total, (int) (end * w.rate));
+        if (b <= a) continue;
+        std::vector<const float*> ch;
+        for (auto& c : w.channels) ch.push_back(c.data() + a);
+        const auto tmp = dir.getChildFile(".trim-" + f.getFileName());
+        if (!writeWav(tmp, ch, b - a, w.rate) || !tmp.moveFileTo(f)) return std::nullopt;
+        if (f.getFileName() == "wet.wav" || !length) length = (double) (b - a) / w.rate;
+    }
+    return length;
+}
+
+void Sessions::trim(double start, double end) {
+    auto* s = current();
+    if (!s || end - start < 0.05) return;
+    stopPlayback(); stopLiveReamp();
+    const auto len = trimFiles(s->dir, start, end);
+    if (!len) { message = "Couldn't trim this recording."; m.changed(); return; }
+    Session copy = *s; copy.duration = *len; save(copy);
+    loadedFile = juce::File();
+    refresh(); loadWaveform(); m.changed();
+}
+
+bool Sessions::canRestoreUntrimmed() const {
+    auto* s = current();
+    return s && s->dir.getChildFile("untrimmed").isDirectory();
+}
+
+void Sessions::restoreUntrimmed() {
+    auto* s = current();
+    if (!s) return;
+    stopPlayback(); stopLiveReamp();
+    const auto backup = s->dir.getChildFile("untrimmed");
+    for (const auto& e : juce::RangedDirectoryIterator(backup, false, "*.wav", juce::File::findFiles))
+        e.getFile().moveFileTo(s->dir.getChildFile(e.getFile().getFileName()));
+    backup.deleteRecursively();
+    Session copy = *s;
+    const auto main = s->wet().existsAsFile() ? s->wet() : s->dry();
+    juce::AudioFormatManager fm; fm.registerBasicFormats();
+    if (std::unique_ptr<juce::AudioFormatReader> rd(fm.createReaderFor(main)); rd && rd->sampleRate > 0) copy.duration = (double) rd->lengthInSamples / rd->sampleRate;
+    save(copy);
+    loadedFile = juce::File();
+    refresh(); loadWaveform(); m.changed();
+}
+
 void Sessions::rename(const juce::String& name) {
     if (name.trim().isEmpty()) return;
     for (auto& s : list) if (s.dir == selected) { s.name = name.trim(); save(s); }

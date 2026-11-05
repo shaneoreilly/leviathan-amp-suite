@@ -54,6 +54,12 @@ public:
     void reamp();
     void loadPreset();
     void rename(const juce::String& name);
+    /// Cuts the selected take (dry, wet, wet-original) to start...end seconds; the first trim keeps the untouched
+    /// audio in untrimmed/ so it can be restored.
+    void trim(double start, double end);
+    void restoreUntrimmed();
+    bool canRestoreUntrimmed() const;
+    static std::optional<double> trimFiles(const juce::File& dir, double start, double end);
     void remove();
     void remove(const juce::File& dir);
     /// Finish a take that was cut off before Stop (unfinished WAV headers, no session.json) so it shows up again.

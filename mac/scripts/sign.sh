@@ -22,8 +22,15 @@ if [ -n "$LEVIATHAN_SIGN_IDENTITY" ]; then
   exit 0
 fi
 
-# CI without a real identity: a throwaway local certificate would differ on every run anyway, so it buys
-# nothing over an ad-hoc signature there.
+# A stable self-signed identity imported by CI (release.yml, secret LEVIATHAN_STABLE_P12_BASE64): the same
+# certificate as local builds, so releases and local builds share one microphone permission across updates.
+if [ -n "$LEVIATHAN_SIGN_HASH" ] && [ -n "$LEVIATHAN_SIGN_KEYCHAIN" ]; then
+  codesign --force --options runtime --entitlements "$ENT" --keychain "$LEVIATHAN_SIGN_KEYCHAIN" -s "$LEVIATHAN_SIGN_HASH" "$APP"
+  echo "Signed with the stable Leviathan certificate"
+  exit 0
+fi
+
+# CI without any identity: a throwaway certificate would differ on every run, so it buys nothing over ad-hoc.
 if [ -n "$CI" ]; then
   codesign --force --options runtime --entitlements "$ENT" -s - "$APP"
   echo "Signed ad-hoc (CI build without a Developer ID)"

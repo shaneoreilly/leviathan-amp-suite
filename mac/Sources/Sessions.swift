@@ -462,6 +462,76 @@ final class Sessions: ObservableObject {
 
     // MARK: helpers
 
+    // MARK: trim
+
+    /// Where the first trim keeps the untouched audio, so a trim can always be undone.
+    func untrimmedDir(_ s: Session) -> URL { s.id.appendingPathComponent("untrimmed") }
+    var canRestoreUntrimmed: Bool { current.map { FileManager.default.fileExists(atPath: untrimmedDir($0).path) } ?? false }
+
+    /// Cuts the take (dry, wet and any wet-original) to `start...end` seconds.
+    func trim(_ start: Double, _ end: Double) {
+        guard var s = current, end - start >= 0.05 else { return }
+        stopPlayback(); stopLiveReamp()
+        do {
+            if let length = try Sessions.trimFiles(in: s.id, start: start, end: end) { s.meta.duration = length }
+            save(s)
+        } catch {
+            message = "Couldn't trim this recording: \(error.localizedDescription)"
+            return
+        }
+        loaded = nil
+        refresh(); loadWaveform()
+    }
+
+    /// Cuts a session folder's dry.wav, wet.wav and wet-original.wav to `start...end` seconds, keeping the untouched
+    /// audio in untrimmed/ on the first trim. Returns the new length (from wet.wav when there is one).
+    nonisolated static func trimFiles(in dir: URL, start: Double, end: Double) throws -> Double? {
+        let fm = FileManager.default, backup = dir.appendingPathComponent("untrimmed")
+        let files = ["dry.wav", "wet.wav", "wet-original.wav"].map { dir.appendingPathComponent($0) }.filter { fm.fileExists(atPath: $0.path) }
+        if !fm.fileExists(atPath: backup.path) {
+            try fm.createDirectory(at: backup, withIntermediateDirectories: true)
+            for f in files { try fm.copyItem(at: f, to: backup.appendingPathComponent(f.lastPathComponent)) }
+        }
+        var length: Double?
+        for f in files {
+            let sr: Double, frames: AVAudioFramePosition
+            let tmpURL = dir.appendingPathComponent(".trim-" + f.lastPathComponent)
+            try? fm.removeItem(at: tmpURL)
+            do {
+                let inF = try AVAudioFile(forReading: f)
+                sr = inF.processingFormat.sampleRate
+                let a = max(AVAudioFramePosition(start * sr), 0), b = min(AVAudioFramePosition(end * sr), inF.length)
+                frames = max(b - a, 0)
+                guard frames > 0, let buf = AVAudioPCMBuffer(pcmFormat: inF.processingFormat, frameCapacity: AVAudioFrameCount(frames)) else { continue }
+                inF.framePosition = a
+                try inF.read(into: buf, frameCount: AVAudioFrameCount(frames))
+                let out = try AVAudioFile(forWriting: tmpURL, settings: inF.fileFormat.settings,
+                                          commonFormat: inF.processingFormat.commonFormat, interleaved: inF.processingFormat.isInterleaved)
+                try out.write(from: buf)
+            }   // both files close here
+            _ = try fm.replaceItemAt(f, withItemAt: tmpURL)
+            if f.lastPathComponent == "wet.wav" || length == nil { length = Double(frames) / sr }
+        }
+        return length
+    }
+
+    /// Puts back the audio from before the first trim.
+    func restoreUntrimmed() {
+        guard var s = current else { return }
+        stopPlayback(); stopLiveReamp()
+        let fm = FileManager.default, backup = untrimmedDir(s)
+        guard let saved = try? fm.contentsOfDirectory(at: backup, includingPropertiesForKeys: nil), !saved.isEmpty else { return }
+        for f in saved where f.pathExtension.lowercased() == "wav" {
+            _ = try? fm.replaceItemAt(s.id.appendingPathComponent(f.lastPathComponent), withItemAt: f)
+        }
+        try? fm.removeItem(at: backup)
+        let main = fm.fileExists(atPath: s.wet.path) ? s.wet : s.dry
+        if let f = try? AVAudioFile(forReading: main) { s.meta.duration = Double(f.length) / f.processingFormat.sampleRate }
+        save(s)
+        loaded = nil
+        refresh(); loadWaveform()
+    }
+
     private func loadWaveform() {
         waveform = []
         guard let s = current else { return }

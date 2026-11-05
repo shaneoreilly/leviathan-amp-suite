@@ -28,6 +28,7 @@ jobs:
     env:
       HAS_CERT: ${{ secrets.MACOS_CERT_P12_BASE64 != '' }}
       HAS_NOTARY: ${{ secrets.APPLE_ID != '' }}
+      HAS_STABLE: ${{ secrets.LEVIATHAN_STABLE_P12_BASE64 != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -60,6 +61,27 @@ jobs:
           security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
           ID=$(security find-identity -v -p codesigning "$KC" | awk -F'"' '/Developer ID Application/ { print $2; exit }')
           echo "LEVIATHAN_SIGN_IDENTITY=$ID" >> "$GITHUB_ENV"
+
+      # Without a Developer ID: sign with the project's stable self-signed certificate, so macOS keeps the
+      # microphone permission across updates (an ad-hoc signature changes with every release).
+      - name: Import stable signing certificate
+        if: env.HAS_CERT != 'true' && env.HAS_STABLE == 'true'
+        env:
+          P12: ${{ secrets.LEVIATHAN_STABLE_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.LEVIATHAN_STABLE_P12_PASSWORD }}
+        run: |
+          KC="$RUNNER_TEMP/stable.keychain-db"; KP=$(uuidgen)
+          echo "$P12" | base64 --decode > "$RUNNER_TEMP/stable.p12"
+          security create-keychain -p "$KP" "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p "$KP" "$KC"
+          security import "$RUNNER_TEMP/stable.p12" -k "$KC" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KP" "$KC"
+          rm -f "$RUNNER_TEMP/stable.p12"
+          HASH=$(security find-identity -p codesigning "$KC" | awk '/Leviathan Local Signing/ { print $2; exit }')
+          [ -n "$HASH" ] || { echo "stable certificate not found in the p12"; exit 1; }
+          echo "LEVIATHAN_SIGN_KEYCHAIN=$KC" >> "$GITHUB_ENV"
+          echo "LEVIATHAN_SIGN_HASH=$HASH" >> "$GITHUB_ENV"
 
       - name: Notarization credentials
         if: env.HAS_CERT == 'true' && env.HAS_NOTARY == 'true'

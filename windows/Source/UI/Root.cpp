@@ -365,8 +365,11 @@ struct PresetsScreen : Screen_, juce::FileDragAndDropTarget {
 
 // MARK: - recordings screen
 
+/// Trim mode for the Recordings screen: the kept range in seconds.
+struct TrimState { bool on = false; double start = 0, end = 0; std::function<void()> changed; };
+
 struct Waveform : juce::Component {
-    explicit Waveform(Model& m) : model(m) {}
+    explicit Waveform(Model& m, TrimState& t) : model(m), trim(t) {}
     void paint(juce::Graphics& g) override {
         auto& s = *model.sessions;
         const auto* cur = s.current();
@@ -392,9 +395,39 @@ struct Waveform : juce::Component {
             }
         } else if (cur) { g.setColour(theme::secondary); g.setFont(theme::font(10)); g.drawText(juce::String("loading") + ellipsis, getLocalBounds(), juce::Justification::centred); }
         if (s.playing && dur > 0) { g.setColour(juce::Colours::white); g.fillRect((float) (s.playPos / dur) * w, 0.f, 2.f, h); }
+        if (trim.on && dur > 0) {
+            const float xs = (float) (trim.start / dur) * w, xe = (float) (trim.end / dur) * w;
+            g.setColour(juce::Colours::black.withAlpha(0.6f)); g.fillRect(0.f, 0.f, xs, h); g.fillRect(xe, 0.f, w - xe, h);
+            for (float x : { xs, xe }) {
+                g.setColour(juce::Colours::yellow); g.fillRect(x - 1, 0.f, 2.f, h);
+                g.fillRoundedRectangle(x - 6, h / 2 - 17, 12, 34, 3);
+            }
+        }
     }
-    void mouseDown(const juce::MouseEvent& e) override { seekTo(e); }   // jump on press
-    void mouseDrag(const juce::MouseEvent& e) override { seekTo(e); }   // scrub while dragging
+    void mouseMove(const juce::MouseEvent& e) override {
+        setMouseCursor(handleAt(e.x) != 0 ? juce::MouseCursor::LeftRightResizeCursor : juce::MouseCursor::NormalCursor);
+    }
+    /// -1 start handle, 1 end handle, 0 none
+    int handleAt(int x) const {
+        auto* cur = model.sessions->current();
+        if (!trim.on || !cur || cur->duration <= 0) return 0;
+        const double w = getWidth();
+        if (std::abs(x - trim.start / cur->duration * w) < 9) return -1;
+        if (std::abs(x - trim.end / cur->duration * w) < 9) return 1;
+        return 0;
+    }
+    void mouseDown(const juce::MouseEvent& e) override { dragging = handleAt(e.x); if (dragging == 0) seekTo(e); else dragHandle(e); }   // jump on press
+    void mouseDrag(const juce::MouseEvent& e) override { if (dragging != 0) dragHandle(e); else seekTo(e); }   // scrub while dragging
+    void dragHandle(const juce::MouseEvent& e) {
+        auto* cur = model.sessions->current();
+        if (!cur) return;
+        const double t = juce::jlimit(0.0, 1.0, (double) e.x / getWidth()) * cur->duration;
+        if (dragging < 0) trim.start = juce::jlimit(0.0, trim.end - 0.05, t);
+        else trim.end = juce::jlimit(trim.start + 0.05, cur->duration, t);
+        repaint(); if (trim.changed) trim.changed();
+    }
+    int dragging = 0;
+    TrimState& trim;
     void seekTo(const juce::MouseEvent& e) {
         if (auto* cur = model.sessions->current()) model.sessions->seek(juce::jlimit(0.0, 1.0, (double) e.x / getWidth()) * cur->duration);
     }
@@ -402,7 +435,7 @@ struct Waveform : juce::Component {
 };
 
 struct RecordingsScreen : Screen_ {
-    explicit RecordingsScreen(Model& m) : model(m), wave(m),
+    explicit RecordingsScreen(Model& m) : model(m), wave(m, trim),
         prevB(IconButton::prev, [this] { step(-1); }, 14), playB(IconButton::play, [&m] { m.sessions->togglePlay(); }, 18), nextB(IconButton::next, [this] { step(1); }, 14),
         folderB(IconButton::folder, [&m] { m.sessions->reveal(); }, 16), trashB(IconButton::trash, [&m] { m.sessions->remove(); }, 16),
         liveB(""), reampB("Re-amp with current rig"), originalB(""), importB("Import recordings (WAV)" + ellipsis) {
@@ -418,6 +451,24 @@ struct RecordingsScreen : Screen_ {
         reampB.onClick = [&m] { m.sessions->reamp(); };
         originalB.onClick = [&m] { m.sessions->loadPreset(); m.setScreen(Screen::rig); };
         importB.onClick = [&m] { m.sessions->importRecordings(); };
+        trimB.setButtonText(juce::String::fromUTF8("\xe2\x9c\x82 Trim")); trimB.setTooltip("Cut silence or mistakes from the start and end of this take");
+        trimB.onClick = [this] { if (auto* c = model.sessions->current()) { trim = { true, 0, c->duration, trim.changed }; refresh(); } };
+        restoreB.setButtonText("Restore untrimmed"); restoreB.setTooltip("Put back the take as it was before trimming");
+        restoreB.onClick = [&m] { m.sessions->restoreUntrimmed(); };
+        applyB.setButtonText("Apply trim"); applyB.setToggleState(true, juce::dontSendNotification);
+        applyB.onClick = [this] { model.sessions->trim(trim.start, trim.end); trim.on = false; refresh(); };
+        cancelB.setButtonText("Cancel"); cancelB.onClick = [this] { trim.on = false; refresh(); };
+        playSelB.setButtonText("Play from start"); playSelB.onClick = [this] { model.sessions->play(trim.start); };
+        for (auto* c : std::initializer_list<juce::Component*> { &trimB, &restoreB, &applyB, &cancelB, &playSelB }) addChildComponent(c);
+        trim.changed = [this] { applyB.setEnabled(trimCuts()); repaint(); };
+    }
+    TrimState trim;
+    juce::TextButton trimB, restoreB, applyB, cancelB, playSelB;
+    juce::File trimFor;
+    juce::Rectangle<int> trimText;
+    bool trimCuts() const {
+        auto* c = model.sessions->current();
+        return c && trim.end - trim.start >= 0.05 && (trim.start > 0.001 || trim.end < c->duration - 0.001);
     }
     void step(int d) {
         auto& s = *model.sessions;
@@ -448,6 +499,12 @@ struct RecordingsScreen : Screen_ {
         originalB.setVisible(has && cur->settings.has_value());
         if (cur) originalB.setButtonText("Load \"" + cur->preset + "\" settings");
         importB.setVisible(!has);
+        if (!has || trimFor != s.selected) trim.on = false;
+        trimFor = s.selected;
+        trimB.setVisible(has); trimB.setEnabled(!trim.on);
+        restoreB.setVisible(has && s.canRestoreUntrimmed());
+        for (auto* c : std::initializer_list<juce::Component*> { &applyB, &cancelB, &playSelB }) c->setVisible(has && trim.on);
+        applyB.setEnabled(trimCuts());
         resized(); repaint(); wave.repaint();
     }
     juce::Rectangle<int> detail() const { return getLocalBounds().withTrimmedLeft(300); }
@@ -457,11 +514,21 @@ struct RecordingsScreen : Screen_ {
         listInner.setSize(listView.getMaximumVisibleWidth(), y);
         auto d = detail();
         wave.setBounds(d.removeFromTop(220));
+        if (trim.on) {
+            auto bar = d.removeFromTop(44).reduced(14, 7);
+            applyB.setBounds(bar.removeFromRight(110)); bar.removeFromRight(8);
+            cancelB.setBounds(bar.removeFromRight(80)); bar.removeFromRight(8);
+            playSelB.setBounds(bar.removeFromRight(130));
+            trimText = bar;
+        }
         auto transport = d.removeFromTop(44);
         playB.setBounds(transport.withSizeKeepingCentre(40, 32)); prevB.setBounds(playB.getBounds().translated(-48, 0)); nextB.setBounds(playB.getBounds().translated(48, 0));
         d.reduce(18, 18);
         auto nameRow = d.removeFromTop(40);
-        trashB.setBounds(nameRow.removeFromRight(32)); folderB.setBounds(nameRow.removeFromRight(32)); nameEd.setBounds(nameRow);
+        trashB.setBounds(nameRow.removeFromRight(32)); folderB.setBounds(nameRow.removeFromRight(32));
+        trimB.setBounds(nameRow.removeFromRight(80).reduced(0, 5)); nameRow.removeFromRight(6);
+        if (restoreB.isVisible()) { restoreB.setBounds(nameRow.removeFromRight(150).reduced(0, 5)); nameRow.removeFromRight(6); }
+        nameEd.setBounds(nameRow);
         d.removeFromTop(80);   // info grid (painted)
         auto boxRow = [&](juce::Component& b) { auto r = d.removeFromTop(68); boxes.push_back(r); b.setBounds(r.reduced(12).removeFromRight(240).withSizeKeepingCentre(240, 28)); d.removeFromTop(10); };
         boxes.clear();
@@ -474,7 +541,14 @@ struct RecordingsScreen : Screen_ {
         g.setColour(theme::line); g.fillRect(299, 0, 1, getHeight());
         auto& s = *model.sessions;
         const auto* cur = s.current();
-        if (cur) { g.setColour(juce::Colour(0xff141414)); g.fillRect(detail().withTrimmedTop(220).withHeight(44)); }
+        if (cur) { g.setColour(juce::Colour(0xff141414)); g.fillRect(detail().withTrimmedTop(trim.on ? 264 : 220).withHeight(44)); }
+        if (cur && trim.on) {
+            g.setColour(juce::Colour(0xff1c1c1c)); g.fillRect(detail().withTrimmedTop(220).withHeight(44));
+            auto tt = [](double t) { t = std::max(t, 0.0); return juce::String((int) t / 60) + ":" + juce::String::formatted("%04.1f", std::fmod(t, 60.0)); };
+            g.setColour(theme::text); g.setFont(theme::font(12));
+            g.drawText(juce::String::fromUTF8("Drag the yellow handles to choose what to keep: ") + tt(trim.start) + juce::String::fromUTF8(" \xe2\x80\x93 ") + tt(trim.end)
+                       + " (" + tt(trim.end - trim.start) + ")", trimText, juce::Justification::centredLeft, true);
+        }
         if (!cur) {
             g.setColour(theme::text); g.setFont(theme::font(16));
             g.drawText(s.list.empty() ? "No recordings yet" : "Select a recording", detail().withSizeKeepingCentre(500, 30).translated(0, -30), juce::Justification::centred);
@@ -483,7 +557,7 @@ struct RecordingsScreen : Screen_ {
                              detail().withSizeKeepingCentre(760, 50).translated(0, 14), juce::Justification::centred, 2);
             return;
         }
-        auto info = detail().reduced(18, 0).withY(220 + 44 + 18 + 48).withHeight(70);
+        auto info = detail().reduced(18, 0).withY(220 + (trim.on ? 44 : 0) + 44 + 18 + 48).withHeight(70);
         g.setFont(theme::font(11));
         auto line = [&](int i, const juce::String& k, const juce::String& v) {
             g.setColour(theme::secondary); g.drawText(k, info.getX(), info.getY() + i * 22, 100, 20, juce::Justification::centredLeft);

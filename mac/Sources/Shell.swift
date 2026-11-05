@@ -312,7 +312,23 @@ struct RecordingsView: View {
     func detail(_ s: Session) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             WaveformView(samples: rec.waveform, duration: s.meta.duration, position: rec.playing ? rec.playPos : nil) { rec.seek($0) }
+                .overlay { if ui.trimming { TrimOverlay(duration: s.meta.duration, start: $ui.trimStart, end: $ui.trimEnd) } }
                 .frame(height: 220 * Z)
+            if ui.trimming {
+                HStack(spacing: 10) {
+                    Image(systemName: "scissors").foregroundStyle(.secondary)
+                    Text("Drag the handles to choose what to keep: \(mmssTenths(ui.trimStart)) – \(mmssTenths(ui.trimEnd)) (\(mmssTenths(ui.trimEnd - ui.trimStart)))")
+                        .monospacedDigit()
+                    Spacer()
+                    Button("Play from start") { rec.play(from: ui.trimStart) }
+                    Button("Cancel") { ui.trimming = false }
+                    Button("Apply trim") { rec.trim(ui.trimStart, ui.trimEnd); ui.trimming = false }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(ui.trimEnd - ui.trimStart < 0.05 || (ui.trimStart <= 0.001 && ui.trimEnd >= s.meta.duration - 0.001))
+                }
+                .padding(.horizontal, 14).padding(.vertical, 8)
+                .background(Color(white: 0.11))
+            }
             HStack(spacing: 10) {
                 Spacer()
                 Button { step(-1) } label: { Image(systemName: "backward.end.fill") }.help("Previous recording")
@@ -330,6 +346,12 @@ struct RecordingsView: View {
                         TextField("Name", text: $ui.name, onCommit: { rec.rename(ui.name) })
                             .textFieldStyle(.plain).font(.system(size: 22 * UI, weight: .semibold))
                         Spacer()
+                        Button { ui.trimStart = 0; ui.trimEnd = s.meta.duration; ui.trimming = true } label: { Label("Trim", systemImage: "scissors") }
+                            .help("Cut silence or mistakes from the start and end of this take")
+                            .disabled(ui.trimming || s.meta.duration <= 0)
+                        if rec.canRestoreUntrimmed {
+                            Button("Restore untrimmed") { rec.restoreUntrimmed() }.help("Put back the take as it was before trimming")
+                        }
                         Button { rec.reveal() } label: { Image(systemName: "folder") }.help("Show in Finder")
                         Button(role: .destructive) { rec.delete() } label: { Image(systemName: "trash") }.help("Move to Trash")
                     }
@@ -360,7 +382,7 @@ struct RecordingsView: View {
             }
         }
         .onAppear { ui.name = s.meta.name }
-        .onChange(of: s.id) { _ in ui.name = s.meta.name }
+        .onChange(of: s.id) { _ in ui.name = s.meta.name; ui.trimming = false }
     }
 
     func box<C: View>(_ title: String, _ desc: String, @ViewBuilder _ action: () -> C) -> some View {
@@ -381,6 +403,47 @@ struct RecordingsView: View {
         guard let i = rec.list.firstIndex(where: { $0.id == rec.selected }) else { rec.selected = rec.list.first?.id; return }
         let j = i + d
         if j >= 0 && j < rec.list.count { rec.selected = rec.list[j].id }
+    }
+}
+
+func mmssTenths(_ t: Double) -> String {
+    let t = max(t, 0)
+    return String(format: "%d:%04.1f", Int(t) / 60, t.truncatingRemainder(dividingBy: 60))
+}
+
+/// Trim handles over the waveform: the parts that will be cut are dimmed; drag either handle.
+struct TrimOverlay: View {
+    let duration: Double
+    @Binding var start: Double
+    @Binding var end: Double
+    var body: some View {
+        GeometryReader { g in
+            let w = g.size.width, h = g.size.height
+            let xs = CGFloat(start / max(duration, 0.001)) * w, xe = CGFloat(end / max(duration, 0.001)) * w
+            ZStack(alignment: .topLeading) {
+                Rectangle().fill(Color.black.opacity(0.6)).frame(width: max(xs, 0), height: h).allowsHitTesting(false)
+                Rectangle().fill(Color.black.opacity(0.6)).frame(width: max(w - xe, 0), height: h).offset(x: xe).allowsHitTesting(false)
+                handle(h).offset(x: xs - 7)
+                    .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .named("trim")).onChanged { v in
+                        start = min(max(Double(v.location.x / w) * duration, 0), end - 0.05)
+                    })
+                handle(h).offset(x: xe - 7)
+                    .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .named("trim")).onChanged { v in
+                        end = max(min(Double(v.location.x / w) * duration, duration), start + 0.05)
+                    })
+            }
+            .coordinateSpace(name: "trim")
+        }
+    }
+    func handle(_ h: CGFloat) -> some View {
+        ZStack {
+            Rectangle().fill(Color.yellow).frame(width: 2, height: h)
+            RoundedRectangle(cornerRadius: 3).fill(Color.yellow).frame(width: 12, height: 34)
+            Image(systemName: "line.3.horizontal").rotationEffect(.degrees(90)).font(.system(size: 8, weight: .bold)).foregroundStyle(.black)
+        }
+        .frame(width: 14, height: h)
+        .contentShape(Rectangle())
+        .onHover { inside in if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() } }
     }
 }
 
@@ -752,7 +815,13 @@ struct FlowLayout: Layout {
 }
 
 final class PresetsUI: ObservableObject { @Published var favOnly = false; @Published var renaming: String? = nil; @Published var newName = "" }
-final class RecordingsUI: ObservableObject { @Published var name = "" }
+final class RecordingsUI: ObservableObject {
+    @Published var name = ""
+    /// Trim mode: the kept range in seconds.
+    @Published var trimming = false
+    @Published var trimStart = 0.0
+    @Published var trimEnd = 0.0
+}
 
 
 struct LatencyLabel: View {
