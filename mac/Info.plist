@@ -4,44 +4,6 @@
 <dict>
 	<key>CFBundleDisplayName</key>
 	<string>Leviathan</string>
-	<key>CFBundleExecutable</key>
-	<string>Leviathan</string>
-	<key>CFBundleIconFile</key>
-	<string>AppIcon</string>
-	<key>CFBundleIdentifier</key>
-	<string>local.leviathan.ampsuite</string>
-	<key>CFBundleName</key>
-	<string>Leviathan</string>
-	<key>CFBundlePackageType</key>
-	<string>APPL</string>
-	<key>CFBundleShortVersionString</key>
-	<string>0.1.2</string>
-	<key>CFBundleVersion</key>
-	<string>0.1.2</string>
-	<key>LSMinimumSystemVersion</key>
-	<string>13.0</string>
-	<key>NSHighResolutionCapable</key>
-	<true/>
-	<key>UTExportedTypeDeclarations</key>
-	<array>
-		<dict>
-			<key>UTTypeIdentifier</key>
-			<string>local.leviathan.ampsuite.preset</string>
-			<key>UTTypeDescription</key>
-			<string>Leviathan Preset</string>
-			<key>UTTypeConformsTo</key>
-			<array>
-				<string>public.json</string>
-			</array>
-			<key>UTTypeTagSpecification</key>
-			<dict>
-				<key>public.filename-extension</key>
-				<array>
-					<string>leviathan</string>
-				</array>
-			</dict>
-		</dict>
-	</array>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
@@ -57,7 +19,45 @@
 			</array>
 		</dict>
 	</array>
+	<key>CFBundleExecutable</key>
+	<string>Leviathan</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>local.leviathan.ampsuite</string>
+	<key>CFBundleName</key>
+	<string>Leviathan</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.2.0</string>
+	<key>CFBundleVersion</key>
+	<string>0.2.0</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>13.0</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Leviathan needs your audio interface input to process your guitar.</string>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.json</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Leviathan Preset</string>
+			<key>UTTypeIdentifier</key>
+			<string>local.leviathan.ampsuite.preset</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>leviathan</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
 </dict>
 </plist>
