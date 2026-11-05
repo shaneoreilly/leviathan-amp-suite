@@ -24,7 +24,7 @@ static float testInput(int i, double sr) {
     return (float) x;
 }
 
-struct Scenario { const char* name; void (*setup)(Params&); std::vector<float> (*ir)(double sr); };
+struct Scenario { const char* name; void (*setup)(Params&); std::vector<float> (*ir)(double sr); bool nam = false; };
 
 static std::vector<float> builtinCab(double sr) { return renderCab(CABS[0], 0.3, sr); }
 
@@ -64,6 +64,10 @@ static const Scenario scenarios[] = {
         p.inGain = 9.65f; p.gateOn = true; p.gateThresh = -48; p.gateRelease = 90;
         p.chainCount = 0; p.ampOn = false; p.eqOn = false; p.cabOn = false; p.masterVol = 0;
     }, nullptr },
+    { "nam_capture", [](Params& p) {
+        p.inGain = 6; p.gateOn = true; p.gateThresh = -50; p.chain[0] = (int) PedalKind::od; p.chainCount = 1; p.odDrive = 0.3f;
+        p.ampOn = true; p.namOn = true; p.namIn = 3; p.namOut = -2; p.eqOn = true; p.cabOn = true; p.masterVol = -6;
+    }, builtinCab, true },
     { "metronome", [](Params& p) {
         p.ampOn = false; p.cabOn = false; p.eqOn = false; p.chainCount = 0; p.gateOn = false;
         p.metroOn = true; p.bpm = 133; p.beatsPerBar = 3; p.metroVol = -6;
@@ -80,6 +84,14 @@ int main(int argc, char** argv) {
         p.version++;
         DSP d(sr, p);
         if (sc.ir) d.setIR(sc.ir(sr));
+        LevNam* nm = nullptr;
+        if (sc.nam) {   // NAM's example model, path passed as argv[2]
+            char err[256] = {};
+            nm = lev_nam_load(argv[2], err, sizeof err);
+            if (!nm) { std::fprintf(stderr, "nam: %s\n", err); return 1; }
+            lev_nam_reset(nm, sr, DSP::maxN);
+            d.setNam(nm, 0.5f);
+        }
         std::vector<float> in((size_t) block), l((size_t) total), r((size_t) total);
         for (int t = 0; t < total; t += block) {
             for (int i = 0; i < block; ++i) in[(size_t) i] = testInput(t + i, sr);
@@ -90,6 +102,7 @@ int main(int argc, char** argv) {
         std::fwrite(l.data(), sizeof(float), l.size(), f);
         std::fwrite(r.data(), sizeof(float), r.size(), f);
         std::fclose(f);
+        lev_nam_free(nm);
     }
     return 0;
 }

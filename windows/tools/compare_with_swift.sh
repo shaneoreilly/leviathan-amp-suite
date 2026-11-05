@@ -8,10 +8,15 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 OUT="${TMPDIR:-/tmp}/leviathan-dsp-compare"
 mkdir -p "$OUT"
 
-swiftc -O -parse-as-library "$ROOT/mac/Sources/DSP.swift" "$ROOT/windows/tools/swift_render.swift" -o "$OUT/swift_render"
-c++ -std=c++20 -O2 -ffp-contract=off -I"$ROOT/windows/Source" "$ROOT/windows/tools/dsp_render.cpp" "$ROOT/windows/Source/Dsp.cpp" -o "$OUT/dsp_render"
-"$OUT/swift_render" "$OUT"
-"$OUT/dsp_render" "$OUT"
+# both engines link the same NAM library (built by the Mac build), and run NAM's example model
+ARCH="$(uname -m)"
+"$ROOT/shared/nam/build_lib.sh" "$ARCH" "$ROOT/mac/.build-nam/$ARCH"
+NAMLIB="$ROOT/mac/.build-nam/$ARCH/liblevnam.a"
+MODEL="$ROOT/shared/nam/deps/NeuralAmpModelerCore/example_models/wavenet.nam"
+swiftc -O -parse-as-library -import-objc-header "$ROOT/shared/nam/lev_nam.h" "$ROOT/mac/Sources/DSP.swift" "$ROOT/windows/tools/swift_render.swift" -Xlinker -force_load -Xlinker "$NAMLIB" -lc++ -o "$OUT/swift_render"
+c++ -std=c++20 -O2 -ffp-contract=off -DNAM_SAMPLE_FLOAT -I"$ROOT/windows/Source" -I"$ROOT/shared/nam" "$ROOT/windows/tools/dsp_render.cpp" "$ROOT/windows/Source/Dsp.cpp" -Wl,-force_load,"$NAMLIB" -o "$OUT/dsp_render"
+"$OUT/swift_render" "$OUT" "$MODEL"
+"$OUT/dsp_render" "$OUT" "$MODEL"
 
 python3 - "$OUT" <<'EOF'
 import sys, struct, math, glob, os

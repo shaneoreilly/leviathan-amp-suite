@@ -35,6 +35,9 @@ struct Settings: Codable, Equatable {
     // captured amp: name of a file in Application Support/Leviathan/Captures ("" = use the voicings)
     var capture = "", capDrive = 0.0, capLevel = 0.0
 
+    // NAM capture: file name in Application Support/Leviathan/NAM ("" = none), input/output trims in dB
+    var nam = "", namInput = 0.0, namOutput = 0.0
+
     func apply(to p: Params) {
         p.chainCount = 0
         let ch = chain.filter { PedalKind(rawValue: $0) != nil }.prefix(Params.maxChain)
@@ -48,6 +51,7 @@ struct Settings: Codable, Equatable {
         p.phaserOn = phaserOn; p.phaserRate = Float(phaserRate); p.phaserDepth = Float(phaserDepth); p.phaserFb = Float(phaserFb)
         p.tremOn = tremOn; p.tremRate = Float(tremRate); p.tremDepth = Float(tremDepth); p.tremShape = Float(tremShape)
         p.capDrive = Float(capDrive); p.capLevel = Float(capLevel)
+        p.namIn = Float(namInput); p.namOut = Float(namOutput)
         p.inGain = Float(inGain); p.inputChannel = inputChannel
         p.gateOn = gateOn; p.gateThresh = Float(gateThresh); p.gateRelease = Float(gateRelease)
         p.pitchOn = pitchOn; p.pitchSemis = Float(pitchSemis); p.pitchCents = Float(pitchCents); p.pitchMix = Float(pitchMix)
@@ -259,6 +263,115 @@ let FACTORY: [(String, (inout Settings) -> Void)] = [
         s.cabOn = true; s.cabModel = CAB_LIB; s.irA = "C414/NO-TS/C414_2_inch_cone_near_pres_3.wav"; s.irB = "SM57/NO-TS/57_2_inch_edge_pres_3.wav"; s.irBlend = 0.35; s.cabHighCut = 12000
         s.ampVolume = 0.698   // level-matched
     }),
+
+    // NAM captures of real amps (bundled; see shared/nam/captures/CREDITS.md). Without them the built-in amp plays.
+    // Peavey 5150 with a boost: the modern metal rhythm sound.
+    ("Modern Metal - 5150 (NAM)", { s in
+        s.nam = "Helga B 5150 BlockLetter - Boosted"; s.capture = ""; s.ampOn = true; s.ampChannel = 2
+        s.ampGain = 0.6; s.eqOn = true; s.eq = [0, 0, 0, 0, 0, 0, 0, 0]; s.cabOn = true
+        s.cabModel = 4; s.irA = "SM57/NO-TS/57_1_inch_edge_pres_3.wav"; s.irB = "MD421/NO-TS/MD421_1_inch_cone_near_pres_3.wav"; s.irBlend = 0.35
+        s.cabLowCut = 90; s.cabHighCut = 10000; s.gateOn = true; s.gateThresh = -52
+        s.gateRelease = 70; s.chain = []; s.delayOn = false; s.revOn = false
+        s.namInput = 0; s.namOutput = 2.0
+    }),
+    // Unboosted 5150 hit by a clean boost, very tight lows and gate.
+    ("Djent - 5150 + Boost (NAM)", { s in
+        s.nam = "Helga B 5150 BlockLetter - NoBoost"; s.capture = ""; s.ampOn = true; s.ampChannel = 2
+        s.ampGain = 0.6; s.eqOn = true; s.eq = [0, 0, 0, 0, 0, 0, 0, 0]; s.cabOn = true
+        s.cabModel = 4; s.irA = "SM57/NO-TS/57_1_inch_edge_pres_3.wav"; s.irB = "MD421/NO-TS/MD421_1_inch_cone_near_pres_3.wav"; s.irBlend = 0.35
+        s.cabLowCut = 110; s.cabHighCut = 10000; s.gateOn = true; s.gateThresh = -45
+        s.gateRelease = 35; s.chain = [PedalKind.od.rawValue]; s.delayOn = false; s.revOn = false
+        s.namInput = 0; s.namOutput = 4.6; s.odOn = true; s.odDrive = 0
+        s.odTone = 0.6; s.odLevel = 0.9
+    }),
+    // 6505+ red channel with an MXR drive in front.
+    ("Groove Chug - 6505+ (NAM)", { s in
+        s.nam = "Helga B 6505+ Red ch - MXR Drive"; s.capture = ""; s.ampOn = true; s.ampChannel = 2
+        s.ampGain = 0.6; s.eqOn = true; s.eq = [0, 0, 0, 0, 0, 0, 0, 0]; s.cabOn = true
+        s.cabModel = 4; s.irA = "SM57/NO-TS/57_1_inch_edge_pres_3.wav"; s.irB = "MD421/NO-TS/MD421_1_inch_cone_near_pres_3.wav"; s.irBlend = 0.35
+        s.cabLowCut = 90; s.cabHighCut = 10000; s.gateOn = true; s.gateThresh = -48
+        s.gateRelease = 60; s.chain = []; s.delayOn = false; s.revOn = false
+        s.namInput = 0; s.namOutput = 1.3
+    }),
+    // Mesa Mark IV lead channel for tight thrash rhythm.
+    ("Thrash Rhythm - Mark IV (NAM)", { s in
+        s.nam = "Roman A LT_MESA_MARKIV_1"; s.capture = ""; s.ampOn = true; s.ampChannel = 2
+        s.ampGain = 0.6; s.eqOn = true; s.eq = [0, 0, 0, 0, 0, 0, 0, 0]; s.cabOn = true
+        s.cabModel = 4; s.irA = "SM57/NO-TS/57_1_inch_edge_pres_3.wav"; s.irB = "MD421/NO-TS/MD421_1_inch_cone_near_pres_3.wav"; s.irBlend = 0.35
+        s.cabLowCut = 90; s.cabHighCut = 10000; s.gateOn = true; s.gateThresh = -50
+        s.gateRelease = 80; s.chain = []; s.delayOn = false; s.revOn = false
+        s.namInput = 0; s.namOutput = 1.1
+    }),
+    // Hot-rodded Marshall (Splawn Pro Mod, 3rd gear) with a clean boost.
+    ("Thrash Attack - Splawn (NAM)", { s in
+        s.nam = "Tim R Splawn Pro Mod 3rd Gear - G12"; s.capture = ""; s.ampOn = true; s.ampChannel = 2
+        s.ampGain = 0.6; s.eqOn = true; s.eq = [0, 0, 0, 0, 0, 0, 0, 0]; s.cabOn = true
+        s.cabModel = 4; s.irA = "SM57/NO-TS/57_1_inch_edge_pres_3.wav"; s.irB = "MD421/NO-TS/MD421_1_inch_cone_near_pres_3.wav"; s.irBlend = 0.35
+        s.cabLowCut = 90; s.cabHighCut = 10000; s.gateOn = true; s.gateThresh = -55
+        s.gateRelease = 70; s.chain = [PedalKind.od.rawValue]; s.delayOn = false; s.revOn = false
+        s.namInput = 0; s.namOutput = 3.1; s.odOn = true; s.odDrive = 0.05
+        s.odTone = 0.6; s.odLevel = 0.8
+    }),
+    // Marshall JVM crunch: classic rock and twin-guitar metal rhythm.
+    ("Crunch - JVM (NAM)", { s in
+        s.nam = "Phillipe P JVM-CR-OR-NoDrive-ESR0,017"; s.capture = ""; s.ampOn = true; s.ampChannel = 1
+        s.ampGain = 0.6; s.eqOn = true; s.eq = [0, 0, 0, 0, 0, 0, 0, 0]; s.cabOn = true
+        s.cabModel = 4; s.irA = "SM57/NO-TS/57_1_inch_edge_pres_3.wav"; s.irB = "MD421/NO-TS/MD421_1_inch_cone_near_pres_3.wav"; s.irBlend = 0.35
+        s.cabLowCut = 80; s.cabHighCut = 10000; s.gateOn = true; s.gateThresh = -66
+        s.gateRelease = 120; s.chain = []; s.delayOn = false; s.revOn = false
+        s.namInput = 0; s.namOutput = -1.6
+    }),
+    // Marshall JVM OD2 with lead delay and reverb.
+    ("British Lead - JVM (NAM)", { s in
+        s.nam = "Phillipe P JVM-OD2-RD-NoDrive-ESR0,003"; s.capture = ""; s.ampOn = true; s.ampChannel = 2
+        s.ampGain = 0.6; s.eqOn = true; s.eq = [0, 0, 0, 0, 0, 0, 0, 0]; s.cabOn = true
+        s.cabModel = 4; s.irA = "SM57/NO-TS/57_1_inch_edge_pres_3.wav"; s.irB = "MD421/NO-TS/MD421_1_inch_cone_near_pres_3.wav"; s.irBlend = 0.35
+        s.cabLowCut = 90; s.cabHighCut = 10000; s.gateOn = true; s.gateThresh = -64
+        s.gateRelease = 150; s.chain = []; s.delayOn = true; s.revOn = true
+        s.namInput = 0; s.namOutput = 2.7; s.delayTime = 380; s.delayFeedback = 0.25
+        s.delayMix = 0.15; s.revSize = 0.5; s.revMix = 0.12
+    }),
+    // Laney GH100S: thick British mids for doom and stoner riffs.
+    ("Doom - Laney (NAM)", { s in
+        s.nam = "Phillipe P LaneyGH100S-Hi-MidGain-ESR0,003"; s.capture = ""; s.ampOn = true; s.ampChannel = 1
+        s.ampGain = 0.6; s.eqOn = true; s.eq = [0, 0, 0, 0, 0, 0, 0, 0]; s.cabOn = true
+        s.cabModel = 4; s.irA = "SM57/NO-TS/57_1_inch_edge_pres_3.wav"; s.irB = "MD421/NO-TS/MD421_1_inch_cone_near_pres_3.wav"; s.irBlend = 0.35
+        s.cabLowCut = 80; s.cabHighCut = 10000; s.gateOn = true; s.gateThresh = -66
+        s.gateRelease = 150; s.chain = []; s.delayOn = false; s.revOn = true
+        s.namInput = 0; s.namOutput = -0.9; s.revSize = 0.4; s.revMix = 0.1
+    }),
+    // ENGL with a DS-1: compressed, wide and gated hard.
+    ("Industrial - ENGL (NAM)", { s in
+        s.nam = "Tom C Engl e530 preamp & 840 power amp with Boss DS1 Overdrive"; s.capture = ""; s.ampOn = true; s.ampChannel = 2
+        s.ampGain = 0.6; s.eqOn = true; s.eq = [0, 0, 0, 0, 0, 0, 0, 0]; s.cabOn = true
+        s.cabModel = 4; s.irA = "SM57/NO-TS/57_1_inch_edge_pres_3.wav"; s.irB = "MD421/NO-TS/MD421_1_inch_cone_near_pres_3.wav"; s.irBlend = 0.35
+        s.cabLowCut = 90; s.cabHighCut = 10000; s.gateOn = true; s.gateThresh = -48
+        s.gateRelease = 45; s.chain = [PedalKind.comp.rawValue]; s.delayOn = false; s.revOn = false
+        s.namInput = 0; s.namOutput = 4.1; s.compOn = true; s.compSustain = 0.4
+        s.compAttack = 5; s.compLevel = 0; s.compBlend = 0.7
+    }),
+    // Soldano SLO-style drive with delay and reverb for leads.
+    ("Hot Lead - Soldano (NAM)", { s in
+        s.nam = "Jason Z Soldano - Super Lead Overdrive pedal nice crunchy rhythm tone"; s.capture = ""; s.ampOn = true; s.ampChannel = 2
+        s.ampGain = 0.6; s.eqOn = true; s.eq = [0, 0, 0, 0, 0, 0, 0, 0]; s.cabOn = true
+        s.cabModel = 4; s.irA = "SM57/NO-TS/57_1_inch_edge_pres_3.wav"; s.irB = "MD421/NO-TS/MD421_1_inch_cone_near_pres_3.wav"; s.irBlend = 0.35
+        s.cabLowCut = 90; s.cabHighCut = 10000; s.gateOn = true; s.gateThresh = -64
+        s.gateRelease = 150; s.chain = []; s.delayOn = true; s.revOn = true
+        s.namInput = 0; s.namOutput = 1.3; s.delayTime = 450; s.delayFeedback = 0.3
+        s.delayMix = 0.2; s.revSize = 0.55; s.revMix = 0.15
+    }),
+    // Fender Twin Reverb with light compression, chorus, delay and reverb.
+    ("Clean - Twin (NAM)", { s in
+        s.nam = "Tim R Fender TwinVerb Norm Bright"; s.capture = ""; s.ampOn = true; s.ampChannel = 0
+        s.ampGain = 0.6; s.eqOn = true; s.eq = [0, 0, 0, 0, 0, 0, 0, 0]; s.cabOn = true
+        s.cabModel = 4; s.irA = "C414/NO-TS/C414_1_inch_cone_near_pres_3.wav"; s.irB = "SM57/NO-TS/57_1_inch_cone_near_pres_3.wav"; s.irBlend = 0.4
+        s.cabLowCut = 80; s.cabHighCut = 10000; s.gateOn = true; s.gateThresh = -72
+        s.gateRelease = 120; s.chain = [PedalKind.comp.rawValue, PedalKind.chorus.rawValue]; s.delayOn = true; s.revOn = true
+        s.namInput = 0; s.namOutput = -10.7; s.compOn = true; s.compSustain = 0.35
+        s.compAttack = 12; s.compBlend = 0.6; s.chorusOn = true; s.chorusRate = 0.6
+        s.chorusDepth = 0.4; s.chorusMix = 0.35; s.delayTime = 450; s.delayFeedback = 0.3
+        s.delayMix = 0.18; s.revSize = 0.6; s.revMix = 0.22
+    }),
 ]
 
 // MARK: - Captures
@@ -364,6 +477,7 @@ final class Model: ObservableObject {
     @Published var presetName = UserDefaults.standard.string(forKey: "preset") ?? FACTORY[0].0
     @Published var userIRName: String?
     @Published var captures: [String: Capture] = Capture.loadAll()
+    let namHost = NamHost()
     private var userIR: (samples: [Float], rate: Double)?
     let irLib = IRLibrary()
     lazy var sessions = Sessions(model: self)
@@ -504,7 +618,7 @@ final class Model: ObservableObject {
             running = true
             adviseOverloads = true; recentOverloads = []; startedAt = Date()
             status = latencyAdvice(i, o)
-            updateIR()
+            updateIR(); updateNam()
         } catch {
             engine.stop(); running = false; info = nil
             status = error.localizedDescription
@@ -592,6 +706,7 @@ final class Model: ObservableObject {
     private func applyAll() {
         if let c = activeCapture { c.apply(to: params) }
         params.capOn = activeCapture != nil
+        params.namOn = !s.nam.isEmpty && namHost.model != nil && namHost.loadedName == s.nam
         s.apply(to: params)
         params.bpm = Float(bpm); params.beatsPerBar = beatsPerBar; params.metroVol = Float(metroVol); params.metroOn = metroOn
         if let ms = syncedDelayMs { params.delayTime = Float(ms) }
@@ -639,10 +754,37 @@ final class Model: ObservableObject {
         applyAll(); updateIR()
     }
 
+    /// Load the selected NAM capture into the running engine (at its rate); unloads when none is selected.
+    func updateNam() {
+        guard let dsp = engine.dsp else { return }
+        namHost.select(s.nam, rate: Double(dsp.sr), dsp: dsp) { [weak self] err in
+            guard let self else { return }
+            if let err { self.status = err }
+            self.applyAll(); self.objectWillChange.send()
+        }
+    }
+
+    /// Use a NAM capture in place of the amp (the rest of the rig, cab included, stays as it is).
+    func useNam(_ name: String) {
+        var n = s
+        n.nam = name; n.capture = ""
+        if !name.isEmpty { n.ampOn = true }
+        s = n
+    }
+
+    func importNam() {
+        let added = namHost.importFiles()
+        objectWillChange.send()
+        if let first = added.first { useNam(first) }
+    }
+
+    func rescanNam() { namHost.scan(); objectWillChange.send() }
+
     /// Select a capture and make the rest of the rig neutral, so it sounds like the original.
     func useCapture(_ name: String) {
         var n = s
         n.capture = name
+        if !name.isEmpty { n.nam = "" }
         if !name.isEmpty {
             n.ampOn = true; n.cabOn = true; n.eqOn = false
             n.capDrive = 0; n.capLevel = 0
@@ -655,6 +797,7 @@ final class Model: ObservableObject {
         applyAll()
         if s.cabModel != old.cabModel || s.cabMic != old.cabMic || s.irA != old.irA || s.irB != old.irB || s.irBlend != old.irBlend
             || s.capture != old.capture { updateIR() }
+        if s.nam != old.nam { updateNam() }
         saveWork?.cancel()
         let w = DispatchWorkItem { [s] in UserDefaults.standard.set(try? JSONEncoder().encode(s), forKey: "settings") }
         saveWork = w
@@ -698,6 +841,10 @@ final class Model: ObservableObject {
         s.apply(to: p)
         let d = DSP(sampleRate: sr, params: p)
         d.setIR(currentIR(sr: sr))
+        if !s.nam.isEmpty, let r = NamHost.open(namHost.url(s.nam), rate: sr) {   // its own instance, freed with the rig
+            p.namOn = true
+            d.setNam(r.model, gain: r.gain, owned: true)
+        }
         return d
     }
 
@@ -848,10 +995,24 @@ final class Model: ObservableObject {
         sessions.tick()
         guard running else { meters.set(0, 0, false, 0); return }
         meters.set(params.inPeak, params.outPeak, params.gateOpen, params.pitchLatencyMs)
+        checkInputClipping()
         if meters.beat != params.metroBeat { meters.beat = params.metroBeat }
         tunerTick += 1
         if tunerTick % 15 == 0 { meters.load = engine.loadPeak; engine.loadPeak = 0 }
         if tunerOn && tunerTick % 2 == 0 { runTuner() }
+    }
+
+    private var lastClips = 0, clipTimes: [Date] = [], clipWarned = false
+    /// The interface's converter clipping (before Leviathan's input gain) makes every sound harsh and fizzy;
+    /// it can only be fixed with the interface's own gain control, so say so.
+    private func checkInputClipping() {
+        let c = params.inClips
+        guard c != lastClips else { return }
+        if c - lastClips >= 3 { clipTimes = clipTimes.filter { $0.timeIntervalSinceNow > -10 } + [Date()] }
+        lastClips = c
+        guard !clipWarned, clipTimes.count >= 3 else { return }
+        clipWarned = true
+        status = "Your interface\u{2019}s input is clipping (\(input?.name ?? "input") hits full scale before Leviathan). That makes every tone harsh and fizzy. Turn the gain knob on the interface down until your hardest playing stays out of the red, then use Input Gain here if you need more level."
     }
 
     private func runTuner() {
@@ -1376,21 +1537,41 @@ struct ContentView: View {
         UnitBox(title: "AMP", on: $m.s.ampOn, onKey: "ampOn", color: ch) {
             VStack(alignment: .center, spacing: 10) {
                 HStack(spacing: 6) {
-                    Picker("", selection: Binding(get: { m.s.capture }, set: { m.useCapture($0) })) {
+                    // tags: "" = built-in voicings, "cap:<name>" = fitted capture, "nam:<name>" = NAM capture
+                    Picker("", selection: Binding(get: { m.s.nam.isEmpty ? (m.s.capture.isEmpty ? "" : "cap:" + m.s.capture) : "nam:" + m.s.nam },
+                                                  set: { v in
+                                                      if v.hasPrefix("nam:") { m.useNam(String(v.dropFirst(4))) }
+                                                      else { var n = m.s; n.nam = ""; m.s = n; m.useCapture(v.hasPrefix("cap:") ? String(v.dropFirst(4)) : "") }
+                                                  })) {
                         Text("Leviathan voicings").tag("")
+                        if !m.namHost.files.isEmpty {
+                            Divider()
+                            ForEach(m.namHost.files, id: \.self) { n in Text("NAM · \(n)").tag("nam:" + n) }
+                        }
+                        if !m.s.nam.isEmpty && !m.namHost.files.contains(m.s.nam) { Text("NAM · \(m.s.nam) (missing)").tag("nam:" + m.s.nam) }
                         if !m.captures.isEmpty {
                             Divider()
-                            ForEach(m.captures.keys.sorted(), id: \.self) { n in Text("Capture · \(n)").tag(n) }
+                            ForEach(m.captures.keys.sorted(), id: \.self) { n in Text("Capture · \(n)").tag("cap:" + n) }
                         }
                     }.labelsHidden().frame(width: 260 * W)
-                    Button { m.reloadCaptures() } label: { Image(systemName: "arrow.clockwise") }.help("Rescan captures")
+                    Button { m.reloadCaptures(); m.rescanNam() } label: { Image(systemName: "arrow.clockwise") }.help("Rescan captures and NAM models")
+                    Button("Add .nam…") { m.importNam() }.help("Add Neural Amp Modeler captures (free at tone3000.com)")
                     if let c = m.activeCapture {
                         Text(String(format: "accuracy %.1f%%", max(0, 1 - c.esr_val) * 100))
                             .font(.system(size: 10 * UI).monospacedDigit()).foregroundStyle(.secondary)
                             .help("1 − ESR on held-out audio from the capture")
                     }
                 }
-                if m.activeCapture != nil {
+                if !m.s.nam.isEmpty {
+                    HStack(spacing: 2) {
+                        Knob(label: "Input", value: $m.s.namInput, key: "namInput", range: -24...24, def: 0, fmt: { String(format: "%+.1f dB", $0) }, color: ch)
+                        Knob(label: "Output", value: $m.s.namOutput, key: "namOutput", range: -24...24, def: 0, fmt: { String(format: "%+.1f dB", $0) }, color: ch)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(m.params.namOn ? "Neural Amp Modeler capture" : "Loading NAM capture…").font(.system(size: 10 * UI, weight: .semibold))
+                            Text(namDetail).font(.system(size: 10 * UI)).foregroundStyle(.secondary)
+                        }.frame(width: 220 * W, alignment: .leading)
+                    }
+                } else if m.activeCapture != nil {
                     HStack(spacing: 2) {
                         Knob(label: "Drive", value: $m.s.capDrive, key: "capDrive", range: -18...18, def: 0, fmt: { String(format: "%+.1f dB", $0) }, color: ch)
                         Knob(label: "Level", value: $m.s.capLevel, key: "capLevel", range: -24...12, def: 0, fmt: { String(format: "%+.1f dB", $0) }, color: ch)
@@ -1420,6 +1601,16 @@ struct ContentView: View {
                 }
             }
         }
+    }
+
+    /// Rate and loudness of the loaded NAM capture, and what the knobs do.
+    var namDetail: String {
+        let h = m.namHost
+        var parts: [String] = []
+        if h.expectedRate > 0 { parts.append(String(format: "%.1f kHz", h.expectedRate / 1000)) }
+        if let l = h.loudness { parts.append(String(format: "loudness %.1f dB (normalised)", l)) }
+        parts.append("Input = how hard you hit it; Output = level. Keep the cab on unless the capture includes one.")
+        return parts.joined(separator: " · ")
     }
 
     var eq: some View {

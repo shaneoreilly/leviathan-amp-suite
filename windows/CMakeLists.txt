@@ -24,6 +24,27 @@ FetchContent_Declare(juce
   GIT_SHALLOW TRUE)
 FetchContent_MakeAvailable(juce)
 
+# Neural Amp Modeler core (MIT) with Eigen (MPL-2.0), pinned; compiled with Leviathan's bridge (shared/nam)
+FetchContent_Declare(nam
+  GIT_REPOSITORY https://github.com/sdatkinson/NeuralAmpModelerCore.git
+  GIT_TAG 0b3d3c97b0859a3a8c92a8628c4dd89a25eb5842   # v0.6.0
+  GIT_SUBMODULES "Dependencies/eigen"
+  SOURCE_SUBDIR _none)   # sources only: Leviathan builds the library itself, not NAM's own tools
+FetchContent_MakeAvailable(nam)
+file(GLOB NAM_SOURCES "${nam_SOURCE_DIR}/NAM/*.cpp" "${nam_SOURCE_DIR}/NAM/*/*.cpp")
+# OBJECT, not STATIC: NAM registers its model types with static objects nothing references, which a linker
+# drops from a static library (every capture would then fail to load).
+add_library(levnam OBJECT ${NAM_SOURCES} "${CMAKE_CURRENT_SOURCE_DIR}/../shared/nam/lev_nam.cpp")
+target_include_directories(levnam PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/../shared/nam"
+  PRIVATE "${nam_SOURCE_DIR}" "${nam_SOURCE_DIR}/Dependencies/nlohmann")
+target_include_directories(levnam SYSTEM PRIVATE "${nam_SOURCE_DIR}/Dependencies/eigen")
+target_compile_definitions(levnam PUBLIC NAM_SAMPLE_FLOAT PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+if(MSVC)
+  target_compile_options(levnam PRIVATE /bigobj /W0 /O2)
+else()
+  target_compile_options(levnam PRIVATE -w -O3)
+endif()
+
 juce_add_gui_app(Leviathan
   PRODUCT_NAME "Leviathan"
   COMPANY_NAME "Leviathan"
@@ -57,7 +78,13 @@ target_compile_definitions(Leviathan PRIVATE
   JUCE_DIRECTSOUND=1
   JUCE_DISPLAY_SPLASH_SCREEN=0)
 
+# bundled NAM captures next to the app (the installer ships this folder)
+add_custom_command(TARGET Leviathan POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/../shared/nam/captures"
+          "$<IF:$<BOOL:${APPLE}>,$<TARGET_BUNDLE_CONTENT_DIR:Leviathan>/Resources/NAM,$<TARGET_FILE_DIR:Leviathan>/NAM>")
+
 target_link_libraries(Leviathan PRIVATE
+  levnam
   juce::juce_gui_extra
   juce::juce_audio_utils
   juce::juce_audio_devices
@@ -81,6 +108,7 @@ endif()
 # Offline engine check: renders test signals through the C++ engine (compared against the Swift engine).
 add_executable(dsp_render tools/dsp_render.cpp Source/Dsp.cpp)
 target_include_directories(dsp_render PRIVATE Source)
+target_link_libraries(dsp_render PRIVATE levnam)
 if(NOT MSVC)
   target_compile_options(dsp_render PRIVATE -O2)
 endif()
@@ -91,5 +119,5 @@ juce_generate_juce_header(preset_check)
 target_sources(preset_check PRIVATE tools/preset_check.cpp Source/Dsp.cpp Source/Settings.cpp Source/Library.cpp)
 target_include_directories(preset_check PRIVATE Source)
 target_compile_definitions(preset_check PRIVATE JUCE_USE_CURL=0 JUCE_WEB_BROWSER=0 LEVIATHAN_VERSION="${LEVIATHAN_VERSION}")
-target_link_libraries(preset_check PRIVATE juce::juce_audio_formats juce::juce_gui_basics juce::juce_dsp PUBLIC juce::juce_recommended_config_flags)
+target_link_libraries(preset_check PRIVATE levnam juce::juce_audio_formats juce::juce_gui_basics juce::juce_dsp PUBLIC juce::juce_recommended_config_flags)
 

@@ -83,6 +83,9 @@ final class Params: @unchecked Sendable {
     var capK1: Float = 1, capB1: Float = 0, capMid: Float = 6000, capK2: Float = 1, capB2: Float = 0
     var capDrive: Float = 0, capLevel: Float = 0
 
+    // NAM capture (replaces the amp when namOn and a model is loaded); input/output trims in dB
+    var namOn = false, namIn: Float = 0, namOut: Float = 0
+
     // metronome (mixed after the master, never through the amp)
     var metroOn = false, bpm: Float = 120, beatsPerBar = 4, metroVol: Float = -12
 
@@ -104,6 +107,7 @@ final class Params: @unchecked Sendable {
 
     // written by audio thread, read by UI
     var inPeak: Float = 0, outPeak: Float = 0, gateOpen = false, pitchLatencyMs: Float = 0
+    var inClips = 0   // raw input samples at full scale (the interface clipping), ever-increasing
     var metroBeat = -1
     let tunerRing = UnsafeMutablePointer<Float>.allocate(capacity: 4096)
     var tunerWrite = 0
@@ -423,6 +427,11 @@ final class DSP {
     private var capOn = false, kK1: Float = 1, kB1: Float = 0, kK2: Float = 1, kB2: Float = 0, kT1: Float = 0, kT2: Float = 0
     private var kLvl = Smooth()
 
+    // NAM capture: model pointer swapped in by the main thread (shared C++ bridge, same code as the Windows app)
+    private var nam: OpaquePointer?, namGain: Float = 1
+    private var namInG = Smooth(), namOutG = Smooth()
+    private let namBuf = UnsafeMutablePointer<Float>.allocate(capacity: DSP.maxN)
+
     // eq
     private let eqF: [Double] = [80, 160, 320, 640, 1250, 2500, 5000, 10000]
     private let eqB = (0..<8).map { _ in Biquad() }
@@ -474,6 +483,12 @@ final class DSP {
         update(force: true)
     }
 
+    /// Swap in a NAM model (already reset for this rate and maxN) and its loudness-normalising gain.
+    /// The caller keeps ownership and frees the previous model once the audio thread has moved on.
+    func setNam(_ m: OpaquePointer?, gain: Float, owned: Bool = false) { namGain = gain; namOwned = owned; OSMemoryBarrier(); nam = m }
+    private var namOwned = false
+    deinit { if namOwned, let nam { lev_nam_free(nam) } }
+
     /// Swap in a new cabinet impulse response (called from the main thread).
     func setIR(_ h: [Float]) {
         let slot = 1 - irActive, n = min(h.count, DSP.maxIR)
@@ -519,6 +534,8 @@ final class DSP {
         kK1 = p.capK1 * dbLin(p.capDrive); kB1 = p.capB1; kK2 = p.capK2; kB2 = p.capB2
         kT1 = tanhf(kB1); kT2 = tanhf(kB2)
         kLvl.target = dbLin(p.capLevel)
+        namInG.target = dbLin(p.namIn); namOutG.target = dbLin(p.namOut)
+        if force { namInG.v = namInG.target; namOutG.v = namOutG.target }
 
         eqMix.target = p.eqOn ? 1 : 0
         for i in 0..<8 {
@@ -562,6 +579,9 @@ final class DSP {
             src = UnsafePointer(b)
         }
         if recording { p.recDry.write(src, n) }
+        var clips = 0
+        for i in 0..<n where abs(src[i]) >= 0.989 { clips += 1 }   // >= -0.1 dBFS
+        if clips > 0 { p.inClips &+= clips }
 
         // input gain, tuner tap, gate
         let close = gThr * 0.5, holdN = Int(0.012 * sr), gateOn = p.gateOn
@@ -595,8 +615,20 @@ final class DSP {
             if id >= 0 && id < pedals.count { pedals[id].process(a, n, c) }
         }
 
+        // NAM capture in place of the amp (block-processed; same bridge as the Windows app)
+        let nm = p.namOn ? nam : nil
+        if let nm {
+            for i in 0..<n { namBuf[i] = a[i] * namInG.next(c) }
+            lev_nam_process(nm, namBuf, namBuf, Int32(n))
+            let g = namGain
+            for i in 0..<n {
+                let m = ampMix.next(c), x = a[i]
+                _ = aPre.next(c); _ = aVol.next(c)
+                a[i] = x + (namBuf[i] * g * namOutG.next(c) - x) * m
+            }
+        }
         // amp, 4x oversampled through the clipping stages
-        for i in 0..<n {
+        for i in 0..<(nm == nil ? n : 0) {
             let m = ampMix.next(c), x = a[i]
             if m < 1e-4 { continue }
             let pre = aPre.next(c), vol = aVol.next(c)

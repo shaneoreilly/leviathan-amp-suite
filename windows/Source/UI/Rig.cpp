@@ -71,6 +71,7 @@ juce::String RigView::currentSignature() const {
     for (int k : chain) sig.add("p" + juce::String(k));
     sig.add(model.collapsed.joinIntoString("|"));
     sig.add(s.s("capture")); sig.add(juce::String((int) model.captures.size()));
+    sig.add(s.s("nam")); sig.add(model.namFiles.joinIntoString(",")); sig.add(model.namReady() ? "namok" : "");
     sig.add(s.b("wahAuto") ? "wa" : "wm");
     sig.add("cab" + juce::String(s.i("cabModel"))); sig.add(model.irLib.isEmpty() ? "nolib" : "lib"); sig.add(model.userIRName);
     sig.add(s.s("irA")); sig.add(s.s("irB"));
@@ -215,22 +216,39 @@ std::unique_ptr<UnitBox> RigView::makePanel(const juce::String& id) {
     } else if (id == "amp") {
         auto c = col(10);
         auto r1 = row(6);
+        // ids: 1 = built-in voicings, 2.. = fitted captures, 1000.. = NAM captures
         auto cap = std::make_unique<Picker>((int) (190 * theme::W), [&m] {
+            if (const auto nm = m.s().s("nam"); nm.isNotEmpty()) { const int k = m.namFiles.indexOf(nm); return k >= 0 ? 1000 + k : 1; }
             const auto cur = m.s().s("capture"); if (cur.isEmpty()) return 1;
             int i = 2; for (auto& [k, v] : m.captures) { if (k == cur) return i; i++; } return 1;
         }, [&m](int i) {
-            if (i == 1) { m.useCapture(""); return; }
+            if (i >= 1000) { m.useNam(m.namFiles[i - 1000]); return; }
+            if (i == 1) { m.useNam(""); m.useCapture(""); return; }
             int k = 2; for (auto& [name, v] : m.captures) { if (k == i) { m.useCapture(name); return; } k++; }
         });
         cap->addItem("Leviathan voicings", 1);
-        { int i = 2; for (auto& [k, v] : m.captures) cap->addItem(juce::String::fromUTF8("Capture \xc2\xb7 ") + k, i++); }
+        if (!m.namFiles.isEmpty()) { cap->addSeparator(); for (int i = 0; i < m.namFiles.size(); ++i) cap->addItem(juce::String::fromUTF8("NAM \xc2\xb7 ") + m.namFiles[i], 1000 + i); }
+        if (!m.captures.empty()) { cap->addSeparator(); int i = 2; for (auto& [k, v] : m.captures) cap->addItem(juce::String::fromUTF8("Capture \xc2\xb7 ") + k, i++); }
         r1->add(std::move(cap));
-        r1->add(std::make_unique<IconButton>(IconButton::refresh, [&m] { m.reloadCaptures(); }, 13))->setTooltip("Rescan captures");
+        r1->add(std::make_unique<IconButton>(IconButton::refresh, [&m] { m.reloadCaptures(); m.rescanNam(); }, 13))->setTooltip("Rescan captures and NAM models");
+        r1->add(textButton(juce::String::fromUTF8("Add .nam\xe2\x80\xa6"), [&m] { m.importNamDialog(); }))->setTooltip("Add Neural Amp Modeler captures (free at tone3000.com)");
         if (auto* ac = m.activeCapture())
             r1->add(std::make_unique<LiveLabel>([ac] { return juce::String::formatted("accuracy %.1f%%", std::max(0.0, 1 - ac->esr_val) * 100); }, 10))
                 ->setTooltip(juce::String::fromUTF8("1 \xe2\x88\x92 ESR on held-out audio from the capture"));
         c->add(std::move(r1));
-        if (m.activeCapture()) {
+        if (m.s().s("nam").isNotEmpty()) {
+            auto r = row();
+            r->add(knob("Input", "namInput", -24, 24, 0, dbSigned, "AMP"));
+            r->add(knob("Output", "namOutput", -24, 24, 0, dbSigned, "AMP"));
+            auto note = std::make_unique<LiveLabel>([&m] {
+                juce::String t = m.namReady() ? "Neural Amp Modeler capture" : juce::String::fromUTF8("Loading NAM capture\xe2\x80\xa6");
+                if (m.namReady() && m.namExpectedRate > 0) t << "\n" << juce::String(m.namExpectedRate / 1000, 1) << " kHz";
+                if (m.namReady() && m.namLoudness) t << juce::String::fromUTF8(" \xc2\xb7 loudness ") << juce::String(*m.namLoudness, 1) << " dB (normalised)";
+                return t + "\nInput = how hard you hit it; Output = level.";
+            }, 10);
+            setPref(*note, (int) (230 * theme::W), 60); r->add(std::move(note));
+            c->add(std::move(r));
+        } else if (m.activeCapture()) {
             auto r = row();
             r->add(knob("Drive", "capDrive", -18, 18, 0, dbSigned, "AMP"));
             r->add(knob("Level", "capLevel", -24, 12, 0, dbSigned, "AMP"));

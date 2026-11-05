@@ -43,6 +43,7 @@ Model::Model() {
     collapsed = juce::StringArray::fromLines(p.getValue("collapsed")); collapsed.removeEmptyStrings();
 
     captures = Capture::loadAll();
+    rescanNam();
     irLib.scan(48000);
     if (!irLib.isEmpty() && !p.getBoolValue("godsCabIntro")) {           // first run with the IR pack: switch to it
         settings.set("cabModel", CAB_LIB); settings.set("cabHighCut", 10000.0); p.setValue("godsCabIntro", true);
@@ -84,8 +85,11 @@ Model::Model() {
 }
 
 Model::~Model() {
+    alive->store(false);
     stopTimer();
     stop();
+    devices.closeAudioDevice();   // the engine is gone after this, so the model can't be in use
+    lev_nam_free(namModel); namModel = nullptr;
     saveState();
     sessions.reset();
     midi.reset();
@@ -109,6 +113,7 @@ void Model::set(const juce::Identifier& key, const juce::var& v) {
 
 void Model::settingsChanged(const Settings& old) {
     applyAll();
+    if (settings.s("nam") != old.s("nam")) updateNam();
     if (settings.i("cabModel") != old.i("cabModel") || settings.d("cabMic") != old.d("cabMic") || settings.s("irA") != old.s("irA")
         || settings.s("irB") != old.s("irB") || settings.d("irBlend") != old.d("irBlend") || settings.s("capture") != old.s("capture"))
         updateIR();
@@ -119,6 +124,7 @@ void Model::settingsChanged(const Settings& old) {
 void Model::applyAll() {
     if (auto* c = activeCapture()) c->apply(params);
     params.capOn = activeCapture() != nullptr;
+    params.namOn = namReady();
     params.bpm = (float) bpm; params.beatsPerBar = beatsPerBar; params.metroVol = (float) metroVol; params.metroOn.store(metroOn);
     settings.apply(params);
     if (auto ms = syncedDelayMs()) { params.delayTime = (float) *ms; params.version.fetch_add(1); }
@@ -215,7 +221,7 @@ void Model::audioDeviceAboutToStart(juce::AudioIODevice* d) {
         dsp = std::move(fresh);
         dspRate = sr;
     }
-    juce::MessageManager::callAsync([this] { irLib.scan(dspRate); updateIR(); refreshInfo(); changed(); });
+    juce::MessageManager::callAsync([this] { irLib.scan(dspRate); updateIR(); updateNam(); refreshInfo(); changed(); });
 }
 
 void Model::audioDeviceStopped() {
@@ -281,6 +287,25 @@ void Model::timerCallback() {
     if (x > lastXRuns) { dropouts += x - lastXRuns; lastXRuns = x; refreshInfo(); overloaded(); }
     if (++tunerTick % 15 == 0) cpu = (float) devices.getCpuUsage();
     if (tunerOn && tunerTick % 2 == 0) runTuner();
+    checkInputClipping();
+}
+
+/// The interface's converter clipping (before Leviathan's input gain) makes every sound harsh and fizzy;
+/// it can only be fixed with the interface's own gain control, so say so.
+void Model::checkInputClipping() {
+    const int c = params.inClips.load();
+    if (c == lastClips) return;
+    const double now = juce::Time::getMillisecondCounterHiRes() / 1000.0;
+    if (c - lastClips >= 3) {
+        clipTimes.erase(std::remove_if(clipTimes.begin(), clipTimes.end(), [&](double t) { return now - t > 10; }), clipTimes.end());
+        clipTimes.push_back(now);
+    }
+    lastClips = c;
+    if (clipWarned || clipTimes.size() < 3) return;
+    clipWarned = true;
+    status = juce::String::fromUTF8("Your interface\xe2\x80\x99s input is clipping (") + (info.inName.isNotEmpty() ? info.inName : juce::String("input"))
+             + " hits full scale before Leviathan). That makes every tone harsh and fizzy. Turn the gain knob on the interface down until your hardest playing stays out of the red, then use Input Gain here if you need more level.";
+    changed();
 }
 
 void Model::runTuner() {
@@ -563,6 +588,7 @@ const Capture* Model::activeCapture() const {
 void Model::useCapture(const juce::String& name) {
     Settings n = settings;
     n.set("capture", name);
+    if (name.isNotEmpty()) n.set("nam", juce::String());
     if (name.isNotEmpty()) {   // make the rest of the rig neutral, so it sounds like the original
         n.set("ampOn", true); n.set("cabOn", true); n.set("eqOn", false); n.set("capDrive", 0.0); n.set("capLevel", 0.0);
         for (int k = 0; k < kPedalCount; ++k) n.set(pedalOnKey((PedalKind) k), false);
@@ -629,8 +655,113 @@ std::unique_ptr<OfflineRig> Model::offlineRig(double sr) {
     if (auto ms = syncedDelayMs()) r->p.delayTime = (float) *ms;
     r->dsp = std::make_unique<DSP>(sr, r->p);
     r->dsp->setIR(currentIR(sr));
+    if (settings.s("nam").isNotEmpty()) {   // its own instance, freed with the rig
+        auto o = openNam(namFile(settings.s("nam")), sr);
+        if (o.m) { r->nam = o.m; r->p.namOn = true; r->dsp->setNam(o.m, o.gain); }
+    }
     if (std::abs(sr - dspRate) > 0.5) irLib.scan(dspRate);
     return r;
+}
+
+// MARK: - NAM captures
+
+juce::File Model::namBundledDir() {
+#if JUCE_MAC
+    return juce::File::getSpecialLocation(juce::File::currentApplicationFile).getChildFile("Contents/Resources/NAM");
+#else
+    return juce::File::getSpecialLocation(juce::File::currentExecutableFile).getParentDirectory().getChildFile("NAM");
+#endif
+}
+
+juce::File Model::namFile(const juce::String& name) {
+    const auto mine = namDir().getChildFile(name + ".nam");
+    return mine.existsAsFile() ? mine : namBundledDir().getChildFile(name + ".nam");
+}
+
+void Model::rescanNam() {
+    namDir().createDirectory();
+    namFiles.clear();
+    for (const auto& d : { namDir(), namBundledDir() })
+        for (const auto& e : juce::RangedDirectoryIterator(d, false, "*.nam", juce::File::findFiles)) namFiles.addIfNotAlreadyThere(e.getFile().getFileNameWithoutExtension());
+    namFiles.sortNatural();
+    changed();
+}
+
+Model::NamOpen Model::openNam(const juce::File& f, double rate) {
+    NamOpen o;
+    char err[256] = {};
+    o.m = lev_nam_load(f.getFullPathName().toRawUTF8(), err, sizeof err);
+    if (!o.m) return o;
+    lev_nam_reset(o.m, rate, DSP::maxN);
+    o.expected = lev_nam_expected_rate(o.m);
+    if (lev_nam_has_loudness(o.m)) o.loudness = lev_nam_loudness(o.m);
+    // level-match every capture by measuring it (many files have no loudness metadata)
+    o.gain = (float) std::pow(10.0, (LEV_NAM_TARGET_LEVEL - lev_nam_measure_level(o.m, rate)) / 20);
+    return o;
+}
+
+/// Hand a model to the audio thread; free the previous one once it can no longer be in use.
+void Model::setEngineNam(LevNam* m, float gain) {
+    LevNam* old = namModel;
+    namModel = m; namGain = gain;
+    {
+        const juce::SpinLock::ScopedLockType sl(dspLock);
+        if (dsp) dsp->setNam(m, gain);
+    }
+    if (old && old != m) juce::Timer::callAfterDelay(1000, [old] { lev_nam_free(old); });
+}
+
+/// Load the selected NAM capture into the running engine (at its rate); unloads when none is selected.
+void Model::updateNam() {
+    const auto name = settings.s("nam");
+    const int gen = ++namGen;
+    if (name.isEmpty() || dsp == nullptr) {
+        if (name.isEmpty()) { setEngineNam(nullptr, 1); namLoaded = {}; }
+        applyAll(); changed(); return;
+    }
+    if (name == namLoaded && namRate == dspRate && namModel) { setEngineNam(namModel, namGain); applyAll(); changed(); return; }
+    const auto file = namFile(name);
+    if (!file.existsAsFile()) {
+        setEngineNam(nullptr, 1); namLoaded = {};
+        status = "NAM capture \"" + name + "\" isn't in the NAM folder."; applyAll(); changed(); return;
+    }
+    const double rate = dspRate;
+    auto aliveFlag = alive;
+    juce::Thread::launch([this, aliveFlag, file, name, rate, gen] {
+        auto o = openNam(file, rate);
+        juce::MessageManager::callAsync([this, aliveFlag, o, name, rate, gen] {
+            if (!aliveFlag->load() || gen != namGen) { lev_nam_free(o.m); return; }   // superseded
+            if (!o.m) { setEngineNam(nullptr, 1); namLoaded = {}; status = "Couldn't load NAM capture \"" + name + "\"."; applyAll(); changed(); return; }
+            namLoaded = name; namRate = rate; namExpectedRate = o.expected; namLoudness = o.loudness;
+            setEngineNam(o.m, o.gain);
+            if (o.expected > 0 && std::abs(o.expected - rate) > 1)
+                status = "\"" + name + "\" was captured at " + juce::String(o.expected / 1000, 1) + " kHz but the engine runs at "
+                         + juce::String(rate / 1000, 1) + " kHz, so it won't sound quite right.";
+            applyAll(); changed();
+        });
+    });
+}
+
+/// Use a NAM capture in place of the amp (the rest of the rig, cab included, stays as it is).
+void Model::useNam(const juce::String& name) {
+    Settings n = settings;
+    n.set("nam", name); n.set("capture", juce::String());
+    if (name.isNotEmpty()) n.set("ampOn", true);
+    setSettings(n);
+}
+
+void Model::importNamDialog() {
+    auto chooser = std::make_shared<juce::FileChooser>("Choose NAM captures (.nam), for example from tone3000.com", juce::File(), "*.nam");
+    chooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::canSelectMultipleItems,
+        [this, chooser](const juce::FileChooser& fc) {
+            juce::String first;
+            for (const auto& f : fc.getResults()) {
+                if (!f.hasFileExtension("nam")) continue;
+                if (f.copyFileTo(namDir().getChildFile(f.getFileName())) && first.isEmpty()) first = f.getFileNameWithoutExtension();
+            }
+            rescanNam();
+            if (first.isNotEmpty()) useNam(first);
+        });
 }
 
 // MARK: - appearance, layout

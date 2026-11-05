@@ -294,6 +294,7 @@ DSP::DSP(double sampleRate, Params& params)
       a(maxN), b(maxN), wl(maxN), wr(maxN),
       fade(1 - std::exp(-1 / (0.006f * (float) sampleRate))),
       shifter(sampleRate),
+      namBuf(maxN, 0.0f),
       hist(maxIR + maxN, 0.0f),
       dSize((int) (sampleRate * 2.1)) {
     for (int k = 0; k < kPedalCount; ++k) pedals.push_back(makePedal((PedalKind) k, (float) sampleRate));
@@ -358,6 +359,8 @@ void DSP::update(bool force) {
     kK1 = p.capK1 * dbLin(p.capDrive); kB1 = p.capB1; kK2 = p.capK2; kB2 = p.capB2;
     kT1 = std::tanh(kB1); kT2 = std::tanh(kB2);
     kLvl.target = dbLin(p.capLevel);
+    namInG.target = dbLin(p.namIn); namOutG.target = dbLin(p.namOut);
+    if (force) { namInG.v = namInG.target; namOutG.v = namOutG.target; }
 
     eqMix.target = p.eqOn ? 1.f : 0.f;
     for (int i = 0; i < 8; ++i) {
@@ -402,6 +405,7 @@ void DSP::process(const float* input, float* outL, float* outR, int frames) {
         }
     }
     if (recording) p.recDry.write(src, n);
+    { int clips = 0; for (int i = 0; i < n; ++i) if (std::abs(src[i]) >= 0.989f) clips++; if (clips) p.inClips.fetch_add(clips); }   // >= -0.1 dBFS
 
     // input gain, tuner tap, gate
     const float close = gThr * 0.5f; const int holdN = (int) (0.012f * sr); const bool gateOn = p.gateOn;
@@ -438,8 +442,20 @@ void DSP::process(const float* input, float* outL, float* outR, int frames) {
         if (id >= 0 && id < (int) pedals.size()) pedals[(size_t) id]->process(a.data(), n, c);
     }
 
+    // NAM capture in place of the amp (block-processed; same bridge as the Mac app)
+    LevNam* nm = p.namOn ? nam.load(std::memory_order_acquire) : nullptr;
+    if (nm) {
+        for (int i = 0; i < n; ++i) namBuf[(size_t) i] = a[(size_t) i] * namInG.next(c);
+        lev_nam_process(nm, namBuf.data(), namBuf.data(), n);
+        const float g = namGain.load();
+        for (int i = 0; i < n; ++i) {
+            const float m = ampMix.next(c), x = a[(size_t) i];
+            aPre.next(c); aVol.next(c);
+            a[(size_t) i] = x + (namBuf[(size_t) i] * g * namOutG.next(c) - x) * m;
+        }
+    }
     // amp, 4x oversampled through the clipping stages
-    for (int i = 0; i < n; ++i) {
+    for (int i = 0; i < (nm ? 0 : n); ++i) {
         const float m = ampMix.next(c), x = a[(size_t) i];
         if (m < 1e-4f) continue;
         const float pre = aPre.next(c), vol = aVol.next(c);

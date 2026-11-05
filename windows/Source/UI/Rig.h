@@ -10,7 +10,7 @@ public:
     LiveLabel(std::function<juce::String()> fn, float pt = 10, juce::Colour c = theme::secondary, juce::Justification j = juce::Justification::centredLeft, bool bold = false)
         : text(std::move(fn)), size(pt), colour(c), just(j), isBold(bold) { setInterceptsMouseClicks(false, false); fit(); }
     void fit() { setPref(*this, std::max(8, juce::GlyphArrangement::getStringWidthInt(theme::font(size, isBold), text()) + 4), (int) (size * theme::UI * 1.35f)); }
-    void paint(juce::Graphics& g) override { g.setColour(colourFn ? colourFn() : colour); g.setFont(theme::font(size, isBold)); g.drawText(text(), getLocalBounds(), just, true); }
+    void paint(juce::Graphics& g) override { g.setColour(colourFn ? colourFn() : colour); g.setFont(theme::font(size, isBold)); const auto t = text(); if (t.containsChar('\n')) g.drawFittedText(t, getLocalBounds(), just, 4, 1.0f); else g.drawText(t, getLocalBounds(), just, true); }
     std::function<juce::String()> text; std::function<juce::Colour()> colourFn;
     float size; juce::Colour colour; juce::Justification just; bool isBold;
 };

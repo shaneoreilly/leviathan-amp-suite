@@ -15,7 +15,7 @@ func testInput(_ i: Int, _ sr: Double) -> Float {
     return Float(x)
 }
 
-struct Scenario { let name: String; let setup: (Params) -> Void; let ir: ((Double) -> [Float])? }
+struct Scenario { let name: String; let setup: (Params) -> Void; let ir: ((Double) -> [Float])?; var nam = false }
 let builtinCab: (Double) -> [Float] = { sr in renderCab(CABS[0], mic: 0.3, sr: sr) }
 
 let scenarios: [Scenario] = [
@@ -53,6 +53,10 @@ let scenarios: [Scenario] = [
         p.inGain = 9.65; p.gateOn = true; p.gateThresh = -48; p.gateRelease = 90
         p.chainCount = 0; p.ampOn = false; p.eqOn = false; p.cabOn = false; p.masterVol = 0
     }, ir: nil),
+    Scenario(name: "nam_capture", setup: { p in
+        p.inGain = 6; p.gateOn = true; p.gateThresh = -50; p.chain[0] = Int32(PedalKind.od.rawValue); p.chainCount = 1; p.odDrive = 0.3
+        p.ampOn = true; p.namOn = true; p.namIn = 3; p.namOut = -2; p.eqOn = true; p.cabOn = true; p.masterVol = -6
+    }, ir: builtinCab, nam: true),
     Scenario(name: "metronome", setup: { p in
         p.ampOn = false; p.cabOn = false; p.eqOn = false; p.chainCount = 0; p.gateOn = false
         p.metroOn = true; p.bpm = 133; p.beatsPerBar = 3; p.metroVol = -6
@@ -69,6 +73,14 @@ let scenarios: [Scenario] = [
             p.version &+= 1
             let d = DSP(sampleRate: sr, params: p)
             if let ir = sc.ir { d.setIR(ir(sr)) }
+            var nm: OpaquePointer?
+            if sc.nam {   // NAM's example model, path passed as argv[2]
+                nm = lev_nam_load(CommandLine.arguments[2], nil, 0)
+                guard let nm else { fatalError("nam load failed") }
+                lev_nam_reset(nm, sr, Int32(DSP.maxN))
+                d.setNam(nm, gain: 0.5)
+            }
+            defer { lev_nam_free(nm) }
             var inp = [Float](repeating: 0, count: block)
             var l = [Float](repeating: 0, count: total), r = [Float](repeating: 0, count: total)
             var t = 0

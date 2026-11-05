@@ -9,6 +9,7 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include "lev_nam.h"
 
 namespace lev {
 
@@ -90,6 +91,9 @@ struct Params {
     bool capOn = false; float capHP = 80, capLS = 0, capPkF = 900, capPk = 0, capHS = 0;
     float capK1 = 1, capB1 = 0, capMid = 6000, capK2 = 1, capB2 = 0, capDrive = 0, capLevel = 0;
 
+    // NAM capture (replaces the amp when namOn and a model is loaded); input/output trims in dB
+    bool namOn = false; float namIn = 0, namOut = 0;
+
     // metronome (mixed after the master, never through the amp)
     std::atomic<bool> metroOn { false }; float bpm = 120; int beatsPerBar = 4; float metroVol = -12;
 
@@ -108,6 +112,7 @@ struct Params {
     // written by audio thread, read by UI
     std::atomic<float> inPeak { 0 }, outPeak { 0 }, pitchLatencyMs { 0 };
     std::atomic<bool> gateOpen { false };
+    std::atomic<int> inClips { 0 };   // raw input samples at full scale (the interface clipping), ever-increasing
     std::atomic<int> metroBeat { -1 };
     float tunerRing[4096] = {};
     std::atomic<int> tunerWrite { 0 };
@@ -193,6 +198,9 @@ public:
 
     /// Swap in a new cabinet impulse response (UI thread).
     void setIR(const std::vector<float>& h);
+    /// Swap in a NAM model (already reset for this rate and maxN), with its loudness-normalising gain.
+    /// The caller keeps ownership and frees the previous model once the audio thread has moved on.
+    void setNam(LevNam* m, float gain) { namGain.store(gain); nam.store(m, std::memory_order_release); }
     void process(const float* input, float* outL, float* outR, int frames);
 
 private:
@@ -212,6 +220,9 @@ private:
     Biquad aHP, aTight, aEmph, up[4], down[4], aLP1, aIHP, aLP2, aLP3, aChar, aBass, aMid, aTreb, aDepth, aPres, aDC;
     Smooth ampMix, aPre, aVol;
     Voicing v = VOICINGS[2]; float tb1 = 0, tb2 = 0;
+
+    std::atomic<LevNam*> nam { nullptr }; std::atomic<float> namGain { 1 };
+    Smooth namInG, namOutG; std::vector<float> namBuf;
 
     Biquad kHP, kLS, kPk, kHS, kMid;
     bool capOn = false; float kK1 = 1, kB1 = 0, kK2 = 1, kB2 = 0, kT1 = 0, kT2 = 0; Smooth kLvl;

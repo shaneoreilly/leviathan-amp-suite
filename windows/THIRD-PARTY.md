@@ -13,3 +13,10 @@ ASIO is a trademark and software of Steinberg Media Technologies GmbH.
 Source: https://www.steinberg.net/asiosdk
 
 The SDK is downloaded during the build and is not part of this repository.
+
+## Neural Amp Modeler
+
+NAM captures run on NeuralAmpModelerCore v0.6.0 (MIT License, © Steven Atkinson), with Eigen (MPL-2.0) and
+nlohmann/json (MIT). Sources: https://github.com/sdatkinson/NeuralAmpModelerCore,
+https://gitlab.com/libeigen/eigen, https://github.com/nlohmann/json. Downloaded during the build.
+

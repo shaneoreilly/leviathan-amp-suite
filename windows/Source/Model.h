@@ -13,8 +13,12 @@ class Updater;
 
 enum class Screen { rig, presets, recordings, settings };
 
-/// A private copy of the rig (offline re-amping), independent of the live engine.
-struct OfflineRig { Params p; std::unique_ptr<DSP> dsp; };
+/// A private copy of the rig (offline re-amping), independent of the live engine (with its own NAM instance).
+struct OfflineRig {
+    Params p; std::unique_ptr<DSP> dsp; LevNam* nam = nullptr;
+    ~OfflineRig() { dsp.reset(); lev_nam_free(nam); }
+};
+
 
 class Model : public juce::ChangeBroadcaster, private juce::AudioIODeviceCallback, private juce::Timer {
 public:
@@ -126,6 +130,21 @@ public:
     void updateIR();
     std::vector<float> currentIR(double sr);
     std::unique_ptr<OfflineRig> offlineRig(double sr);
+
+    // MARK: NAM captures (.nam, in appDataDir()/NAM)
+    static juce::File namDir() { return appDataDir().getChildFile("NAM"); }
+    /// Captures that ship with the app (next to Leviathan.exe; inside the bundle on macOS test builds).
+    static juce::File namBundledDir();
+    /// Your own copy wins over the bundled one of the same name.
+    static juce::File namFile(const juce::String& name);
+    juce::StringArray namFiles;
+    juce::String namLoaded;                 // name of the model in the engine now
+    double namExpectedRate = 0; std::optional<double> namLoudness;
+    bool namReady() const { return namModel != nullptr && namLoaded == settings.s("nam") && settings.s("nam").isNotEmpty(); }
+    void rescanNam();
+    void importNamDialog();
+    void useNam(const juce::String& name);
+    void updateNam();
     double engineRate() const { return dspRate; }
 
     // MARK: appearance + layout (not part of presets)
@@ -154,6 +173,11 @@ private:
     Settings settings;
     std::unique_ptr<juce::PropertiesFile> propsFile;
     std::optional<std::pair<std::vector<float>, double>> userIR;
+    LevNam* namModel = nullptr; double namRate = 0; float namGain = 1; int namGen = 0;
+    std::shared_ptr<std::atomic<bool>> alive = std::make_shared<std::atomic<bool>>(true);
+    struct NamOpen { LevNam* m = nullptr; float gain = 1; double expected = 0; std::optional<double> loudness; };
+    static NamOpen openNam(const juce::File& f, double rate);
+    void setEngineNam(LevNam* m, float gain);
 
     // engine (the DSP is created when the device starts, at its rate)
     juce::SpinLock dspLock;
@@ -174,6 +198,8 @@ private:
     void saveState();
     void timerCallback() override;
     void runTuner();
+    void checkInputClipping();
+    int lastClips = 0; std::vector<double> clipTimes; bool clipWarned = false;
     void refreshInfo();
     void overloaded();
     void ensureInputs();

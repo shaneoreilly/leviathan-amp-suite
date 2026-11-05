@@ -18,6 +18,9 @@ int main(int argc, char** argv) {
     }
     if (argc < 3) { std::printf("usage: preset_check <dry.wav> <out-dir> | --dump <file.json>\n"); return 1; }
     const juce::File dryFile(juce::String::fromUTF8(argv[1])), out(juce::String::fromUTF8(argv[2]));
+    // NAM captures for presets that use one: LEVIATHAN_NAM_DIR, else the app's NAM folder
+    const auto envNam = juce::SystemStats::getEnvironmentVariable("LEVIATHAN_NAM_DIR", {});
+    const juce::File namDir = envNam.isNotEmpty() ? juce::File(envNam) : appDataDir().getChildFile("NAM");
     out.createDirectory();
     auto dry = loadAudio(dryFile, 48000);
     if (dry.channels.empty()) { std::printf("can't read %s\n", argv[1]); return 1; }
@@ -55,6 +58,17 @@ int main(int argc, char** argv) {
             ir = renderCab(CABS[juce::jlimit(0, kCabCount - 1, s.i("cabModel"))], s.d("cabMic"), sr);
         }
         d.setIR(ir);
+        LevNam* nam = nullptr;
+        if (s.s("nam").isNotEmpty()) {
+            char err[256] = {};
+            nam = lev_nam_load(namDir.getChildFile(s.s("nam") + ".nam").getFullPathName().toRawUTF8(), err, sizeof err);
+            if (!nam) { std::printf("  NAM %s: %s\n", s.s("nam").toRawUTF8(), err); }
+            else {
+                lev_nam_reset(nam, sr, DSP::maxN);
+                const double lvl = lev_nam_measure_level(nam, sr);
+                p.namOn = true; d.setNam(nam, (float) std::pow(10.0, (LEV_NAM_TARGET_LEVEL - lvl) / 20));
+            }
+        }
         const auto& x = dry.channels[0];
         const int n = (int) x.size(), block = 256;
         std::vector<float> l((size_t) n), r((size_t) n);
@@ -71,6 +85,7 @@ int main(int argc, char** argv) {
         const double loud = cnt ? 10 * std::log10(sum / cnt) : -99;
         std::printf("%-34s loudness %6.1f dB   peak %6.1f dBFS   clipped %5.2f%%\n", rigName.toRawUTF8(), loud, 20 * std::log10(peak + 1e-9), 100.0 * clipped / n);
         writeWav(out.getChildFile(juce::File::createLegalFileName(rigName) + ".wav"), { l.data(), r.data() }, n, sr);
+        lev_nam_free(nam);
     }
     return 0;
 }

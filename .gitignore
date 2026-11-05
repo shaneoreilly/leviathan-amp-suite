@@ -41,3 +41,4 @@ IRs/
 
 # Release packages
 mac/dist/
+mac/.build-nam/

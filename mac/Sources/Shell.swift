@@ -499,6 +499,12 @@ struct SettingsView: View {
                         Button("Import recordings (WAV)…") { rec.importRecordings(); m.screen = .recordings }
                         Button("Open folder") { NSWorkspace.shared.open(Sessions.root) }
                     }
+                    row("NAM captures") {
+                        Button("Add .nam…") { m.importNam() }
+                        Button("Open folder") { NSWorkspace.shared.open(NamHost.dir) }
+                        Button("Rescan") { m.rescanNam() }
+                        Text("\(m.namHost.files.count) loaded · free captures at tone3000.com").foregroundStyle(.secondary)
+                    }
                     row("Captures") {
                         Button("Open folder") {
                             try? FileManager.default.createDirectory(at: Capture.dir, withIntermediateDirectories: true)

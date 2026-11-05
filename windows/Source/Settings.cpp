@@ -31,6 +31,7 @@ void fillDefaults(juce::NamedValueSet& v) {
     put("phaserOn", true); put("phaserRate", 0.5); put("phaserDepth", 0.7); put("phaserFb", 0.4);
     put("tremOn", true); put("tremRate", 5.0); put("tremDepth", 0.6); put("tremShape", 0.0);
     put("capture", ""); put("capDrive", 0.0); put("capLevel", 0.0);
+    put("nam", ""); put("namInput", 0.0); put("namOutput", 0.0);
 }
 } // namespace
 
@@ -129,6 +130,7 @@ void Settings::apply(Params& p) const {
     p.phaserOn = b("phaserOn"); p.phaserRate = f("phaserRate"); p.phaserDepth = f("phaserDepth"); p.phaserFb = f("phaserFb");
     p.tremOn = b("tremOn"); p.tremRate = f("tremRate"); p.tremDepth = f("tremDepth"); p.tremShape = f("tremShape");
     p.capDrive = f("capDrive"); p.capLevel = f("capLevel");
+    p.namIn = f("namInput"); p.namOut = f("namOutput");
     p.inGain = f("inGain"); p.inputChannel = i("inputChannel");
     p.gateOn = b("gateOn"); p.gateThresh = f("gateThresh"); p.gateRelease = f("gateRelease");
     p.pitchOn = b("pitchOn"); p.pitchSemis = f("pitchSemis"); p.pitchCents = f("pitchCents"); p.pitchMix = f("pitchMix");
@@ -346,6 +348,115 @@ const std::vector<Factory> FACTORY = {
         eqs(s, { -6, -6, -6, -6, 2, -4.5, 4, 6 });
         cab(s, "C414/NO-TS/C414_2_inch_cone_near_pres_3.wav", "SM57/NO-TS/57_2_inch_edge_pres_3.wav", 0.35); s.set("cabHighCut", 12000);
         s.set("ampVolume", 0.698);   // level-matched
+    } },
+
+    // NAM captures of real amps (bundled; see shared/nam/captures/CREDITS.md). Without them the built-in amp plays.
+    // Peavey 5150 with a boost: the modern metal rhythm sound.
+    { "Modern Metal - 5150 (NAM)", [](Settings& s) {
+        s.set("nam", "Helga B 5150 BlockLetter - Boosted"); s.set("capture", juce::String()); s.set("ampOn", true); s.set("ampChannel", 2);
+        s.set("ampGain", 0.6); s.set("eqOn", true); eqs(s, { 0, 0, 0, 0, 0, 0, 0, 0 }); s.set("cabOn", true);
+        s.set("cabModel", 4); s.set("irA", "SM57/NO-TS/57_1_inch_edge_pres_3.wav"); s.set("irB", "MD421/NO-TS/MD421_1_inch_cone_near_pres_3.wav"); s.set("irBlend", 0.35);
+        s.set("cabLowCut", 90); s.set("cabHighCut", 10000); s.set("gateOn", true); s.set("gateThresh", -52);
+        s.set("gateRelease", 70); s.setChain({}); s.set("delayOn", false); s.set("revOn", false);
+        s.set("namInput", 0); s.set("namOutput", 2.0);
+    } },
+    // Unboosted 5150 hit by a clean boost, very tight lows and gate.
+    { "Djent - 5150 + Boost (NAM)", [](Settings& s) {
+        s.set("nam", "Helga B 5150 BlockLetter - NoBoost"); s.set("capture", juce::String()); s.set("ampOn", true); s.set("ampChannel", 2);
+        s.set("ampGain", 0.6); s.set("eqOn", true); eqs(s, { 0, 0, 0, 0, 0, 0, 0, 0 }); s.set("cabOn", true);
+        s.set("cabModel", 4); s.set("irA", "SM57/NO-TS/57_1_inch_edge_pres_3.wav"); s.set("irB", "MD421/NO-TS/MD421_1_inch_cone_near_pres_3.wav"); s.set("irBlend", 0.35);
+        s.set("cabLowCut", 110); s.set("cabHighCut", 10000); s.set("gateOn", true); s.set("gateThresh", -45);
+        s.set("gateRelease", 35); s.setChain({ (int) PedalKind::od }); s.set("delayOn", false); s.set("revOn", false);
+        s.set("namInput", 0); s.set("namOutput", 4.6); s.set("odOn", true); s.set("odDrive", 0);
+        s.set("odTone", 0.6); s.set("odLevel", 0.9);
+    } },
+    // 6505+ red channel with an MXR drive in front.
+    { "Groove Chug - 6505+ (NAM)", [](Settings& s) {
+        s.set("nam", "Helga B 6505+ Red ch - MXR Drive"); s.set("capture", juce::String()); s.set("ampOn", true); s.set("ampChannel", 2);
+        s.set("ampGain", 0.6); s.set("eqOn", true); eqs(s, { 0, 0, 0, 0, 0, 0, 0, 0 }); s.set("cabOn", true);
+        s.set("cabModel", 4); s.set("irA", "SM57/NO-TS/57_1_inch_edge_pres_3.wav"); s.set("irB", "MD421/NO-TS/MD421_1_inch_cone_near_pres_3.wav"); s.set("irBlend", 0.35);
+        s.set("cabLowCut", 90); s.set("cabHighCut", 10000); s.set("gateOn", true); s.set("gateThresh", -48);
+        s.set("gateRelease", 60); s.setChain({}); s.set("delayOn", false); s.set("revOn", false);
+        s.set("namInput", 0); s.set("namOutput", 1.3);
+    } },
+    // Mesa Mark IV lead channel for tight thrash rhythm.
+    { "Thrash Rhythm - Mark IV (NAM)", [](Settings& s) {
+        s.set("nam", "Roman A LT_MESA_MARKIV_1"); s.set("capture", juce::String()); s.set("ampOn", true); s.set("ampChannel", 2);
+        s.set("ampGain", 0.6); s.set("eqOn", true); eqs(s, { 0, 0, 0, 0, 0, 0, 0, 0 }); s.set("cabOn", true);
+        s.set("cabModel", 4); s.set("irA", "SM57/NO-TS/57_1_inch_edge_pres_3.wav"); s.set("irB", "MD421/NO-TS/MD421_1_inch_cone_near_pres_3.wav"); s.set("irBlend", 0.35);
+        s.set("cabLowCut", 90); s.set("cabHighCut", 10000); s.set("gateOn", true); s.set("gateThresh", -50);
+        s.set("gateRelease", 80); s.setChain({}); s.set("delayOn", false); s.set("revOn", false);
+        s.set("namInput", 0); s.set("namOutput", 1.1);
+    } },
+    // Hot-rodded Marshall (Splawn Pro Mod, 3rd gear) with a clean boost.
+    { "Thrash Attack - Splawn (NAM)", [](Settings& s) {
+        s.set("nam", "Tim R Splawn Pro Mod 3rd Gear - G12"); s.set("capture", juce::String()); s.set("ampOn", true); s.set("ampChannel", 2);
+        s.set("ampGain", 0.6); s.set("eqOn", true); eqs(s, { 0, 0, 0, 0, 0, 0, 0, 0 }); s.set("cabOn", true);
+        s.set("cabModel", 4); s.set("irA", "SM57/NO-TS/57_1_inch_edge_pres_3.wav"); s.set("irB", "MD421/NO-TS/MD421_1_inch_cone_near_pres_3.wav"); s.set("irBlend", 0.35);
+        s.set("cabLowCut", 90); s.set("cabHighCut", 10000); s.set("gateOn", true); s.set("gateThresh", -55);
+        s.set("gateRelease", 70); s.setChain({ (int) PedalKind::od }); s.set("delayOn", false); s.set("revOn", false);
+        s.set("namInput", 0); s.set("namOutput", 3.1); s.set("odOn", true); s.set("odDrive", 0.05);
+        s.set("odTone", 0.6); s.set("odLevel", 0.8);
+    } },
+    // Marshall JVM crunch: classic rock and twin-guitar metal rhythm.
+    { "Crunch - JVM (NAM)", [](Settings& s) {
+        s.set("nam", "Phillipe P JVM-CR-OR-NoDrive-ESR0,017"); s.set("capture", juce::String()); s.set("ampOn", true); s.set("ampChannel", 1);
+        s.set("ampGain", 0.6); s.set("eqOn", true); eqs(s, { 0, 0, 0, 0, 0, 0, 0, 0 }); s.set("cabOn", true);
+        s.set("cabModel", 4); s.set("irA", "SM57/NO-TS/57_1_inch_edge_pres_3.wav"); s.set("irB", "MD421/NO-TS/MD421_1_inch_cone_near_pres_3.wav"); s.set("irBlend", 0.35);
+        s.set("cabLowCut", 80); s.set("cabHighCut", 10000); s.set("gateOn", true); s.set("gateThresh", -66);
+        s.set("gateRelease", 120); s.setChain({}); s.set("delayOn", false); s.set("revOn", false);
+        s.set("namInput", 0); s.set("namOutput", -1.6);
+    } },
+    // Marshall JVM OD2 with lead delay and reverb.
+    { "British Lead - JVM (NAM)", [](Settings& s) {
+        s.set("nam", "Phillipe P JVM-OD2-RD-NoDrive-ESR0,003"); s.set("capture", juce::String()); s.set("ampOn", true); s.set("ampChannel", 2);
+        s.set("ampGain", 0.6); s.set("eqOn", true); eqs(s, { 0, 0, 0, 0, 0, 0, 0, 0 }); s.set("cabOn", true);
+        s.set("cabModel", 4); s.set("irA", "SM57/NO-TS/57_1_inch_edge_pres_3.wav"); s.set("irB", "MD421/NO-TS/MD421_1_inch_cone_near_pres_3.wav"); s.set("irBlend", 0.35);
+        s.set("cabLowCut", 90); s.set("cabHighCut", 10000); s.set("gateOn", true); s.set("gateThresh", -64);
+        s.set("gateRelease", 150); s.setChain({}); s.set("delayOn", true); s.set("revOn", true);
+        s.set("namInput", 0); s.set("namOutput", 2.7); s.set("delayTime", 380); s.set("delayFeedback", 0.25);
+        s.set("delayMix", 0.15); s.set("revSize", 0.5); s.set("revMix", 0.12);
+    } },
+    // Laney GH100S: thick British mids for doom and stoner riffs.
+    { "Doom - Laney (NAM)", [](Settings& s) {
+        s.set("nam", "Phillipe P LaneyGH100S-Hi-MidGain-ESR0,003"); s.set("capture", juce::String()); s.set("ampOn", true); s.set("ampChannel", 1);
+        s.set("ampGain", 0.6); s.set("eqOn", true); eqs(s, { 0, 0, 0, 0, 0, 0, 0, 0 }); s.set("cabOn", true);
+        s.set("cabModel", 4); s.set("irA", "SM57/NO-TS/57_1_inch_edge_pres_3.wav"); s.set("irB", "MD421/NO-TS/MD421_1_inch_cone_near_pres_3.wav"); s.set("irBlend", 0.35);
+        s.set("cabLowCut", 80); s.set("cabHighCut", 10000); s.set("gateOn", true); s.set("gateThresh", -66);
+        s.set("gateRelease", 150); s.setChain({}); s.set("delayOn", false); s.set("revOn", true);
+        s.set("namInput", 0); s.set("namOutput", -0.9); s.set("revSize", 0.4); s.set("revMix", 0.1);
+    } },
+    // ENGL with a DS-1: compressed, wide and gated hard.
+    { "Industrial - ENGL (NAM)", [](Settings& s) {
+        s.set("nam", "Tom C Engl e530 preamp & 840 power amp with Boss DS1 Overdrive"); s.set("capture", juce::String()); s.set("ampOn", true); s.set("ampChannel", 2);
+        s.set("ampGain", 0.6); s.set("eqOn", true); eqs(s, { 0, 0, 0, 0, 0, 0, 0, 0 }); s.set("cabOn", true);
+        s.set("cabModel", 4); s.set("irA", "SM57/NO-TS/57_1_inch_edge_pres_3.wav"); s.set("irB", "MD421/NO-TS/MD421_1_inch_cone_near_pres_3.wav"); s.set("irBlend", 0.35);
+        s.set("cabLowCut", 90); s.set("cabHighCut", 10000); s.set("gateOn", true); s.set("gateThresh", -48);
+        s.set("gateRelease", 45); s.setChain({ (int) PedalKind::comp }); s.set("delayOn", false); s.set("revOn", false);
+        s.set("namInput", 0); s.set("namOutput", 4.1); s.set("compOn", true); s.set("compSustain", 0.4);
+        s.set("compAttack", 5); s.set("compLevel", 0); s.set("compBlend", 0.7);
+    } },
+    // Soldano SLO-style drive with delay and reverb for leads.
+    { "Hot Lead - Soldano (NAM)", [](Settings& s) {
+        s.set("nam", "Jason Z Soldano - Super Lead Overdrive pedal nice crunchy rhythm tone"); s.set("capture", juce::String()); s.set("ampOn", true); s.set("ampChannel", 2);
+        s.set("ampGain", 0.6); s.set("eqOn", true); eqs(s, { 0, 0, 0, 0, 0, 0, 0, 0 }); s.set("cabOn", true);
+        s.set("cabModel", 4); s.set("irA", "SM57/NO-TS/57_1_inch_edge_pres_3.wav"); s.set("irB", "MD421/NO-TS/MD421_1_inch_cone_near_pres_3.wav"); s.set("irBlend", 0.35);
+        s.set("cabLowCut", 90); s.set("cabHighCut", 10000); s.set("gateOn", true); s.set("gateThresh", -64);
+        s.set("gateRelease", 150); s.setChain({}); s.set("delayOn", true); s.set("revOn", true);
+        s.set("namInput", 0); s.set("namOutput", 1.3); s.set("delayTime", 450); s.set("delayFeedback", 0.3);
+        s.set("delayMix", 0.2); s.set("revSize", 0.55); s.set("revMix", 0.15);
+    } },
+    // Fender Twin Reverb with light compression, chorus, delay and reverb.
+    { "Clean - Twin (NAM)", [](Settings& s) {
+        s.set("nam", "Tim R Fender TwinVerb Norm Bright"); s.set("capture", juce::String()); s.set("ampOn", true); s.set("ampChannel", 0);
+        s.set("ampGain", 0.6); s.set("eqOn", true); eqs(s, { 0, 0, 0, 0, 0, 0, 0, 0 }); s.set("cabOn", true);
+        s.set("cabModel", 4); s.set("irA", "C414/NO-TS/C414_1_inch_cone_near_pres_3.wav"); s.set("irB", "SM57/NO-TS/57_1_inch_cone_near_pres_3.wav"); s.set("irBlend", 0.4);
+        s.set("cabLowCut", 80); s.set("cabHighCut", 10000); s.set("gateOn", true); s.set("gateThresh", -72);
+        s.set("gateRelease", 120); s.setChain({ (int) PedalKind::comp, (int) PedalKind::chorus }); s.set("delayOn", true); s.set("revOn", true);
+        s.set("namInput", 0); s.set("namOutput", -10.7); s.set("compOn", true); s.set("compSustain", 0.35);
+        s.set("compAttack", 12); s.set("compBlend", 0.6); s.set("chorusOn", true); s.set("chorusRate", 0.6);
+        s.set("chorusDepth", 0.4); s.set("chorusMix", 0.35); s.set("delayTime", 450); s.set("delayFeedback", 0.3);
+        s.set("delayMix", 0.18); s.set("revSize", 0.6); s.set("revMix", 0.22);
     } },
 };
 
