@@ -45,6 +45,7 @@ Model::Model() {
     captures = Capture::loadAll();
     rescanNam();
     irLib.scan(48000);
+    cabIRs.scan();
     if (!irLib.isEmpty() && !p.getBoolValue("godsCabIntro")) {           // first run with the IR pack: switch to it
         settings.set("cabModel", CAB_LIB); settings.set("cabHighCut", 10000.0); p.setValue("godsCabIntro", true);
     }
@@ -115,7 +116,8 @@ void Model::settingsChanged(const Settings& old) {
     applyAll();
     if (settings.s("nam") != old.s("nam")) updateNam();
     if (settings.i("cabModel") != old.i("cabModel") || settings.d("cabMic") != old.d("cabMic") || settings.s("irA") != old.s("irA")
-        || settings.s("irB") != old.s("irB") || settings.d("irBlend") != old.d("irBlend") || settings.s("capture") != old.s("capture"))
+        || settings.s("irB") != old.s("irB") || settings.d("irBlend") != old.d("irBlend") || settings.s("capture") != old.s("capture")
+        || settings.s("irFile") != old.s("irFile"))
         updateIR();
     saveCountdown = 12;   // ~0.4 s
     changed();
@@ -364,6 +366,7 @@ void Model::applyPreset(const Settings& p, const juce::String& name) {
     for (const char* k : { "inGain", "masterVol", "inputChannel", "pitchOn", "pitchSemis", "pitchCents", "pitchMix" }) n.set(k, settings.get(k));
     if (n.i("cabModel") == CAB_USER && !userIR) n.set("cabModel", irLib.isEmpty() ? 0 : CAB_LIB);
     if (n.i("cabModel") == CAB_LIB && irLib.isEmpty()) n.set("cabModel", 0);
+    if (n.i("cabModel") == CAB_IRLIB && !cabIRs.contains(n.s("irFile"))) n.set("cabModel", irLib.isEmpty() ? 0 : CAB_LIB);
     presetName = name;
     props().setValue("preset", name);
     setSettings(n);
@@ -635,6 +638,8 @@ std::vector<float> Model::currentIR(double sr) {
             }
             return normaliseIR(h);
         }
+    } else if (model == CAB_IRLIB) {
+        if (auto h = cabIRs.samples(settings.s("irFile"), sr)) return *h;
     } else if (model == CAB_USER && userIR) {
         return normaliseIR(resample(userIR->first, userIR->second, sr));
     }
@@ -761,6 +766,23 @@ void Model::importNamDialog() {
             }
             rescanNam();
             if (first.isNotEmpty()) useNam(first);
+        });
+}
+
+void Model::importCabIRsDialog() {
+    auto chooser = std::make_shared<juce::FileChooser>("Choose cab IRs (WAV) or a folder of them, for example a tone pack from tone3000.com", juce::File(), "*.wav;*.aif;*.aiff");
+    chooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::canSelectDirectories
+                             | juce::FileBrowserComponent::canSelectMultipleItems,
+        [this, chooser](const juce::FileChooser& fc) {
+            const auto items = fc.getResults();
+            if (items.isEmpty()) return;
+            const int n = cabIRs.importItems(items);
+            status = n == 0 ? juce::String("No WAV impulse responses found there.")
+                            : "Added " + juce::String(n) + " cab IR" + (n == 1 ? "" : "s") + " to the IR library.";
+            if (n > 0 && (settings.i("cabModel") != CAB_IRLIB || !cabIRs.contains(settings.s("irFile")))) {
+                Settings x = settings; x.set("cabModel", CAB_IRLIB); x.set("irFile", cabIRs.all()[0]); x.set("cabOn", true); setSettings(x);
+            }
+            changed();
         });
 }
 

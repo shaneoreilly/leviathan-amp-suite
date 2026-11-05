@@ -121,6 +121,7 @@ public:
 
     // MARK: cab, captures
     IRLibrary irLib;
+    CabIRLibrary cabIRs;
     std::map<juce::String, Capture> captures;
     juce::String userIRName;
     const Capture* activeCapture() const;
@@ -143,6 +144,8 @@ public:
     bool namReady() const { return namModel != nullptr && namLoaded == settings.s("nam") && settings.s("nam").isNotEmpty(); }
     void rescanNam();
     void importNamDialog();
+    /// Add cab IRs (WAV files or folders of them) to the IR library and switch to the first one.
+    void importCabIRsDialog();
     void useNam(const juce::String& name);
     void updateNam();
     double engineRate() const { return dspRate; }

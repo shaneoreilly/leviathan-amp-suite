@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 
 // MARK: - Settings
 
-let CAB_USER = CABS.count, CAB_LIB = CABS.count + 1
+let CAB_USER = CABS.count, CAB_LIB = CABS.count + 1, CAB_IRLIB = CABS.count + 2
 
 struct Settings: Codable, Equatable {
     var inGain = 0.0, inputChannel = 0
@@ -17,6 +17,7 @@ struct Settings: Codable, Equatable {
     var eqOn = true, eq: [Double] = [0, 1, 0, 1, 1.5, 1, -1, -3]
     var cabOn = true, cabModel = CAB_LIB, cabMic = 0.3, cabLowCut = 80.0, cabHighCut = 10000.0, cabLevel = 0.0
     var irA = "SM57/NO-TS/57_1_inch_edge_pres_3.wav", irB = "MD421/NO-TS/MD421_1_inch_cone_near_pres_3.wav", irBlend = 0.35
+    var irFile = ""   // with cabModel == CAB_IRLIB: path inside the cab IR library
     var delaySync = 0   // index into DELAY_DIVS; 0 = free time in ms
     var delayOn = false, delayTime = 420.0, delayFeedback = 0.28, delayTone = 0.45, delayMix = 0.2
     var revOn = false, revSize = 0.45, revMix = 0.18
@@ -486,6 +487,22 @@ final class Model: ObservableObject {
     @Published var userIRName: String?
     @Published var captures: [String: Capture] = Capture.loadAll()
     let namHost = NamHost()
+    let cabIRs: CabIRLibrary = { let l = CabIRLibrary(); l.scan(); return l }()
+
+    func importCabIRs() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true; panel.canChooseFiles = true; panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = [.wav, .aiff, .audio, .folder]
+        panel.prompt = "Add"
+        panel.message = "Choose cabinet IRs (WAV) or folders of them, for example a tone pack from tone3000.com"
+        guard panel.runModal() == .OK else { return }
+        let n = cabIRs.importItems(panel.urls)
+        status = n == 0 ? "No WAV impulse responses found there." : "Added \(n) cab IR\(n == 1 ? "" : "s") to the IR library."
+        objectWillChange.send()
+        if n > 0, s.cabModel != CAB_IRLIB || !cabIRs.files.contains(s.irFile), let first = cabIRs.files.first {
+            var x = s; x.cabModel = CAB_IRLIB; x.irFile = first; s = x
+        }
+    }
     private var userIR: (samples: [Float], rate: Double)?
     let irLib = IRLibrary()
     lazy var sessions = Sessions(model: self)
@@ -804,7 +821,7 @@ final class Model: ObservableObject {
     private func settingsChanged(_ old: Settings) {
         applyAll()
         if s.cabModel != old.cabModel || s.cabMic != old.cabMic || s.irA != old.irA || s.irB != old.irB || s.irBlend != old.irBlend
-            || s.capture != old.capture { updateIR() }
+            || s.capture != old.capture || s.irFile != old.irFile { updateIR() }
         if s.nam != old.nam { updateNam() }
         saveWork?.cancel()
         let w = DispatchWorkItem { [s] in UserDefaults.standard.set(try? JSONEncoder().encode(s), forKey: "settings") }
@@ -835,6 +852,8 @@ final class Model: ObservableObject {
                 }
             }
             return normaliseIR(h)
+        } else if s.cabModel == CAB_IRLIB, let h = cabIRs.samples(s.irFile, sampleRate: sr) {
+            return h
         } else if s.cabModel == CAB_USER, let ir = userIR {
             return normaliseIR(resample(ir.samples, from: ir.rate, to: sr))
         }
@@ -978,6 +997,7 @@ final class Model: ObservableObject {
         n.inGain = s.inGain; n.masterVol = s.masterVol; n.inputChannel = s.inputChannel   // presets don't change your levels
         n.pitchOn = s.pitchOn; n.pitchSemis = s.pitchSemis; n.pitchCents = s.pitchCents; n.pitchMix = s.pitchMix   // ...or your tuning
         if n.cabModel == CAB_USER && userIR == nil { n.cabModel = irLib.isEmpty ? 0 : CAB_LIB }
+        if n.cabModel == CAB_IRLIB && !cabIRs.files.contains(n.irFile) { n.cabModel = irLib.isEmpty ? 0 : CAB_LIB }
         if n.cabModel == CAB_LIB && irLib.isEmpty { n.cabModel = 0 }
         s = n; presetName = name
         UserDefaults.standard.set(name, forKey: "preset")
@@ -1646,10 +1666,13 @@ struct ContentView: View {
                     Picker("", selection: $m.s.cabModel) {
                         if !m.irLib.isEmpty { Text("God's Cab · Mesa OS 4x12").tag(CAB_LIB) }
                         ForEach(CABS.indices, id: \.self) { Text("Built-in · \(CABS[$0].name)").tag($0) }
+                        if !m.cabIRs.isEmpty { Text("IR library · \(m.cabIRs.files.count) IRs").tag(CAB_IRLIB) }
                         if let n = m.userIRName { Text("File · \(n)").tag(CAB_USER) }
                     }.labelsHidden().frame(width: 230 * W)
                     Button("IR file…") { m.loadIR() }
+                    Button("Add IRs…") { m.importCabIRs() }.help("Add a folder of cab IRs (WAV) to the IR library, e.g. a tone pack from tone3000.com")
                 }
+                if m.s.cabModel == CAB_IRLIB { IRLibraryRow() }
                 if lib {
                     irRow("A", $m.s.irA, optional: false)
                     irRow("B", $m.s.irB, optional: true)

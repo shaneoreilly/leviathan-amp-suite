@@ -574,6 +574,12 @@ struct SettingsView: View {
                         Button("Import recordings (WAV)…") { rec.importRecordings(); m.screen = .recordings }
                         Button("Open folder") { NSWorkspace.shared.open(Sessions.root) }
                     }
+                    row("Cab IRs") {
+                        Button("Add IRs…") { m.importCabIRs() }
+                        Button("Open folder") { NSWorkspace.shared.open(CabIRLibrary.root) }
+                        Button("Rescan") { m.cabIRs.scan(); m.objectWillChange.send() }
+                        Text("\(m.cabIRs.files.count) in the IR library").foregroundStyle(.secondary)
+                    }
                     row("NAM captures") {
                         Button("Add .nam…") { m.importNam() }
                         Button("Open folder") { NSWorkspace.shared.open(NamHost.dir) }
@@ -797,3 +803,58 @@ struct UpdateBanner: View {
     }
 }
 
+
+/// Cabinet panel row for the IR library: the current IR (click to search and pick), and ‹ › to step through.
+struct IRLibraryRow: View {
+    @EnvironmentObject var m: Model
+    @StateObject private var ui = IRBrowserUI()
+    var body: some View {
+        HStack(spacing: 6) {
+            Button { ui.open.toggle() } label: {
+                HStack {
+                    Image(systemName: "magnifyingglass")
+                    Text(m.s.irFile.isEmpty ? "Choose an IR…" : CabIRLibrary.title(m.s.irFile)).lineLimit(1)
+                    Spacer(minLength: 4)
+                }.frame(width: 300 * W)
+            }
+            .popover(isPresented: $ui.open, arrowEdge: .bottom) { IRBrowser(open: $ui.open).environmentObject(m) }
+            Button { m.s.irFile = m.cabIRs.step(m.s.irFile, by: -1) ?? m.s.irFile } label: { Image(systemName: "chevron.left") }.help("Previous IR")
+            Button { m.s.irFile = m.cabIRs.step(m.s.irFile, by: 1) ?? m.s.irFile } label: { Image(systemName: "chevron.right") }.help("Next IR")
+        }
+    }
+}
+
+final class IRBrowserUI: ObservableObject { @Published var open = false; @Published var query = "" }
+
+/// Searchable list of every IR in the library, grouped by folder.
+struct IRBrowser: View {
+    @EnvironmentObject var m: Model
+    @Binding var open: Bool
+    @StateObject private var ui = IRBrowserUI()
+    var body: some View {
+        let q = ui.query.lowercased()
+        let hits = m.cabIRs.files.filter { q.isEmpty || $0.lowercased().contains(q) }
+        let groups = Dictionary(grouping: hits) { ($0 as NSString).deletingLastPathComponent }.sorted { $0.key < $1.key }
+        VStack(alignment: .leading, spacing: 8) {
+            TextField("Search \(m.cabIRs.files.count) IRs (band, song, amp…)", text: $ui.query).textFieldStyle(.roundedBorder)
+            List {
+                ForEach(groups, id: \.key) { g in
+                    Section(g.key.isEmpty ? "IR library" : g.key) {
+                        ForEach(g.value, id: \.self) { rel in
+                            Button { m.s.irFile = rel; m.s.cabOn = true } label: {
+                                HStack {
+                                    Text(CabIRLibrary.title(rel))
+                                    Spacer()
+                                    if rel == m.s.irFile { Image(systemName: "checkmark").foregroundStyle(Color.accentColor) }
+                                }.contentShape(Rectangle())
+                            }.buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+            .frame(width: 420, height: 420)
+            Text("Click to hear it straight away; the popover stays open so you can compare.").font(.system(size: 10 * UI)).foregroundStyle(.secondary)
+        }
+        .padding(12)
+    }
+}

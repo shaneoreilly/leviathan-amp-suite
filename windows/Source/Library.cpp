@@ -153,6 +153,79 @@ std::optional<std::vector<float>> IRLibrary::samples(const juce::String& rel, do
     return h;
 }
 
+// MARK: - Cab IR library
+
+namespace {
+bool isIRFile(const juce::File& f) { return f.hasFileExtension("wav;wave;aif;aiff"); }
+}
+
+void CabIRLibrary::scan() {
+    root().createDirectory();
+    files.clear();
+    for (const auto& e : juce::RangedDirectoryIterator(root(), true, "*", juce::File::findFiles))
+        if (isIRFile(e.getFile())) files.add(e.getFile().getRelativePathFrom(root()).replaceCharacter('\\', '/'));
+    files.sortNatural();
+    cache.clear();
+}
+
+juce::String CabIRLibrary::step(const juce::String& rel, int d) const {
+    if (files.isEmpty()) return rel;
+    const int i = files.indexOf(rel);
+    if (i < 0) return files[0];
+    return files[(i + d + files.size()) % files.size()];
+}
+
+std::optional<std::vector<float>> CabIRLibrary::samples(const juce::String& rel, double sampleRate) {
+    if (cacheRate != sampleRate) { cache.clear(); cacheRate = sampleRate; }
+    if (auto it = cache.find(rel); it != cache.end()) return it->second;
+    if (rel.isEmpty()) return std::nullopt;
+    const auto f = root().getChildFile(rel);
+    if (!f.isAChildOf(root())) return std::nullopt;             // no "../" escapes from a preset's IR name
+    auto w = readAudio(f);
+    if (w.rate <= 0 || w.channels.empty()) return std::nullopt;
+    auto h = normaliseIR(fitIR(resample(w.channels[0], w.rate, sampleRate), sampleRate));
+    cache[rel] = h;
+    return h;
+}
+
+int CabIRLibrary::importItems(const juce::Array<juce::File>& items) {
+    int n = 0;
+    for (const auto& u : items) {
+        const auto dest = root().getChildFile(u.getFileName());
+        if (u.isDirectory()) {
+            for (const auto& e : juce::RangedDirectoryIterator(u, true, "*", juce::File::findFiles)) {
+                const auto f = e.getFile();
+                if (!isIRFile(f)) continue;
+                const auto to = dest.getChildFile(f.getRelativePathFrom(u));
+                to.getParentDirectory().createDirectory();
+                if (f.copyFileTo(to)) ++n;
+            }
+        } else if (isIRFile(u)) {
+            root().createDirectory();
+            if (u.copyFileTo(dest)) ++n;
+        }
+    }
+    scan();
+    return n;
+}
+
+juce::String CabIRLibrary::title(const juce::String& rel) {
+    auto n = rel.fromLastOccurrenceOf("/", false, false).upToLastOccurrenceOf(".", false, false);
+    juce::StringArray w; w.addTokens(n, " ", ""); w.removeEmptyStrings();
+    // drop a trailing "IR" (keeping a number after it: "IR 2" -> "2")
+    if (w.size() >= 2 && w[w.size() - 1].containsOnly("0123456789") && w[w.size() - 2] == "IR") w.remove(w.size() - 2);
+    else if (w.size() >= 2 && w[w.size() - 1] == "IR") w.remove(w.size() - 1);
+    return w.joinIntoString(" ");
+}
+
+std::vector<float> fitIR(std::vector<float> h, double sampleRate) {
+    if ((int) h.size() <= DSP::maxIR) return h;
+    h.resize((size_t) DSP::maxIR);
+    const int f = std::min((int) (sampleRate * 0.005), DSP::maxIR / 4);
+    for (int i = 0; i < f; ++i) h[(size_t) (DSP::maxIR - 1 - i)] *= (float) i / (float) f;
+    return h;
+}
+
 // MARK: - Captures
 
 std::map<juce::String, Capture> Capture::loadAll() {

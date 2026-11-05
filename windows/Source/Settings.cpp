@@ -18,6 +18,7 @@ void fillDefaults(juce::NamedValueSet& v) {
     put("eqOn", true); put("eq", arr({ 0, 1, 0, 1, 1.5, 1, -1, -3 }));
     put("cabOn", true); put("cabModel", CAB_LIB); put("cabMic", 0.3); put("cabLowCut", 80.0); put("cabHighCut", 10000.0); put("cabLevel", 0.0);
     put("irA", "SM57/NO-TS/57_1_inch_edge_pres_3.wav"); put("irB", "MD421/NO-TS/MD421_1_inch_cone_near_pres_3.wav"); put("irBlend", 0.35);
+    put("irFile", "");   // with cabModel == CAB_IRLIB: path inside the cab IR library
     put("delaySync", 0);
     put("delayOn", false); put("delayTime", 420.0); put("delayFeedback", 0.28); put("delayTone", 0.45); put("delayMix", 0.2);
     put("revOn", false); put("revSize", 0.45); put("revMix", 0.18);

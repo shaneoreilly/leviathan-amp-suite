@@ -578,7 +578,10 @@ struct SettingsScreen : Screen_ {
         addNam.setButtonText("Add .nam" + ellipsis); addNam.onClick = [this] { model.importNamDialog(); };
         openNam.setButtonText("Open folder"); openNam.onClick = [] { Model::namDir().createDirectory(); Model::namDir().startAsProcess(); };
         rescanNam.setButtonText("Rescan"); rescanNam.onClick = [this] { model.rescanNam(); };
-        for (auto* c : std::initializer_list<juce::Component*> { &importRec, &openRec, &openCap, &rescan, &openIR, &addNam, &openNam, &rescanNam }) lib.addAndMakeVisible(c);
+        addIRs.setButtonText("Add IRs" + ellipsis); addIRs.onClick = [this] { model.importCabIRsDialog(); };
+        openIRs.setButtonText("Open folder"); openIRs.onClick = [] { CabIRLibrary::root().createDirectory(); CabIRLibrary::root().startAsProcess(); };
+        rescanIRs.setButtonText("Rescan"); rescanIRs.onClick = [this] { model.cabIRs.scan(); model.changed(); };
+        for (auto* c : std::initializer_list<juce::Component*> { &importRec, &openRec, &openCap, &rescan, &openIR, &addNam, &openNam, &rescanNam, &addIRs, &openIRs, &rescanIRs }) lib.addAndMakeVisible(c);
         refresh();
     }
     ~SettingsScreen() override { model.devices.removeChangeListener(&audioWatch); }
@@ -688,15 +691,17 @@ struct SettingsScreen : Screen_ {
         openCap.setBounds(192, 80, 110, 28); rescan.setBounds(310, 80, 80, 28);
         openIR.setBounds(192, 116, 140, 28);
         addNam.setBounds(192, 152, 110, 28); openNam.setBounds(310, 152, 110, 28); rescanNam.setBounds(428, 152, 80, 28);
-        lib.labels = { { 44, "Recordings" }, { 80, "Captures" }, { 116, "IR library" }, { 152, "NAM captures" } };
+        addIRs.setBounds(192, 188, 110, 28); openIRs.setBounds(310, 188, 110, 28); rescanIRs.setBounds(428, 188, 80, 28);
+        lib.labels = { { 44, "Recordings" }, { 80, "Captures" }, { 116, "God's Cab" }, { 152, "NAM captures" }, { 188, "Cab IRs" } };
         lib.extra = [this](juce::Graphics& g) {
             g.setColour(theme::secondary);
             g.drawText(juce::String((int) model.captures.size()) + " loaded", 400, 80, 200, 28, juce::Justification::centredLeft);
             g.drawText(model.irLib.isEmpty() ? juce::String("No God's Cab pack found in ") + IRLibrary::root().getFullPathName() : juce::String("God's Cab pack found"),
                        340, 116, 700, 28, juce::Justification::centredLeft);
             g.drawText(juce::String(model.namFiles.size()) + juce::String::fromUTF8(" loaded \xc2\xb7 free captures at tone3000.com"), 520, 152, 500, 28, juce::Justification::centredLeft);
+            g.drawText(juce::String(model.cabIRs.all().size()) + juce::String::fromUTF8(" in the IR library \xc2\xb7 WAV tone packs from tone3000.com"), 520, 188, 500, 28, juce::Justification::centredLeft);
         };
-        group(lib, 196);
+        group(lib, 232);
         bugB.setBounds(192, 44, 150, 28); featB.setBounds(350, 44, 170, 28);
         fb.labels = { { 44, "GitHub" } };
         fb.extra = [](juce::Graphics& g) {
@@ -821,7 +826,7 @@ struct SettingsScreen : Screen_ {
     double progressValue = 0; juce::ProgressBar updProgress { progressValue };
     juce::ToggleButton pcT; juce::TextButton learnB, clearB;
     std::vector<std::unique_ptr<MapRow>> mapRows;
-    juce::TextButton importRec, openRec, openCap, rescan, openIR, addNam, openNam, rescanNam;
+    juce::TextButton importRec, openRec, openCap, rescan, openIR, addNam, openNam, rescanNam, addIRs, openIRs, rescanIRs;
     juce::String signature;
 };
 

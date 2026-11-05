@@ -251,7 +251,7 @@ private:
 struct CabModel { const char* name; std::vector<Biquad> (*build)(double mic, double sr); };
 extern const CabModel CABS[3];
 constexpr int kCabCount = 3;
-constexpr int CAB_USER = kCabCount, CAB_LIB = kCabCount + 1;
+constexpr int CAB_USER = kCabCount, CAB_LIB = kCabCount + 1, CAB_IRLIB = kCabCount + 2;
 
 std::vector<float> normaliseIR(std::vector<float> h);
 std::vector<float> renderCab(const CabModel& model, double mic, double sr, int length = 2048);

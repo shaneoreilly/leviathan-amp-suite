@@ -288,10 +288,14 @@ std::unique_ptr<UnitBox> RigView::makePanel(const juce::String& id) {
         auto pick = std::make_unique<Picker>((int) (230 * theme::W), [&m] { return m.s().i("cabModel") + 1; }, [&m](int i) { m.set("cabModel", i - 1); });
         if (!m.irLib.isEmpty()) pick->addItem(juce::String::fromUTF8("God's Cab \xc2\xb7 Mesa OS 4x12"), CAB_LIB + 1);
         for (int i = 0; i < kCabCount; ++i) pick->addItem(juce::String::fromUTF8("Built-in \xc2\xb7 ") + CABS[i].name, i + 1);
+        if (!m.cabIRs.isEmpty()) pick->addItem(juce::String::fromUTF8("IR library \xc2\xb7 ") + juce::String(m.cabIRs.all().size()) + " IRs", CAB_IRLIB + 1);
         if (m.userIRName.isNotEmpty()) pick->addItem(juce::String::fromUTF8("File \xc2\xb7 ") + m.userIRName, CAB_USER + 1);
         r1->add(std::move(pick));
         r1->add(textButton(juce::String::fromUTF8("IR file\xe2\x80\xa6"), [&m] { m.loadIR(); }));
+        r1->add(textButton(juce::String::fromUTF8("Add IRs\xe2\x80\xa6"), [&m] { m.importCabIRsDialog(); }))
+            ->setTooltip("Add a folder of cab IRs (WAV) to the IR library, e.g. a tone pack from tone3000.com");
         block->add(std::move(r1));
+        if (s.i("cabModel") == CAB_IRLIB) block->add(irLibraryRow());
         if (lib) { block->add(irRow("A", "irA", false)); block->add(irRow("B", "irB", true)); }
         c->add(std::move(block));
         auto r = row();
@@ -347,6 +351,73 @@ std::unique_ptr<UnitBox> RigView::makePanel(const juce::String& id) {
 }
 
 /// Mic / position / presence / TS pickers for one God's Cab slot, plus prev/next for quick auditioning.
+namespace {
+/// Searchable list of every IR in the library. Clicking one plays it straight away; the box stays open to compare.
+class IRBrowser : public juce::Component, private juce::ListBoxModel {
+public:
+    explicit IRBrowser(Model& m) : model(m) {
+        search.setTextToShowWhenEmpty("Search " + juce::String(m.cabIRs.all().size()) + juce::String::fromUTF8(" IRs (band, song, amp\xe2\x80\xa6)"), theme::secondary);
+        search.onTextChange = [this] { filter(); };
+        addAndMakeVisible(search);
+        list.setModel(this); list.setRowHeight(24);
+        list.setColour(juce::ListBox::backgroundColourId, juce::Colours::transparentBlack);
+        addAndMakeVisible(list);
+        filter();
+        setSize(440, 440);
+    }
+    void resized() override { auto r = getLocalBounds().reduced(8); search.setBounds(r.removeFromTop(28)); r.removeFromTop(6); list.setBounds(r); }
+    void visibilityChanged() override { if (isShowing()) search.grabKeyboardFocus(); }
+private:
+    void filter() {
+        hits.clear();
+        const auto q = search.getText().toLowerCase();
+        for (const auto& f : model.cabIRs.all()) if (q.isEmpty() || f.toLowerCase().contains(q)) hits.add(f);
+        list.updateContent(); list.repaint();
+        const int cur = hits.indexOf(model.s().s("irFile"));
+        if (cur >= 0) list.scrollToEnsureRowIsOnscreen(cur);
+    }
+    int getNumRows() override { return hits.size(); }
+    void paintListBoxItem(int row, juce::Graphics& g, int w, int h, bool) override {
+        if (!juce::isPositiveAndBelow(row, hits.size())) return;
+        const auto& rel = hits[row];
+        const bool on = rel == model.s().s("irFile");
+        if (on) { g.setColour(model.accent().withAlpha(0.2f)); g.fillRoundedRectangle(0, 1, (float) w, (float) h - 2, 4); }
+        const auto folder = rel.containsChar('/') ? rel.upToLastOccurrenceOf("/", false, false) : juce::String();
+        g.setColour(on ? model.accent() : theme::text); g.setFont(13.0f);
+        g.drawText(CabIRLibrary::title(rel), 8, 0, w - 160, h, juce::Justification::centredLeft, true);
+        g.setColour(theme::secondary); g.setFont(11.0f);
+        g.drawText(folder, w - 150, 0, 142, h, juce::Justification::centredRight, true);
+    }
+    void listBoxItemClicked(int row, const juce::MouseEvent&) override {
+        if (!juce::isPositiveAndBelow(row, hits.size())) return;
+        Settings x = model.s(); x.set("irFile", hits[row]); x.set("cabModel", CAB_IRLIB); x.set("cabOn", true); model.setSettings(x);
+        list.repaint();
+    }
+    Model& model;
+    juce::TextEditor search;
+    juce::ListBox list;
+    juce::StringArray hits;
+};
+} // namespace
+
+/// The IR library's current IR (click to search and pick), plus prev/next for quick auditioning.
+std::unique_ptr<juce::Component> RigView::irLibraryRow() {
+    auto& m = model;
+    auto r = row(6);
+    const auto rel = m.s().s("irFile");
+    auto b = textButton(rel.isEmpty() ? juce::String::fromUTF8("Choose an IR\xe2\x80\xa6") : CabIRLibrary::title(rel), {});
+    auto* bp = b.get();
+    b->onClick = [&m, bp] {
+        juce::CallOutBox::launchAsynchronously(std::make_unique<IRBrowser>(m), bp->getScreenBounds(), nullptr);
+    };
+    setPref(*b, (int) (300 * theme::W), 26);
+    b->setTooltip(rel);
+    r->add(std::move(b));
+    r->add(std::make_unique<IconButton>(IconButton::chevronLeft, [&m] { m.set("irFile", m.cabIRs.step(m.s().s("irFile"), -1)); }, 12))->setTooltip("Previous IR");
+    r->add(std::make_unique<IconButton>(IconButton::chevronRight, [&m] { m.set("irFile", m.cabIRs.step(m.s().s("irFile"), 1)); }, 12))->setTooltip("Next IR");
+    return r;
+}
+
 std::unique_ptr<juce::Component> RigView::irRow(const juce::String& label, const juce::String& key, bool optional) {
     auto& m = model;
     auto r = row(6);

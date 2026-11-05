@@ -40,6 +40,30 @@ private:
     double cacheRate = 0;
 };
 
+/// Cab IRs you add (any WAV/AIFF, e.g. tone packs from tone3000.com), in IRs/Library (subfolders allowed).
+/// Presets refer to an IR by its path inside the folder, with forward slashes, the same on Mac and Windows.
+class CabIRLibrary {
+public:
+    static juce::File root() { return appDataDir().getChildFile("IRs/Library"); }
+    void scan();
+    bool isEmpty() const { return files.isEmpty(); }
+    const juce::StringArray& all() const { return files; }
+    bool contains(const juce::String& rel) const { return files.contains(rel); }
+    juce::String step(const juce::String& rel, int d) const;
+    std::optional<std::vector<float>> samples(const juce::String& rel, double sampleRate);
+    /// Copies IR files, or whole folders of them, into the library. Returns how many were added.
+    int importItems(const juce::Array<juce::File>& items);
+    /// Display name: the file name without "IR", extension or extra spaces.
+    static juce::String title(const juce::String& rel);
+private:
+    juce::StringArray files;
+    std::map<juce::String, std::vector<float>> cache;
+    double cacheRate = 0;
+};
+
+/// Cuts an IR to what the engine convolves (DSP::maxIR samples), fading the last 5 ms so the cut never clicks.
+std::vector<float> fitIR(std::vector<float> h, double sampleRate = 48000);
+
 /// A fitted amp model written by mac/Capture/fit.py.
 struct Capture {
     juce::String name;

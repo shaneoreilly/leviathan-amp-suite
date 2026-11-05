@@ -35,6 +35,7 @@ Real amps through Neural Amp Modeler captures, built-in amp models, any cab IR. 
 - **Noise gate** with a fast attack, so pick transients aren't softened.
 - **Pitch / "Play as":** tune the whole guitar up or down by up to an octave (Eb → Bb, E → Drop D voicings, and so on). The shifter follows the pitch you play, so single notes and riffs add only about 7–12 ms. Every tuning shows its string notes, for example "Drop C · C G C F A D".
 - **Cabinet:** your own impulse responses (any WAV), a multi-mic *God's Cab*-style library browser with A/B mic blend, or built-in cab models. Low and high cut.
+- **IR library:** add whole folders of cab IRs, such as the band-tone IR packs from [tone3000.com](https://www.tone3000.com), with **Cabinet → Add IRs…**. Search by band or song, click to hear each one, or step through them with ‹ ›.
 - **8-band graphic EQ, delay and reverb, master output.** The output never hard-clips: a limiter holds peaks at −1 dBFS without adding latency.
 - **Tempo and metronome:** a click with beat lights, tap tempo, and a delay that locks to note lengths (1/4, dotted 1/8, triplets…). Tempo follows incoming MIDI clock.
 - **Layout:** panels sit on a grid, can be dragged into any order and collapsed, and the window reopens at the size you left it.
@@ -121,6 +122,8 @@ The latency figure in the top bar turns orange above 15 ms. Hover over it for th
 
 Real impulse responses sound much better than the built-in cab models. Load any IR WAV with **Cabinet → IR file…**.
 
+For collections, use **Cabinet → Add IRs…** (or **Settings → Library → Cab IRs**) and pick files or whole folders. They're copied into `IRs/Library/` in Leviathan's data folder, and presets remember which IR they use. IRs longer than about 85 ms are trimmed to the engine's length with a short fade; on a 194-IR tone pack, what's trimmed is a median 57 dB below the IR.
+
 For the multi-mic library browser, put a pack of *God's Cab*-style IRs in folders for each sample rate, under `IRs/GodsCab/44.1/` and `IRs/GodsCab/48/` in Leviathan's data folder (see below). IR packs are third-party content and aren't included in this repository.
 
 ## Amp captures (experimental)
@@ -151,7 +154,8 @@ The tools need Python 3 with `numpy` and `scipy`. Clean and moderately driven ri
 | --- | --- | --- |
 | Data folder (NAM, IRs, captures) | `~/Library/Application Support/Leviathan/` | `%APPDATA%\Leviathan\` |
 | Your NAM captures | `…/Leviathan/NAM/` | `…\Leviathan\NAM\` |
-| IR library | `…/Leviathan/IRs/` | `…\Leviathan\IRs\` |
+| God's Cab IRs | `…/Leviathan/IRs/GodsCab/` | `…\Leviathan\IRs\GodsCab\` |
+| IR library (added IRs) | `…/Leviathan/IRs/Library/` | `…\Leviathan\IRs\Library\` |
 | Recordings | `~/Music/Leviathan/Sessions/` | `Music\Leviathan\Sessions\` |
 | Settings and presets | `~/Library/Preferences/local.leviathan.ampsuite.plist` | `%APPDATA%\Leviathan\Leviathan.settings` |
 | Local signing keychain (Mac source builds) | `~/Library/Application Support/Leviathan/Signing/` | |
