@@ -17,6 +17,10 @@ struct AudioDevice: Identifiable, Hashable {
     /// System-wide EQ / routing apps (eqMac, SoundSource, Loopback...) that sit in front of the real device and buffer audio.
     var isRouter: Bool { ["eqmac", "soundsource", "loopback", "boom", "audio hijack", "blackhole", "soundflower"].contains { name.lowercased().contains($0) } }
     var isWireless: Bool { [kAudioDeviceTransportTypeBluetooth, kAudioDeviceTransportTypeBluetoothLE, kAudioDeviceTransportTypeAirPlay].contains(transport) }
+    /// Game pads with a headphone jack (DualSense, Xbox...) show up as outputs but are never what you want to play through.
+    var isGamepad: Bool { ["controller", "dualsense", "dualshock", "xbox"].contains { name.lowercased().contains($0) } }
+    /// Good enough to pick or suggest for playing through.
+    var goodOutput: Bool { outputWarning == nil && !isGamepad }
     var isDisplay: Bool { [kAudioDeviceTransportTypeHDMI, kAudioDeviceTransportTypeDisplayPort].contains(transport) }
 
     /// Why this device is a poor choice for live playing, if it is.

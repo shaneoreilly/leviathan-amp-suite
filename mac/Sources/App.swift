@@ -17,6 +17,7 @@ struct Settings: Codable, Equatable {
     var eqOn = true, eq: [Double] = [0, 1, 0, 1, 1.5, 1, -1, -3]
     var cabOn = true, cabModel = CAB_LIB, cabMic = 0.3, cabLowCut = 80.0, cabHighCut = 10000.0, cabLevel = 0.0
     var irA = "SM57/NO-TS/57_1_inch_edge_pres_3.wav", irB = "MD421/NO-TS/MD421_1_inch_cone_near_pres_3.wav", irBlend = 0.35
+    var delaySync = 0   // index into DELAY_DIVS; 0 = free time in ms
     var delayOn = false, delayTime = 420.0, delayFeedback = 0.28, delayTone = 0.45, delayMix = 0.2
     var revOn = false, revSize = 0.45, revMix = 0.18
     var masterVol = -6.0
@@ -202,6 +203,34 @@ final class Model: ObservableObject {
     let irLib = IRLibrary()
     lazy var sessions = Sessions(model: self)
     lazy var midi = Midi(model: self)
+
+    // Rig layout (not part of presets): panel order and collapsed sections.
+    static let defaultPanels = ["input", "gate", "pitch", "amp", "master", "cab", "eq", "delay", "reverb"]
+    /// Each panel's UnitBox title (also its collapse key).
+    static let panelTitles = ["input": "INPUT", "gate": "GATE", "pitch": "PITCH", "amp": "AMP", "master": "MASTER",
+                              "cab": "CABINET", "eq": "GRAPHIC EQ", "delay": "DELAY", "reverb": "REVERB"]
+    @Published var panelOrder: [String] = {
+        let saved = (UserDefaults.standard.stringArray(forKey: "panelOrder") ?? []).filter(Model.defaultPanels.contains)
+        return saved + Model.defaultPanels.filter { !saved.contains($0) }
+    }() { didSet { UserDefaults.standard.set(panelOrder, forKey: "panelOrder") } }
+    @Published var collapsed = Set(UserDefaults.standard.stringArray(forKey: "collapsed") ?? []) {
+        didSet { UserDefaults.standard.set(Array(collapsed), forKey: "collapsed") }
+    }
+    func toggleCollapsed(_ key: String) { if collapsed.contains(key) { collapsed.remove(key) } else { collapsed.insert(key) } }
+    let updater = Updater()
+
+    // Tempo: shared by the metronome and synced delay; set by typing, tap tempo or MIDI clock. Not part of presets.
+    @Published var bpm = UserDefaults.standard.object(forKey: "bpm") as? Double ?? 120 {
+        didSet { if bpm != oldValue { UserDefaults.standard.set(bpm, forKey: "bpm"); applyAll() } }
+    }
+    @Published var metroOn = false { didSet { params.metroOn = metroOn } }
+    @Published var beatsPerBar = UserDefaults.standard.object(forKey: "beatsPerBar") as? Int ?? 4 {
+        didSet { UserDefaults.standard.set(beatsPerBar, forKey: "beatsPerBar"); applyAll() }
+    }
+    @Published var metroVol = UserDefaults.standard.object(forKey: "metroVol") as? Double ?? -12 {
+        didSet { UserDefaults.standard.set(metroVol, forKey: "metroVol"); applyAll() }
+    }
+    private var taps: [Date] = []
     @Published var screen: Screen = .rig
     /// Accent colour: a picked colour, or (when none is set) the colour of the active amp channel.
     @Published var accentRGB: [Double]? = UserDefaults.standard.array(forKey: "accent") as? [Double] {
@@ -241,14 +270,16 @@ final class Model: ObservableObject {
         }
         applyAll()
         engine.onRestartNeeded = { [weak self] in self?.rateChanged() }
-        engine.onOverload = { [weak self] in
-            guard let self, let i = self.input, let o = self.output, let prev = self.info else { return }
-            self.info = self.engine.currentInfo(input: i, output: o, previous: prev)   // cycle usage went up
-            self.meters.dropouts = self.engine.overloads
-        }
+        engine.onOverload = { [weak self] in self?.overloaded() }
         refreshDevices()
         onDeviceListChange { [weak self] in self?.refreshDevices() }
         midi.start()
+        updater.checkOnLaunch()
+        AppDelegate.model = self
+        if !AppDelegate.pending.isEmpty {   // preset files that opened the app
+            let urls = AppDelegate.pending; AppDelegate.pending = []
+            DispatchQueue.main.async { [weak self] in self?.importPresets(urls); self?.screen = .presets }
+        }
         // open ready to play; retry once in case the previous instance is still releasing the device
         DispatchQueue.main.async { [weak self] in self?.start() }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
@@ -286,7 +317,7 @@ final class Model: ObservableObject {
         // bridging), otherwise the fastest output that isn't wireless, virtual or routed through an EQ app.
         if input == nil, let d = inputs.first(where: { !$0.isBuiltIn && !$0.isVirtual }) ?? inputs.first { inputUID = d.uid }
         if output == nil {
-            let good = outputs.filter { $0.outputWarning == nil }.sorted { $0.outLatencyMs < $1.outLatencyMs }
+            let good = outputs.filter(\.goodOutput).sorted { $0.outLatencyMs < $1.outLatencyMs }
             if let i = input, i.outs > 0, !i.isVirtual, let d = outputs.first(where: { $0.uid == i.uid }) { outputUID = d.uid }
             else if let d = good.first ?? outputs.first(where: { !$0.isVirtual }) ?? outputs.first { outputUID = d.uid }
         }
@@ -306,6 +337,7 @@ final class Model: ObservableObject {
         do {
             info = try engine.start(input: i, output: o, buffer: bufferSize)
             running = true
+            adviseOverloads = true; recentOverloads = []
             status = latencyAdvice(i, o)
             updateIR()
         } catch {
@@ -319,7 +351,7 @@ final class Model: ObservableObject {
     /// Hardware advice: most of the round trip is the devices, not the app.
     func latencyAdvice(_ i: AudioDevice, _ o: AudioDevice) -> String {
         if let w = o.outputWarning {
-            let better = outputs.filter { $0.outputWarning == nil }.min { $0.outLatencyMs < $1.outLatencyMs }
+            let better = outputs.filter(\.goodOutput).min { $0.outLatencyMs < $1.outLatencyMs }
             return "Output \(o.name): \(w)." + (better.map { " Try \($0.name) in Settings." } ?? "")
         }
         if i.uid != o.uid, i.outs > 0, !i.isVirtual {
@@ -333,6 +365,27 @@ final class Model: ObservableObject {
     }
 
     private func restartIfRunning() { if running { start() } }
+
+    private var lastOverloadInfo = Date.distantPast, recentOverloads: [Date] = [], adviseOverloads = true
+
+    /// Dropouts (heard as crackles). The engine backs off on its own; here we refresh the latency readout at most once a
+    /// second (each refresh asks CoreAudio several questions) and, if they keep coming, say what will fix it.
+    private func overloaded() {
+        meters.dropouts = engine.overloads
+        let now = Date()
+        if now.timeIntervalSince(lastOverloadInfo) > 1, let i = input, let o = output, let prev = info {
+            lastOverloadInfo = now
+            info = engine.currentInfo(input: i, output: o, previous: prev)   // cycle usage went up
+        }
+        recentOverloads = recentOverloads.filter { now.timeIntervalSince($0) < 5 } + [now]
+        guard adviseOverloads, recentOverloads.count >= 10, let i = input, let o = output else { return }
+        adviseOverloads = false   // once per start
+        let bigger = [16, 32, 64, 128, 256].first { $0 > bufferSize }
+        var tip = "Audio is dropping out (crackles)."
+        if let bigger { tip += " Raise Buffer to \(bigger) samples in Settings." }
+        if i.uid != o.uid { tip += " Input (\(i.name)) and output (\(o.name)) are separate devices with separate clocks, which needs more buffer; one interface for both is the most stable." }
+        status = tip
+    }
 
     private var rateRestarts: [Date] = []
     private var rateRestartPending = false
@@ -368,6 +421,45 @@ final class Model: ObservableObject {
         if let c = activeCapture { c.apply(to: params) }
         params.capOn = activeCapture != nil
         s.apply(to: params)
+        params.bpm = Float(bpm); params.beatsPerBar = beatsPerBar; params.metroVol = Float(metroVol); params.metroOn = metroOn
+        if let ms = syncedDelayMs { params.delayTime = Float(ms) }
+        params.version &+= 1
+    }
+
+    /// Delay time from the tempo when the delay is synced, nil when it's free.
+    var syncedDelayMs: Double? {
+        guard s.delaySync > 0, s.delaySync < DELAY_DIVS.count else { return nil }
+        return min(max(DELAY_DIVS[s.delaySync].beats * 60000 / bpm, 40), 2000)
+    }
+
+    /// Tap tempo: average of the last few taps; a 2 s pause starts over. A free (unsynced) delay follows the taps too.
+    func tap() {
+        let now = Date()
+        if let l = taps.last, now.timeIntervalSince(l) > 2 { taps = [] }
+        taps.append(now); taps = Array(taps.suffix(5))
+        guard taps.count >= 2, let first = taps.first else { return }
+        let beat = now.timeIntervalSince(first) / Double(taps.count - 1)
+        bpm = min(max((60 / beat * 10).rounded() / 10, 30), 300)
+        if s.delaySync == 0 { s.delayTime = min(max((beat * 1000).rounded(), 40), 1500) }
+    }
+
+    func stepPreset(_ d: Int) {
+        let order = presetOrder
+        guard !order.isEmpty else { return }
+        let i = order.firstIndex(of: presetName) ?? (d > 0 ? -1 : 0)
+        loadAny(order[((i + d) % order.count + order.count) % order.count])
+    }
+
+    /// Buttons a MIDI footswitch can press (mapping keys starting with "@").
+    func midiAction(_ key: String) {
+        switch key {
+        case "@next": stepPreset(1)
+        case "@prev": stepPreset(-1)
+        case "@tuner": tunerOn.toggle()
+        case "@tap": tap()
+        case "@metro": metroOn.toggle()
+        default: break
+        }
     }
 
     func reloadCaptures() {
@@ -487,12 +579,6 @@ final class Model: ObservableObject {
 
     func removePedal(_ k: PedalKind) { s.chain.removeAll { $0 == k.rawValue } }
 
-    func movePedal(_ k: PedalKind, by d: Int) {
-        guard let i = s.chain.firstIndex(of: k.rawValue) else { return }
-        let j = i + d
-        guard j >= 0 && j < s.chain.count else { return }
-        s.chain.swapAt(i, j)
-    }
 
     // MARK: presets
 
@@ -579,7 +665,7 @@ final class Model: ObservableObject {
 
     func deletePreset(_ name: String) { userPresets[name] = nil; persistPresets() }
 
-    private func persistPresets() {
+    func persistPresets() {
         UserDefaults.standard.set(try? JSONEncoder().encode(userPresets), forKey: "presets")
         UserDefaults.standard.set(presetName, forKey: "preset")
     }
@@ -590,6 +676,7 @@ final class Model: ObservableObject {
         sessions.tick()
         guard running else { meters.set(0, 0, false, 0); return }
         meters.set(params.inPeak, params.outPeak, params.gateOpen, params.pitchLatencyMs)
+        if meters.beat != params.metroBeat { meters.beat = params.metroBeat }
         tunerTick += 1
         if tunerTick % 15 == 0 { meters.load = engine.loadPeak; engine.loadPeak = 0 }
         if tunerOn && tunerTick % 2 == 0 { runTuner() }
@@ -691,6 +778,7 @@ struct Footswitch: View {
                 Circle().fill(on ? color : Color(white: 0.2)).frame(width: 8, height: 8).shadow(color: on ? color : .clear, radius: 4)
                 Text(on ? "ON" : "OFF").font(.system(size: 9 * UI, weight: .bold)).tracking(1)
             }
+            .fixedSize()
             .padding(.horizontal, 8).padding(.vertical, 3)
             .overlay(Capsule().stroke(line))
         }
@@ -699,23 +787,42 @@ struct Footswitch: View {
     }
 }
 
+/// Which panel a UnitBox is (set by the rig so the box shows a drag handle), and the drag in progress.
+struct PanelIDKey: EnvironmentKey { static let defaultValue: String? = nil }
+extension EnvironmentValues { var panelID: String? { get { self[PanelIDKey.self] } set { self[PanelIDKey.self] = newValue } } }
+
+final class DragState: ObservableObject { var pedal: PedalKind?; var panel: String? }
+
 struct UnitBox<Content: View>: View {
+    @EnvironmentObject private var m: Model
+    @EnvironmentObject private var drag: DragState
+    @Environment(\.panelID) private var panelID
     let title: String
     var on: Binding<Bool>? = nil
     var onKey: String? = nil
     var color: Color = .accentColor
     var trailing: AnyView? = nil
+    var leading: AnyView? = nil
     @ViewBuilder let content: Content
 
     var body: some View {
+        let folded = m.collapsed.contains(title)
         VStack(alignment: .leading, spacing: 10) {
             HStack {
+                CollapseChevron(key: title)
+                if let panelID {
+                    Grip().onDrag { drag.panel = panelID; return NSItemProvider(object: panelID as NSString) }
+                }
+                leading
                 Text(title).font(.system(size: 10 * UI, weight: .bold)).tracking(2).foregroundStyle(.secondary)
                 trailing
-                Spacer()
+                Spacer(minLength: 12)
                 if let on { Footswitch(on: on, color: color, key: onKey, name: title) }
             }
-            content.opacity(on?.wrappedValue == false ? 0.4 : 1).environment(\.midiScope, title)
+            if !folded {
+                content.opacity(on?.wrappedValue == false ? 0.4 : 1).environment(\.midiScope, title)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)   // centred across, sitting on the bottom so knob rows line up
+            }
         }
         .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -763,6 +870,7 @@ final class Meters: ObservableObject {
     @Published private(set) var pitchLatency: Float = 0
     @Published var load: Float = 0          // worst render time / buffer time over the last half second
     @Published var dropouts = 0
+    @Published var beat = -1                // metronome beat in the bar, -1 when off
     private var plTime: CFTimeInterval = 0
     func set(_ i: Float, _ o: Float, _ g: Bool, _ pl: Float) {
         // publish only real changes (meters round to ~0.5 dB steps visually anyway)
@@ -795,7 +903,7 @@ struct GateDot: View {
 struct PitchLatency: View {
     @ObservedObject var mt: Meters
     var body: some View {
-        Text(mt.pitchLatency > 0 ? String(format: "adds ~%.0f ms", mt.pitchLatency) : " ")
+        Text(mt.pitchLatency > 0 ? String(format: "+%.0f ms", mt.pitchLatency) : "")
             .font(.system(size: 10 * UI).monospacedDigit()).foregroundStyle(.secondary)
     }
 }
@@ -815,8 +923,61 @@ struct Meter: View {
     }
 }
 
+/// Reorders live as a dragged pedal passes over another one.
+struct PedalDrop: DropDelegate {
+    let target: PedalKind
+    let m: Model
+    let drag: DragState
+
+    func dropEntered(info: DropInfo) {
+        guard let d = drag.pedal, d != target,
+              let from = m.s.chain.firstIndex(of: d.rawValue), let to = m.s.chain.firstIndex(of: target.rawValue) else { return }
+        withAnimation(.easeOut(duration: 0.15)) { m.s.chain.move(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to) }
+    }
+    func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
+    func performDrop(info: DropInfo) -> Bool { drag.pedal = nil; return true }
+}
+
+/// Reorders live as a dragged panel passes over another one.
+struct PanelDrop: DropDelegate {
+    let target: String
+    let m: Model
+    let drag: DragState
+
+    func dropEntered(info: DropInfo) {
+        guard let d = drag.panel, d != target,
+              let from = m.panelOrder.firstIndex(of: d), let to = m.panelOrder.firstIndex(of: target) else { return }
+        withAnimation(.easeOut(duration: 0.15)) { m.panelOrder.move(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to) }
+    }
+    func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
+    func performDrop(info: DropInfo) -> Bool { drag.panel = nil; return true }
+}
+
+/// ≡ drag handle.
+struct Grip: View {
+    var body: some View {
+        Image(systemName: "line.3.horizontal").foregroundStyle(.secondary).padding(.trailing, 2)
+            .contentShape(Rectangle()).help("Drag to reorder")
+    }
+}
+
+/// Collapse / expand a section; remembered between launches.
+struct CollapseChevron: View {
+    @EnvironmentObject var m: Model
+    let key: String
+    var body: some View {
+        let folded = m.collapsed.contains(key)
+        Button { withAnimation(.easeOut(duration: 0.15)) { m.toggleCollapsed(key) } } label: {
+            Image(systemName: "chevron.right").rotationEffect(.degrees(folded ? 0 : 90))
+                .font(.system(size: 9 * UI, weight: .bold)).foregroundStyle(.secondary).frame(width: 12 * Z, height: 12 * Z).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).help(folded ? "Expand" : "Collapse")
+    }
+}
+
 struct ContentView: View {
     @EnvironmentObject var m: Model
+    @StateObject private var drag = DragState()
 
     var ch: Color { m.accent }
     let pct: (Double) -> String = { "\(Int(($0 * 100).rounded()))%" }
@@ -825,14 +986,34 @@ struct ContentView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 if m.tunerOn { tuner }
-                FlowLayout { inputUnit; gate; pitch; amp }
+                GridFlow {
+                    ForEach(m.panelOrder, id: \.self) { id in
+                        panelView(id).environment(\.panelID, id)
+                            .onDrop(of: [.text], delegate: PanelDrop(target: id, m: m, drag: drag))
+                            .layoutValue(key: FoldedKey.self, value: m.collapsed.contains(Model.panelTitles[id] ?? ""))
+                    }
+                }
                 pedalboard
-                FlowLayout { cab; eq }
-                FlowLayout { delay; reverb; master }
                 Text("Tip: free cab IRs (God's Cab, Seacow, OwnHammer free packs) sound far more real than the built-in cabs; load them with “IR…”.")
                     .font(.system(size: 10 * UI)).foregroundStyle(.secondary)
             }
             .padding(14)
+        }
+        .environmentObject(drag)
+    }
+
+    func panelView(_ id: String) -> AnyView {
+        switch id {
+        case "input": AnyView(inputUnit)
+        case "gate": AnyView(gate)
+        case "pitch": AnyView(pitch)
+        case "amp": AnyView(amp)
+        case "master": AnyView(master)
+        case "cab": AnyView(cab)
+        case "eq": AnyView(eq)
+        case "delay": AnyView(delay)
+        case "reverb": AnyView(reverb)
+        default: AnyView(EmptyView())
         }
     }
 
@@ -894,8 +1075,8 @@ struct ContentView: View {
     }
 
     var pitch: some View {
-        UnitBox(title: "PITCH", on: $m.s.pitchOn, onKey: "pitchOn", color: ch) {
-            VStack(alignment: .leading, spacing: 8) {
+        UnitBox(title: "PITCH", on: $m.s.pitchOn, onKey: "pitchOn", color: ch, trailing: AnyView(PitchLatency(mt: m.meters))) {
+            VStack(alignment: .center, spacing: 8) {
                 Picker("Guitar", selection: $m.tuningIndex) { ForEach(TUNINGS.indices, id: \.self) { Text(TUNINGS[$0].name).tag($0) } }
                     .frame(width: 190 * W)
                 HStack(spacing: 4) {
@@ -915,8 +1096,6 @@ struct ContentView: View {
                     Knob(label: "Fine", value: $m.s.pitchCents, key: "pitchCents", range: -50...50, def: 0, fmt: { String(format: "%+d¢", Int($0.rounded())) }, color: ch)
                     Knob(label: "Mix", value: $m.s.pitchMix, key: "pitchMix", range: 0...1, def: 1, fmt: pct, color: ch)
                 }
-                PitchLatency(mt: m.meters)
-                    .font(.system(size: 10 * UI).monospacedDigit()).foregroundStyle(.secondary)
             }
         }
     }
@@ -925,31 +1104,37 @@ struct ContentView: View {
     var pedalboard: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
+                CollapseChevron(key: "PEDALS")
                 Text("PEDALS  →  AMP").font(.system(size: 10 * UI, weight: .bold)).tracking(2).foregroundStyle(.secondary)
                 Menu("+ Add pedal") {
-                    ForEach(PedalKind.allCases.filter { !m.s.chain.contains($0.rawValue) }) { k in
+                    ForEach(PedalKind.allCases.filter { !m.s.chain.contains($0.rawValue) }.sorted { $0.title < $1.title }) { k in
                         Button(k.title.capitalized) { m.addPedal(k) }
                     }
                 }.frame(width: 130 * W).disabled(m.s.chain.count >= Params.maxChain || m.s.chain.count == PedalKind.allCases.count)
             }
-            if m.s.chain.isEmpty {
+            if m.collapsed.contains("PEDALS") {
+                EmptyView()
+            } else if m.s.chain.isEmpty {
                 Text("No pedals. Add one; signal flows left to right into the amp.")
                     .font(.system(size: 12 * UI)).foregroundStyle(.secondary).padding(.vertical, 20)
             } else {
-                FlowLayout(stretch: false) { ForEach(m.s.chain.compactMap(PedalKind.init(rawValue:))) { k in pedal(k) } }
+                GridFlow {
+                    ForEach(m.s.chain.compactMap(PedalKind.init(rawValue:))) { k in
+                        pedal(k).layoutValue(key: FoldedKey.self, value: m.collapsed.contains(k.title))
+                    }
+                }
             }
         }
     }
 
     func pedal(_ k: PedalKind) -> some View {
         let on = Binding(get: { m.pedalOn(k) }, set: { v in var n = m.s; m.setPedal(k, on: v, in: &n); m.s = n })
+        let grip = Grip().onDrag { drag.pedal = k; return NSItemProvider(object: "\(k.rawValue)" as NSString) }
         let tools = HStack(spacing: 2) {
-            Button { m.movePedal(k, by: -1) } label: { Image(systemName: "chevron.left") }.help("Move earlier")
-            Button { m.movePedal(k, by: 1) } label: { Image(systemName: "chevron.right") }.help("Move later")
             Button { m.removePedal(k) } label: { Image(systemName: "xmark") }.help("Remove")
         }.buttonStyle(.borderless).controlSize(.small)
-        return UnitBox(title: k.title, on: on, onKey: k.onKey, color: ch, trailing: AnyView(tools)) { pedalKnobs(k) }
-            .fixedSize(horizontal: true, vertical: false)
+        return UnitBox(title: k.title, on: on, onKey: k.onKey, color: ch, trailing: AnyView(tools), leading: AnyView(grip)) { pedalKnobs(k) }
+            .onDrop(of: [.text], delegate: PedalDrop(target: k, m: m, drag: drag))
     }
 
     @ViewBuilder func pedalKnobs(_ k: PedalKind) -> some View {
@@ -963,7 +1148,7 @@ struct ContentView: View {
                 Knob(label: "Blend", value: $m.s.compBlend, key: "compBlend", range: 0...1, def: 1, fmt: pct, color: ch)
             }
         case .wah:
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .center, spacing: 6) {
                 Picker("", selection: $m.s.wahAuto) { Text("Pedal").tag(false); Text("Auto").tag(true) }
                     .pickerStyle(.segmented).labelsHidden().frame(width: 150 * W)
                 HStack(spacing: 2) {
@@ -1017,7 +1202,7 @@ struct ContentView: View {
 
     var amp: some View {
         UnitBox(title: "AMP", on: $m.s.ampOn, onKey: "ampOn", color: ch) {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .center, spacing: 10) {
                 HStack(spacing: 6) {
                     Picker("", selection: Binding(get: { m.s.capture }, set: { m.useCapture($0) })) {
                         Text("Leviathan voicings").tag("")
@@ -1063,7 +1248,6 @@ struct ContentView: View {
                 }
             }
         }
-        .overlay(alignment: .top) { RoundedRectangle(cornerRadius: 2).fill(ch).frame(height: 3).padding(.horizontal, 12) }
     }
 
     var eq: some View {
@@ -1084,7 +1268,8 @@ struct ContentView: View {
     var cab: some View {
         let lib = m.s.cabModel == CAB_LIB
         return UnitBox(title: "CABINET", on: $m.s.cabOn, onKey: "cabOn", color: ch) {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .center, spacing: 8) {
+              VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Picker("", selection: $m.s.cabModel) {
                         if !m.irLib.isEmpty { Text("God's Cab · Mesa OS 4x12").tag(CAB_LIB) }
@@ -1097,6 +1282,7 @@ struct ContentView: View {
                     irRow("A", $m.s.irA, optional: false)
                     irRow("B", $m.s.irB, optional: true)
                 }
+              }
                 HStack(spacing: 2) {
                     if lib {
                         Knob(label: "A ↔ B", value: $m.s.irBlend, key: "irBlend", range: 0...1, def: 0.35, fmt: pct, color: ch)
@@ -1143,12 +1329,24 @@ struct ContentView: View {
 
     var delay: some View {
         UnitBox(title: "DELAY", on: $m.s.delayOn, onKey: "delayOn", color: ch) {
+          VStack(alignment: .center, spacing: 8) {
+            HStack(spacing: 6) {
+                Picker("", selection: $m.s.delaySync) {
+                    ForEach(DELAY_DIVS.indices, id: \.self) { Text(DELAY_DIVS[$0].name).tag($0) }
+                }.labelsHidden().frame(width: 110 * W).help("Free time, or a note length at the tempo")
+                TapButton()
+                Text(m.syncedDelayMs.map { String(format: "%.0f BPM · %.0f ms", m.bpm, $0) } ?? String(format: "%.0f BPM", m.bpm))
+                    .font(.system(size: 10 * UI).monospacedDigit()).foregroundStyle(.secondary)
+            }
             HStack(spacing: 2) {
-                Knob(label: "Time", value: $m.s.delayTime, key: "delayTime", range: 40...1500, def: 420, fmt: { "\(Int($0)) ms" }, color: ch)
+                if m.s.delaySync == 0 {
+                    Knob(label: "Time", value: $m.s.delayTime, key: "delayTime", range: 40...1500, def: 420, fmt: { "\(Int($0)) ms" }, color: ch)
+                }
                 Knob(label: "Feedback", value: $m.s.delayFeedback, key: "delayFeedback", range: 0...0.92, def: 0.28, fmt: pct, color: ch)
                 Knob(label: "Tone", value: $m.s.delayTone, key: "delayTone", range: 0...1, def: 0.45, color: ch)
                 Knob(label: "Mix", value: $m.s.delayMix, key: "delayMix", range: 0...1, def: 0.2, fmt: pct, color: ch)
             }
+          }
         }
     }
 
@@ -1162,22 +1360,23 @@ struct ContentView: View {
     }
 
     var master: some View {
-        UnitBox(title: "MASTER") {
-            VStack {
-                Knob(label: "Output", value: $m.s.masterVol, key: "masterVol", range: -40...12, def: -6, fmt: { String(format: "%+.1f dB", $0) }, color: ch)
-                Button("Reset") { m.loadFactory(FACTORY[0].0) }.controlSize(.small)
-            }
+        UnitBox(title: "MASTER", trailing: AnyView(
+            Button { m.s.masterVol = -6 } label: { Image(systemName: "arrow.counterclockwise") }
+                .buttonStyle(.borderless).controlSize(.small).help("Reset output to -6 dB (or double-click the knob)"))) {
+            Knob(label: "Output", value: $m.s.masterVol, key: "masterVol", range: -40...12, def: -6, fmt: { String(format: "%+.1f dB", $0) }, color: ch)
         }
     }
 }
 
 @main
 struct LeviathanApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @StateObject private var model = Model()
     var body: some Scene {
         WindowGroup("Leviathan") {
-            RootView().environmentObject(model).environmentObject(model.sessions).environmentObject(model.midi)
+            RootView().environmentObject(model).environmentObject(model.sessions).environmentObject(model.midi).environmentObject(model.updater)
                 .preferredColorScheme(.dark).frame(minWidth: 900, minHeight: 600)
+                .background(WindowFrameSaver())
         }
         .windowResizability(.contentMinSize)
     }

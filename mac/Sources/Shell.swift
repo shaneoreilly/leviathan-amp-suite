@@ -51,6 +51,7 @@ struct RootView: View {
 struct Sidebar: View {
     @EnvironmentObject var m: Model
     @EnvironmentObject var rec: Sessions
+    @EnvironmentObject var updater: Updater
 
     var body: some View {
         VStack(spacing: 4) {
@@ -59,7 +60,7 @@ struct Sidebar: View {
             item(.recordings, "waveform", "Recordings", badge: rec.recording)
             Spacer()
             zoomControl
-            item(.settings, "gearshape", "Settings")
+            item(.settings, "gearshape", "Settings", badge: updater.available != nil)
         }
         .padding(.vertical, 10)
         .frame(width: 92 * Z)
@@ -132,9 +133,17 @@ struct TopBar: View {
             }
             .keyboardShortcut("r", modifiers: [.command])
             .help("Record dry + wet (⌘R)")
+            TempoControl()
             Toggle("Tuner", isOn: $m.tunerOn).toggleStyle(.button).keyboardShortcut("t", modifiers: [])
+                .overlay { MidiLearnOverlay(armed: .action("@tuner", "Tuner"), cornerRadius: 6) }
             MidiLearnButton()
-            PresetMenu().frame(maxWidth: 300 * W)
+            HStack(spacing: 2) {
+                Button { m.stepPreset(-1) } label: { Image(systemName: "chevron.left") }.help("Previous preset")
+                    .overlay { MidiLearnOverlay(armed: .action("@prev", "Previous preset"), cornerRadius: 6) }
+                PresetMenu().frame(maxWidth: 300 * W)
+                Button { m.stepPreset(1) } label: { Image(systemName: "chevron.right") }.help("Next preset")
+                    .overlay { MidiLearnOverlay(armed: .action("@next", "Next preset"), cornerRadius: 6) }
+            }
             Button("Save") { m.saveCurrent() }.keyboardShortcut("s").disabled(!m.presetModified).help("Save changes to this preset (⌘S)")
         }
         .lineLimit(1)
@@ -159,6 +168,9 @@ struct PresetMenu: View {
             Divider()
             Button("Save “\(m.presetName)”") { m.saveCurrent() }
             Button("Save as new…") { m.newPresetName = ""; m.savingPreset = true }
+            Divider()
+            Button("Export “\(m.presetName)”…") { m.exportPreset(m.presetName) }.disabled(m.presetSettings(m.presetName) == nil)
+            Button("Import presets…") { m.importPresetsPanel() }
             if m.isFactory(m.presetName) && m.userPresets[m.presetName] != nil {
                 Button("Restore factory “\(m.presetName)”") { m.restoreFactory(m.presetName) }
             }
@@ -184,6 +196,8 @@ struct PresetsView: View {
                 Picker("", selection: $ui.favOnly) { Text("All").tag(false); Text("★ Favorites").tag(true) }
                     .pickerStyle(.segmented).labelsHidden().frame(width: 260 * Z)
                 Spacer()
+                Button("Import…") { m.importPresetsPanel() }.help("Add .leviathan preset files (or drop them here)")
+                Button("Export all…") { m.exportAllPresets() }.help("Save every preset as a .leviathan file in a folder")
                 Button("Save as new…") { m.newPresetName = ""; m.savingPreset = true }
             }
             .padding(14)
@@ -192,6 +206,15 @@ struct PresetsView: View {
             }
             .listStyle(.inset)
             .scrollContentBackground(.hidden)
+        }
+        .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+            for p in providers {
+                _ = p.loadObject(ofClass: URL.self) { url, _ in
+                    guard let url, url.pathExtension.lowercased() == Model.presetExt else { return }
+                    DispatchQueue.main.async { MainActor.assumeIsolated { m.importPresets([url]) } }
+                }
+            }
+            return true
         }
         .alert("Rename preset", isPresented: Binding(get: { ui.renaming != nil }, set: { if !$0 { ui.renaming = nil } })) {
             TextField("Name", text: $ui.newName)
@@ -212,6 +235,7 @@ struct PresetsView: View {
             Spacer()
             if current { Text(m.presetModified ? "Loaded · unsaved changes" : "Loaded").font(.system(size: 10 * UI)).foregroundStyle(.secondary) }
             Button("Load") { m.loadAny(n); m.screen = .rig }
+            Button("Export…") { m.exportPreset(n) }
             if !factory {
                 Button("Rename") { ui.newName = n; ui.renaming = n }
                 Button("Delete", role: .destructive) { m.deletePreset(n) }
@@ -461,6 +485,9 @@ struct SettingsView: View {
                             .labelsHidden().frame(width: 220 * Z)
                     }
                 }
+                group("Updates") {
+                    UpdateSettings(row: { label, c in AnyView(row(label) { c }) })
+                }
                 group("MIDI") {
                     MidiSettings(row: { label, c in AnyView(row(label) { c }) })
                 }
@@ -499,6 +526,57 @@ struct SettingsView: View {
         HStack(spacing: 12) {
             Text(label).foregroundStyle(.secondary).frame(width: 160 * Z, alignment: .leading)
             c()
+        }
+    }
+}
+
+// MARK: - Grid layout: panels snap to a 24-column grid so edges line up across rows
+
+/// Collapsed panels keep their header height instead of stretching to the row.
+struct FoldedKey: LayoutValueKey { static let defaultValue = false }
+
+/// Each item spans as many columns as its natural width needs; items wrap to a new row when the columns run out.
+/// Expanded items in a row share the row's height, so tops and bottoms line up too.
+struct GridFlow: Layout {
+    var columns = 24
+    var spacing: CGFloat = 12
+
+    private struct Item { let index: Int, col: Int, span: Int, size: CGSize }
+
+    private func unit(_ width: CGFloat) -> CGFloat { max((width - spacing * CGFloat(columns - 1)) / CGFloat(columns), 1) }
+
+    private func rows(_ width: CGFloat, _ subviews: Subviews) -> [[Item]] {
+        let u = unit(width)
+        var rows: [[Item]] = [[]], col = 0
+        for (i, v) in subviews.enumerated() {
+            let s = v.sizeThatFits(.unspecified)
+            let span = min(columns, max(1, Int(((s.width + spacing) / (u + spacing) - 0.001).rounded(.up))))
+            if col > 0 && col + span > columns { rows.append([]); col = 0 }
+            rows[rows.count - 1].append(Item(index: i, col: col, span: span, size: s))
+            col += span
+        }
+        return rows.filter { !$0.isEmpty }
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? 1200
+        let r = rows(width, subviews)
+        let h = r.reduce(0) { $0 + ($1.map(\.size.height).max() ?? 0) } + spacing * CGFloat(max(r.count - 1, 0))
+        return CGSize(width: width, height: h)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let u = unit(bounds.width)
+        var y = bounds.minY
+        for row in rows(bounds.width, subviews) {
+            let rh = row.map(\.size.height).max() ?? 0
+            for it in row {
+                let w = CGFloat(it.span) * u + CGFloat(it.span - 1) * spacing
+                let h = subviews[it.index][FoldedKey.self] ? it.size.height : rh
+                subviews[it.index].place(at: CGPoint(x: bounds.minX + CGFloat(it.col) * (u + spacing), y: y),
+                                         proposal: ProposedViewSize(width: w, height: h))
+            }
+            y += rh + spacing
         }
     }
 }
@@ -545,7 +623,7 @@ struct FlowLayout: Layout {
             var x = bounds.minX
             for (i, s) in row {
                 let w = s.width + extra
-                subviews[i].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(width: w, height: rh))
+                subviews[i].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(width: w, height: stretch ? rh : s.height))
                 x += w + spacing
             }
             y += rh + spacing
@@ -578,3 +656,35 @@ struct EngineLoad: View {
 
 let accentSwatches: [[Double]] = [[1, 0.3, 0.3], [0.91, 0.57, 0.23], [0.95, 0.8, 0.25], [0.35, 0.8, 0.45],
                                   [0.35, 0.7, 1], [0.6, 0.45, 1], [1, 0.45, 0.75], [0.85, 0.85, 0.85]]
+
+/// Remembers the main window's size and position between launches. SwiftUI's own autosave key is built from the
+/// view hierarchy's type name, so it changes with every code change (and every update); this one is fixed.
+struct WindowFrameSaver: NSViewRepresentable {
+    static let key = "windowFrame"
+
+    final class Coordinator {
+        var observers: [NSObjectProtocol] = []
+        deinit { observers.forEach(NotificationCenter.default.removeObserver) }
+    }
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeNSView(context: Context) -> NSView {
+        let v = NSView()
+        DispatchQueue.main.async {
+            guard let w = v.window, context.coordinator.observers.isEmpty else { return }
+            if let str = UserDefaults.standard.string(forKey: WindowFrameSaver.key) {
+                let f = NSRectFromString(str)
+                // only if it still lands on a connected screen
+                if f.width >= 900, f.height >= 600, NSScreen.screens.contains(where: { $0.visibleFrame.intersects(f) }) {
+                    w.setFrame(f, display: true)
+                }
+            }
+            let save = { (_: Notification) in UserDefaults.standard.set(NSStringFromRect(w.frame), forKey: WindowFrameSaver.key) }
+            for n in [NSWindow.didEndLiveResizeNotification, NSWindow.didMoveNotification, NSWindow.didResizeNotification, NSWindow.willCloseNotification] {
+                context.coordinator.observers.append(NotificationCenter.default.addObserver(forName: n, object: w, queue: .main, using: save))
+            }
+        }
+        return v
+    }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}

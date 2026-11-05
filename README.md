@@ -16,13 +16,16 @@ Bring any amp: built-in models, your own captures, any cab IR. Free, open source
 ## Features
 
 - **Three-channel amp**: Clean, Rust and Hot voicings, 4× oversampled so high gain stays smooth. Knobs for gain, bass, mid, treble, presence, depth and volume.
-- **Pedalboard** you can reorder: compressor, wah (manual or auto), fuzz, overdrive, chorus, flanger, phaser and tremolo.
+- **Pedalboard** you can drag to reorder: compressor, wah (manual or auto), fuzz, overdrive, chorus, flanger, phaser and tremolo.
 - **Noise gate** with a fast attack, so pick transients aren't softened.
 - **Pitch / "Play as"**: tune the whole guitar up or down by up to an octave (Eb → Bb, E → Drop D voicings, and so on). The shifter follows the pitch you play, so single notes and riffs add only about 7–12 ms.
 - **Cabinet**: built-in cabinet models, or your own impulse responses (any WAV). Supports a two-mic A/B blend and low/high cut.
 - **8-band graphic EQ** with click-and-drag faders. Double-click a fader to reset it.
 - **Delay and reverb**, and a **master output**.
-- **MIDI control**: click **MIDI** in the top bar, click any knob or ON/OFF switch, then move a control on your MIDI device to assign it. Expression pedals work on any knob (Wah position, for example), footswitches turn units on and off, and Program Change picks presets in list order.
+- **Tempo and metronome**: a click with beat lights, tap tempo, and a delay that locks to note lengths (1/4, dotted 1/8, triplets…). Tempo follows incoming MIDI clock.
+- **Preset files**: export one preset or all of them as `.leviathan` files, and import by button, by dropping them on the Presets screen, or by double-clicking in Finder.
+- **Built-in updates**: Settings → Updates checks GitHub releases and installs the new version in place, no DMG needed.
+- **MIDI control**: click **MIDI** in the top bar, click any knob or ON/OFF switch, then move a control on your MIDI device to assign it. Expression pedals work on any knob (Wah position, for example). Footswitches can turn units on and off, step through presets, tap tempo, or toggle the tuner and metronome. Program Change picks presets in list order.
 - **Tuner** with selectable tuning and reference pitch (A4 = 430–450 Hz).
 - **Presets**: factory and your own, with favourites. Re-save a factory preset with your changes and restore the original any time.
 - **Recording**:

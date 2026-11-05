@@ -483,7 +483,8 @@ final class DSP {
         let s = Double(sr), os = s * 4
         inG.target = dbLin(p.inGain)
         gThr = dbLin(p.gateThresh)
-        gRelC = expf(-1 / (p.gateRelease / 1000 * sr)); gEnvR = expf(-1 / (0.015 * sr)); gAttC = expf(-1 / (0.0003 * sr))
+        gRelC = expf(logf(0.001) / (p.gateRelease / 1000 * sr))   // Release = time to fall 60 dB (closed), not one time constant:
+        // after a high-gain amp a gate that is only ~9 dB down still sounds open, so the old curve left a long audible tail; gEnvR = expf(-1 / (0.015 * sr)); gAttC = expf(-1 / (0.0003 * sr))
 
         shifter.setRatio(pow(2, Double(p.pitchSemis.rounded() + p.pitchCents / 100) / 12))
         pMix.target = p.pitchOn ? p.pitchMix : 0

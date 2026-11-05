@@ -15,9 +15,38 @@ struct MidiMap: Codable, Identifiable, Equatable {
     var momentary = false     // switch sends press/release: each press flips (otherwise ≥64 = on, <64 = off)
 }
 
+/// Turns MIDI clock (24 ticks per beat) into a tempo. Only touched on the MIDI thread.
+final class ClockTracker: @unchecked Sendable {
+    private var ticks = 0, beatStart: UInt64 = 0, last: UInt64 = 0, smooth = 0.0
+    private let toSec: Double = { var tb = mach_timebase_info_data_t(); mach_timebase_info(&tb); return Double(tb.numer) / Double(tb.denom) / 1e9 }()
+
+    func message(_ status: UInt8, at ts: MIDITimeStamp) -> Double? {
+        let now = ts != 0 ? ts : mach_absolute_time()
+        switch status {
+        case 0xFA, 0xFC: ticks = 0; beatStart = 0; smooth = 0; return nil   // start / stop: begin measuring again
+        case 0xF8: break
+        default: return nil
+        }
+        // a gap of over a second means the clock stopped and restarted
+        if last != 0 && Double(now &- last) * toSec > 1 { ticks = 0; beatStart = 0; smooth = 0 }
+        last = now
+        if beatStart == 0 { beatStart = now; ticks = 0; return nil }
+        ticks += 1
+        guard ticks == 24 else { return nil }
+        let secs = Double(now &- beatStart) * toSec
+        beatStart = now; ticks = 0
+        guard secs > 0.15, secs < 3 else { return nil }
+        let b = 60 / secs
+        smooth = smooth == 0 ? b : smooth * 0.6 + b * 0.4
+        return (smooth * 10).rounded() / 10
+    }
+}
+
 /// The control waiting for a CC while learning.
 struct MidiArmed: Equatable {
     let key: String, name: String, lo: Double, hi: Double, toggle: Bool
+    /// A button rather than a setting (key starts with "@", see Model.midiAction).
+    static func action(_ key: String, _ name: String) -> MidiArmed { MidiArmed(key: key, name: name, lo: 0, hi: 1, toggle: true) }
 }
 
 /// Last message received, kept apart so a busy expression pedal doesn't redraw every knob.
@@ -43,6 +72,9 @@ final class Midi: ObservableObject {
     @Published var learning = false { didSet { if !learning { armed = nil } } }
     @Published var armed: MidiArmed?
     @Published var sources: [String] = []
+    @Published var followClock = UserDefaults.standard.object(forKey: "midiClock") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(followClock, forKey: "midiClock") }
+    }
     @Published var programChange = UserDefaults.standard.object(forKey: "midiPC") as? Bool ?? true {
         didSet { UserDefaults.standard.set(programChange, forKey: "midiPC") }
     }
@@ -66,10 +98,17 @@ final class Midi: ObservableObject {
             DispatchQueue.main.async { MainActor.assumeIsolated { self?.connectAll() } }
         }
         guard st == noErr else { return }
+        let clock = ClockTracker()
         st = MIDIInputPortCreateWithProtocol(client, "Leviathan In" as CFString, ._1_0, &port) { [weak self] list, _ in
-            let words = Midi.channelVoiceWords(list)
-            guard !words.isEmpty else { return }
-            DispatchQueue.main.async { MainActor.assumeIsolated { for w in words { self?.handle(w) } } }
+            let (words, bpm) = Midi.parse(list, clock)
+            guard !words.isEmpty || bpm != nil else { return }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    for w in words { self.handle(w) }
+                    if let bpm, self.followClock, abs(self.model.bpm - bpm) >= 0.3 { self.model.bpm = bpm }
+                }
+            }
         }
         guard st == noErr else { return }
         connectAll()
@@ -90,23 +129,25 @@ final class Midi: ObservableObject {
         sources = names
     }
 
-    /// MIDI 1.0 channel-voice messages (UMP type 2) from an event list; everything else is skipped.
-    nonisolated static func channelVoiceWords(_ list: UnsafePointer<MIDIEventList>) -> [UInt32] {
+    /// MIDI 1.0 channel-voice messages (UMP type 2) from an event list, plus a new tempo when clock ticks
+    /// (UMP type 1, 0xF8) complete a beat. Everything else is skipped. Runs on the MIDI thread.
+    nonisolated static func parse(_ list: UnsafePointer<MIDIEventList>, _ clock: ClockTracker) -> ([UInt32], Double?) {
         let sizes = [1, 1, 1, 2, 2, 4, 1, 1, 2, 2, 2, 3, 3, 4, 4, 4]   // UMP words per message type
-        var out: [UInt32] = []
+        var out: [UInt32] = [], bpm: Double?
         for p in list.unsafeSequence() {
-            let n = Int(p.pointee.wordCount)
+            let n = Int(p.pointee.wordCount), ts = p.pointee.timeStamp
             withUnsafeBytes(of: p.pointee.words) { raw in
                 let w = raw.bindMemory(to: UInt32.self)
                 var i = 0
                 while i < min(n, w.count) {
                     let t = Int(w[i] >> 28)
                     if t == 2 { out.append(w[i]) }
+                    if t == 1, let b = clock.message(UInt8((w[i] >> 16) & 0xFF), at: ts) { bpm = b }
                     i += sizes[t]
                 }
             }
         }
-        return out
+        return (out, bpm)
     }
 
     private func handle(_ w: UInt32) {
@@ -141,7 +182,9 @@ final class Midi: ObservableObject {
                 if !m.momentary, v < 64, let j = justLearned, j.id == m.id, -j.at.timeIntervalSinceNow < 1.5 {
                     maps[i].momentary = true; justLearned = nil; continue
                 }
-                if m.momentary {
+                if m.key.hasPrefix("@") {
+                    if !m.momentary || v >= 64 { model.midiAction(m.key) }
+                } else if m.momentary {
                     if v >= 64, let cur = model.setting(m.key) as? Bool { model.setSetting(m.key, !cur) }
                 } else {
                     model.setSetting(m.key, v >= 64)
