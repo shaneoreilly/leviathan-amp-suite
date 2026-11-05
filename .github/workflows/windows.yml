@@ -39,7 +39,7 @@ jobs:
           "ASIO_SDK=$env:RUNNER_TEMP\asio\ASIOSDK" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Configure
-        run: cmake -S windows -B windows/build -G "Visual Studio 17 2022" -A x64 -DLEVIATHAN_ASIO_SDK="$env:ASIO_SDK"
+        run: cmake -S windows -B windows/build -A x64 -DLEVIATHAN_ASIO_SDK="$env:ASIO_SDK"
         shell: pwsh
 
       - name: Build
