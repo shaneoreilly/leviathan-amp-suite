@@ -7,6 +7,10 @@
 <p align="center"><b>An open, low-latency guitar rig for macOS.</b><br>
 Bring any amp: built-in models, your own captures, any cab IR. Free, open source, no account.</p>
 
+<p align="center">
+  <img src="docs/screenshot.png" alt="Leviathan main window: input, gate, pitch, amp, pedalboard, cabinet, EQ, delay, reverb and master">
+</p>
+
 ---
 
 ## Features
@@ -18,6 +22,7 @@ Bring any amp: built-in models, your own captures, any cab IR. Free, open source
 - **Cabinet**: built-in cabinet models, or your own impulse responses (any WAV). Supports a two-mic A/B blend and low/high cut.
 - **8-band graphic EQ** with click-and-drag faders. Double-click a fader to reset it.
 - **Delay and reverb**, and a **master output**.
+- **MIDI control**: click **MIDI** in the top bar, click any knob or ON/OFF switch, then move a control on your MIDI device to assign it. Expression pedals work on any knob (Wah position, for example), footswitches turn units on and off, and Program Change picks presets in list order.
 - **Tuner** with selectable tuning and reference pitch (A4 = 430–450 Hz).
 - **Presets**: factory and your own, with favourites. Re-save a factory preset with your changes and restore the original any time.
 - **Recording**:

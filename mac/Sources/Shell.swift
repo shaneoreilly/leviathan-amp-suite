@@ -6,6 +6,7 @@ import AppKit
 struct RootView: View {
     @EnvironmentObject var m: Model
     @EnvironmentObject var rec: Sessions
+    @EnvironmentObject var midi: Midi
 
     var ch: Color { m.accent }
 
@@ -25,6 +26,7 @@ struct RootView: View {
                     .padding(10)
                     .background(Color(red: 0.16, green: 0.12, blue: 0.06)).foregroundStyle(Color(red: 1, green: 0.85, blue: 0.6))
                 }
+                if midi.learning && m.screen == .rig { MidiLearnBanner() }
                 switch m.screen {
                 case .rig: ContentView()
                 case .presets: PresetsView()
@@ -131,6 +133,7 @@ struct TopBar: View {
             .keyboardShortcut("r", modifiers: [.command])
             .help("Record dry + wet (⌘R)")
             Toggle("Tuner", isOn: $m.tunerOn).toggleStyle(.button).keyboardShortcut("t", modifiers: [])
+            MidiLearnButton()
             PresetMenu().frame(maxWidth: 300 * W)
             Button("Save") { m.saveCurrent() }.keyboardShortcut("s").disabled(!m.presetModified).help("Save changes to this preset (⌘S)")
         }
@@ -458,6 +461,9 @@ struct SettingsView: View {
                             .labelsHidden().frame(width: 220 * Z)
                     }
                 }
+                group("MIDI") {
+                    MidiSettings(row: { label, c in AnyView(row(label) { c }) })
+                }
                 group("Library") {
                     row("Recordings") {
                         Button("Import recordings (WAV)…") { rec.importRecordings(); m.screen = .recordings }
@@ -501,6 +507,8 @@ struct SettingsView: View {
 
 struct FlowLayout: Layout {
     var spacing: CGFloat = 12
+    /// stretch each row to the full width; false packs items left at their natural width
+    var stretch = true
 
     private func rows(_ maxW: CGFloat, _ subviews: Subviews) -> [[(Int, CGSize)]] {
         var rows: [[(Int, CGSize)]] = [[]]
@@ -533,7 +541,7 @@ struct FlowLayout: Layout {
             let rh = row.map(\.1.height).max() ?? 0
             // stretch the row to the full width so panels line up edge to edge
             let natural = row.reduce(0) { $0 + $1.1.width } + spacing * CGFloat(max(row.count - 1, 0))
-            let extra = row.count > 0 ? max(0, bounds.width - natural) / CGFloat(row.count) : 0
+            let extra = stretch && row.count > 0 ? max(0, bounds.width - natural) / CGFloat(row.count) : 0
             var x = bounds.minX
             for (i, s) in row {
                 let w = s.width + extra

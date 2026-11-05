@@ -201,6 +201,7 @@ final class Model: ObservableObject {
     private var userIR: (samples: [Float], rate: Double)?
     let irLib = IRLibrary()
     lazy var sessions = Sessions(model: self)
+    lazy var midi = Midi(model: self)
     @Published var screen: Screen = .rig
     /// Accent colour: a picked colour, or (when none is set) the colour of the active amp channel.
     @Published var accentRGB: [Double]? = UserDefaults.standard.array(forKey: "accent") as? [Double] {
@@ -247,6 +248,7 @@ final class Model: ObservableObject {
         }
         refreshDevices()
         onDeviceListChange { [weak self] in self?.refreshDevices() }
+        midi.start()
         // open ready to play; retry once in case the previous instance is still releasing the device
         DispatchQueue.main.async { [weak self] in self?.start() }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
@@ -507,6 +509,20 @@ final class Model: ObservableObject {
 
     func isFactory(_ name: String) -> Bool { FACTORY.contains { $0.0 == name } }
 
+    /// Presets in the order the Presets screen lists them (MIDI Program Change counts through this).
+    var presetOrder: [String] { FACTORY.map(\.0) + userPresets.keys.filter { !isFactory($0) }.sorted() }
+
+    /// Read or write one setting by its property name (for MIDI). Unknown names are ignored.
+    func setting(_ key: String) -> Any? {
+        (try? JSONSerialization.jsonObject(with: JSONEncoder().encode(s)) as? [String: Any])?[key]
+    }
+
+    func setSetting(_ key: String, _ value: Any) {
+        guard var d = (try? JSONSerialization.jsonObject(with: JSONEncoder().encode(s))) as? [String: Any], d[key] != nil else { return }
+        d[key] = value
+        if let data = try? JSONSerialization.data(withJSONObject: d), let n = try? JSONDecoder().decode(Settings.self, from: data) { s = n }
+    }
+
     func restoreFactory(_ name: String) {
         userPresets[name] = nil; persistPresets(); loadFactoryOriginal(name)
     }
@@ -625,11 +641,14 @@ final class DragStart: ObservableObject { var start: Double? }
 struct Knob: View {
     let label: String
     @Binding var value: Double
+    /// Settings property this knob edits; makes it MIDI-learnable.
+    var key: String? = nil
     let range: ClosedRange<Double>
     let def: Double
     var fmt: (Double) -> String = { String(format: "%.1f", $0 * 10) }
     var color: Color = .accentColor
     @StateObject private var drag = DragStart()
+    @Environment(\.midiScope) private var scope
 
     var body: some View {
         let span = range.upperBound - range.lowerBound
@@ -653,6 +672,7 @@ struct Knob: View {
             }.onEnded { _ in drag.start = nil })
             .simultaneousGesture(TapGesture(count: 2).onEnded { value = def })
             .help("Drag up/down · Shift = fine · double-click resets")
+            .overlay { if let key { MidiLearnOverlay(armed: MidiArmed(key: key, name: "\(scope) · \(label)", lo: range.lowerBound, hi: range.upperBound, toggle: false)) } }
             Text(fmt(value)).font(.system(size: 11 * UI).monospacedDigit())
             Text(label.uppercased()).font(.system(size: 9 * UI, weight: .semibold)).foregroundStyle(.secondary).tracking(0.6)
         }
@@ -663,6 +683,8 @@ struct Knob: View {
 struct Footswitch: View {
     @Binding var on: Bool
     var color: Color = .accentColor
+    var key: String? = nil
+    var name = ""
     var body: some View {
         Button { on.toggle() } label: {
             HStack(spacing: 5) {
@@ -673,12 +695,14 @@ struct Footswitch: View {
             .overlay(Capsule().stroke(line))
         }
         .buttonStyle(.plain)
+        .overlay { if let key { MidiLearnOverlay(armed: MidiArmed(key: key, name: "\(name) · On/Off", lo: 0, hi: 1, toggle: true), cornerRadius: 20) } }
     }
 }
 
 struct UnitBox<Content: View>: View {
     let title: String
     var on: Binding<Bool>? = nil
+    var onKey: String? = nil
     var color: Color = .accentColor
     var trailing: AnyView? = nil
     @ViewBuilder let content: Content
@@ -689,9 +713,9 @@ struct UnitBox<Content: View>: View {
                 Text(title).font(.system(size: 10 * UI, weight: .bold)).tracking(2).foregroundStyle(.secondary)
                 trailing
                 Spacer()
-                if let on { Footswitch(on: on, color: color) }
+                if let on { Footswitch(on: on, color: color, key: onKey, name: title) }
             }
-            content.opacity(on?.wrappedValue == false ? 0.4 : 1)
+            content.opacity(on?.wrappedValue == false ? 0.4 : 1).environment(\.midiScope, title)
         }
         .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -855,22 +879,22 @@ struct ContentView: View {
     // MARK: units
     var inputUnit: some View {
         UnitBox(title: "INPUT") {
-            Knob(label: "Gain", value: $m.s.inGain, range: -24...24, def: 0, fmt: { String(format: "%+.1f dB", $0) }, color: ch)
+            Knob(label: "Gain", value: $m.s.inGain, key: "inGain", range: -24...24, def: 0, fmt: { String(format: "%+.1f dB", $0) }, color: ch)
         }
     }
 
     var gate: some View {
-        UnitBox(title: "GATE", on: $m.s.gateOn, color: ch,
+        UnitBox(title: "GATE", on: $m.s.gateOn, onKey: "gateOn", color: ch,
                 trailing: AnyView(GateDot(mt: m.meters))) {
             HStack {
-                Knob(label: "Thresh", value: $m.s.gateThresh, range: -90...(-20), def: -60, fmt: { "\(Int($0)) dB" }, color: ch)
-                Knob(label: "Release", value: $m.s.gateRelease, range: 10...400, def: 60, fmt: { "\(Int($0)) ms" }, color: ch)
+                Knob(label: "Thresh", value: $m.s.gateThresh, key: "gateThresh", range: -90...(-20), def: -60, fmt: { "\(Int($0)) dB" }, color: ch)
+                Knob(label: "Release", value: $m.s.gateRelease, key: "gateRelease", range: 10...400, def: 60, fmt: { "\(Int($0)) ms" }, color: ch)
             }
         }
     }
 
     var pitch: some View {
-        UnitBox(title: "PITCH", on: $m.s.pitchOn, color: ch) {
+        UnitBox(title: "PITCH", on: $m.s.pitchOn, onKey: "pitchOn", color: ch) {
             VStack(alignment: .leading, spacing: 8) {
                 Picker("Guitar", selection: $m.tuningIndex) { ForEach(TUNINGS.indices, id: \.self) { Text(TUNINGS[$0].name).tag($0) } }
                     .frame(width: 190 * W)
@@ -887,9 +911,9 @@ struct ContentView: View {
                         .help("Up a semitone")
                 }
                 HStack(spacing: 2) {
-                    Knob(label: "Semis", value: $m.s.pitchSemis, range: -12...12, def: 0, fmt: { String(format: "%+d", Int($0.rounded())) }, color: ch)
-                    Knob(label: "Fine", value: $m.s.pitchCents, range: -50...50, def: 0, fmt: { String(format: "%+d¢", Int($0.rounded())) }, color: ch)
-                    Knob(label: "Mix", value: $m.s.pitchMix, range: 0...1, def: 1, fmt: pct, color: ch)
+                    Knob(label: "Semis", value: $m.s.pitchSemis, key: "pitchSemis", range: -12...12, def: 0, fmt: { String(format: "%+d", Int($0.rounded())) }, color: ch)
+                    Knob(label: "Fine", value: $m.s.pitchCents, key: "pitchCents", range: -50...50, def: 0, fmt: { String(format: "%+d¢", Int($0.rounded())) }, color: ch)
+                    Knob(label: "Mix", value: $m.s.pitchMix, key: "pitchMix", range: 0...1, def: 1, fmt: pct, color: ch)
                 }
                 PitchLatency(mt: m.meters)
                     .font(.system(size: 10 * UI).monospacedDigit()).foregroundStyle(.secondary)
@@ -912,7 +936,7 @@ struct ContentView: View {
                 Text("No pedals. Add one; signal flows left to right into the amp.")
                     .font(.system(size: 12 * UI)).foregroundStyle(.secondary).padding(.vertical, 20)
             } else {
-                FlowLayout { ForEach(m.s.chain.compactMap(PedalKind.init(rawValue:))) { k in pedal(k) } }
+                FlowLayout(stretch: false) { ForEach(m.s.chain.compactMap(PedalKind.init(rawValue:))) { k in pedal(k) } }
             }
         }
     }
@@ -924,7 +948,7 @@ struct ContentView: View {
             Button { m.movePedal(k, by: 1) } label: { Image(systemName: "chevron.right") }.help("Move later")
             Button { m.removePedal(k) } label: { Image(systemName: "xmark") }.help("Remove")
         }.buttonStyle(.borderless).controlSize(.small)
-        return UnitBox(title: k.title, on: on, color: ch, trailing: AnyView(tools)) { pedalKnobs(k) }
+        return UnitBox(title: k.title, on: on, onKey: k.onKey, color: ch, trailing: AnyView(tools)) { pedalKnobs(k) }
             .fixedSize(horizontal: true, vertical: false)
     }
 
@@ -933,10 +957,10 @@ struct ContentView: View {
         switch k {
         case .comp:
             HStack(spacing: 2) {
-                Knob(label: "Sustain", value: $m.s.compSustain, range: 0...1, def: 0.5, color: ch)
-                Knob(label: "Attack", value: $m.s.compAttack, range: 1...50, def: 10, fmt: { "\(Int($0)) ms" }, color: ch)
-                Knob(label: "Level", value: $m.s.compLevel, range: -12...12, def: 0, fmt: { String(format: "%+.1f", $0) }, color: ch)
-                Knob(label: "Blend", value: $m.s.compBlend, range: 0...1, def: 1, fmt: pct, color: ch)
+                Knob(label: "Sustain", value: $m.s.compSustain, key: "compSustain", range: 0...1, def: 0.5, color: ch)
+                Knob(label: "Attack", value: $m.s.compAttack, key: "compAttack", range: 1...50, def: 10, fmt: { "\(Int($0)) ms" }, color: ch)
+                Knob(label: "Level", value: $m.s.compLevel, key: "compLevel", range: -12...12, def: 0, fmt: { String(format: "%+.1f", $0) }, color: ch)
+                Knob(label: "Blend", value: $m.s.compBlend, key: "compBlend", range: 0...1, def: 1, fmt: pct, color: ch)
             }
         case .wah:
             VStack(alignment: .leading, spacing: 6) {
@@ -944,55 +968,55 @@ struct ContentView: View {
                     .pickerStyle(.segmented).labelsHidden().frame(width: 150 * W)
                 HStack(spacing: 2) {
                     if m.s.wahAuto {
-                        Knob(label: "Sens", value: $m.s.wahSens, range: 0...1, def: 0.5, color: ch)
+                        Knob(label: "Sens", value: $m.s.wahSens, key: "wahSens", range: 0...1, def: 0.5, color: ch)
                     } else {
-                        Knob(label: "Position", value: $m.s.wahPos, range: 0...1, def: 0.5, fmt: pct, color: ch)
+                        Knob(label: "Position", value: $m.s.wahPos, key: "wahPos", range: 0...1, def: 0.5, fmt: pct, color: ch)
                     }
-                    Knob(label: "Q", value: $m.s.wahQ, range: 0...1, def: 0.5, color: ch)
+                    Knob(label: "Q", value: $m.s.wahQ, key: "wahQ", range: 0...1, def: 0.5, color: ch)
                 }
             }
         case .fuzz:
             HStack(spacing: 2) {
-                Knob(label: "Fuzz", value: $m.s.fuzzAmt, range: 0...1, def: 0.6, color: ch)
-                Knob(label: "Tone", value: $m.s.fuzzTone, range: 0...1, def: 0.5, color: ch)
-                Knob(label: "Level", value: $m.s.fuzzLevel, range: 0...1, def: 0.5, color: ch)
+                Knob(label: "Fuzz", value: $m.s.fuzzAmt, key: "fuzzAmt", range: 0...1, def: 0.6, color: ch)
+                Knob(label: "Tone", value: $m.s.fuzzTone, key: "fuzzTone", range: 0...1, def: 0.5, color: ch)
+                Knob(label: "Level", value: $m.s.fuzzLevel, key: "fuzzLevel", range: 0...1, def: 0.5, color: ch)
             }
         case .od:
             HStack(spacing: 2) {
-                Knob(label: "Drive", value: $m.s.odDrive, range: 0...1, def: 0, color: ch)
-                Knob(label: "Tone", value: $m.s.odTone, range: 0...1, def: 0.6, color: ch)
-                Knob(label: "Level", value: $m.s.odLevel, range: 0...1, def: 0.75, color: ch)
+                Knob(label: "Drive", value: $m.s.odDrive, key: "odDrive", range: 0...1, def: 0, color: ch)
+                Knob(label: "Tone", value: $m.s.odTone, key: "odTone", range: 0...1, def: 0.6, color: ch)
+                Knob(label: "Level", value: $m.s.odLevel, key: "odLevel", range: 0...1, def: 0.75, color: ch)
             }
         case .chorus:
             HStack(spacing: 2) {
-                Knob(label: "Rate", value: $m.s.chorusRate, range: 0.1...5, def: 0.8, fmt: hz, color: ch)
-                Knob(label: "Depth", value: $m.s.chorusDepth, range: 0...1, def: 0.5, color: ch)
-                Knob(label: "Mix", value: $m.s.chorusMix, range: 0...1, def: 0.5, fmt: pct, color: ch)
+                Knob(label: "Rate", value: $m.s.chorusRate, key: "chorusRate", range: 0.1...5, def: 0.8, fmt: hz, color: ch)
+                Knob(label: "Depth", value: $m.s.chorusDepth, key: "chorusDepth", range: 0...1, def: 0.5, color: ch)
+                Knob(label: "Mix", value: $m.s.chorusMix, key: "chorusMix", range: 0...1, def: 0.5, fmt: pct, color: ch)
             }
         case .flanger:
             HStack(spacing: 2) {
-                Knob(label: "Rate", value: $m.s.flangerRate, range: 0.05...3, def: 0.25, fmt: hz, color: ch)
-                Knob(label: "Depth", value: $m.s.flangerDepth, range: 0...1, def: 0.7, color: ch)
-                Knob(label: "Feedback", value: $m.s.flangerFb, range: 0...1, def: 0.5, fmt: pct, color: ch)
-                Knob(label: "Mix", value: $m.s.flangerMix, range: 0...1, def: 0.5, fmt: pct, color: ch)
+                Knob(label: "Rate", value: $m.s.flangerRate, key: "flangerRate", range: 0.05...3, def: 0.25, fmt: hz, color: ch)
+                Knob(label: "Depth", value: $m.s.flangerDepth, key: "flangerDepth", range: 0...1, def: 0.7, color: ch)
+                Knob(label: "Feedback", value: $m.s.flangerFb, key: "flangerFb", range: 0...1, def: 0.5, fmt: pct, color: ch)
+                Knob(label: "Mix", value: $m.s.flangerMix, key: "flangerMix", range: 0...1, def: 0.5, fmt: pct, color: ch)
             }
         case .phaser:
             HStack(spacing: 2) {
-                Knob(label: "Rate", value: $m.s.phaserRate, range: 0.05...5, def: 0.5, fmt: hz, color: ch)
-                Knob(label: "Depth", value: $m.s.phaserDepth, range: 0...1, def: 0.7, color: ch)
-                Knob(label: "Feedback", value: $m.s.phaserFb, range: 0...1, def: 0.4, fmt: pct, color: ch)
+                Knob(label: "Rate", value: $m.s.phaserRate, key: "phaserRate", range: 0.05...5, def: 0.5, fmt: hz, color: ch)
+                Knob(label: "Depth", value: $m.s.phaserDepth, key: "phaserDepth", range: 0...1, def: 0.7, color: ch)
+                Knob(label: "Feedback", value: $m.s.phaserFb, key: "phaserFb", range: 0...1, def: 0.4, fmt: pct, color: ch)
             }
         case .trem:
             HStack(spacing: 2) {
-                Knob(label: "Rate", value: $m.s.tremRate, range: 0.5...12, def: 5, fmt: hz, color: ch)
-                Knob(label: "Depth", value: $m.s.tremDepth, range: 0...1, def: 0.6, fmt: pct, color: ch)
-                Knob(label: "Shape", value: $m.s.tremShape, range: 0...1, def: 0, fmt: { $0 < 0.1 ? "sine" : $0 > 0.9 ? "square" : String(format: "%.1f", $0 * 10) }, color: ch)
+                Knob(label: "Rate", value: $m.s.tremRate, key: "tremRate", range: 0.5...12, def: 5, fmt: hz, color: ch)
+                Knob(label: "Depth", value: $m.s.tremDepth, key: "tremDepth", range: 0...1, def: 0.6, fmt: pct, color: ch)
+                Knob(label: "Shape", value: $m.s.tremShape, key: "tremShape", range: 0...1, def: 0, fmt: { $0 < 0.1 ? "sine" : $0 > 0.9 ? "square" : String(format: "%.1f", $0 * 10) }, color: ch)
             }
         }
     }
 
     var amp: some View {
-        UnitBox(title: "AMP", on: $m.s.ampOn, color: ch) {
+        UnitBox(title: "AMP", on: $m.s.ampOn, onKey: "ampOn", color: ch) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 6) {
                     Picker("", selection: Binding(get: { m.s.capture }, set: { m.useCapture($0) })) {
@@ -1011,8 +1035,8 @@ struct ContentView: View {
                 }
                 if m.activeCapture != nil {
                     HStack(spacing: 2) {
-                        Knob(label: "Drive", value: $m.s.capDrive, range: -18...18, def: 0, fmt: { String(format: "%+.1f dB", $0) }, color: ch)
-                        Knob(label: "Level", value: $m.s.capLevel, range: -24...12, def: 0, fmt: { String(format: "%+.1f dB", $0) }, color: ch)
+                        Knob(label: "Drive", value: $m.s.capDrive, key: "capDrive", range: -18...18, def: 0, fmt: { String(format: "%+.1f dB", $0) }, color: ch)
+                        Knob(label: "Level", value: $m.s.capLevel, key: "capLevel", range: -24...12, def: 0, fmt: { String(format: "%+.1f dB", $0) }, color: ch)
                         Text("Drive 0 / Level 0 = as captured. Cab is part of the capture.")
                             .font(.system(size: 10 * UI)).foregroundStyle(.secondary).frame(width: 180 * W)
                     }
@@ -1028,13 +1052,13 @@ struct ContentView: View {
                     }
                 }
                 HStack(spacing: 2) {
-                    Knob(label: "Gain", value: $m.s.ampGain, range: 0...1, def: 0.55, color: ch)
-                    Knob(label: "Bass", value: $m.s.bass, range: 0...1, def: 0.5, color: ch)
-                    Knob(label: "Mid", value: $m.s.mid, range: 0...1, def: 0.5, color: ch)
-                    Knob(label: "Treble", value: $m.s.treble, range: 0...1, def: 0.55, color: ch)
-                    Knob(label: "Presence", value: $m.s.presence, range: 0...1, def: 0.55, color: ch)
-                    Knob(label: "Depth", value: $m.s.depth, range: 0...1, def: 0.5, color: ch)
-                    Knob(label: "Volume", value: $m.s.ampVolume, range: 0...1, def: 0.5, color: ch)
+                    Knob(label: "Gain", value: $m.s.ampGain, key: "ampGain", range: 0...1, def: 0.55, color: ch)
+                    Knob(label: "Bass", value: $m.s.bass, key: "bass", range: 0...1, def: 0.5, color: ch)
+                    Knob(label: "Mid", value: $m.s.mid, key: "mid", range: 0...1, def: 0.5, color: ch)
+                    Knob(label: "Treble", value: $m.s.treble, key: "treble", range: 0...1, def: 0.55, color: ch)
+                    Knob(label: "Presence", value: $m.s.presence, key: "presence", range: 0...1, def: 0.55, color: ch)
+                    Knob(label: "Depth", value: $m.s.depth, key: "depth", range: 0...1, def: 0.5, color: ch)
+                    Knob(label: "Volume", value: $m.s.ampVolume, key: "ampVolume", range: 0...1, def: 0.5, color: ch)
                 }
                 }
             }
@@ -1044,7 +1068,7 @@ struct ContentView: View {
 
     var eq: some View {
         let freqs = ["80", "160", "320", "640", "1.2k", "2.5k", "5k", "10k"]
-        return UnitBox(title: "GRAPHIC EQ", on: $m.s.eqOn, color: ch) {
+        return UnitBox(title: "GRAPHIC EQ", on: $m.s.eqOn, onKey: "eqOn", color: ch) {
             HStack(alignment: .bottom, spacing: 6) {
                 ForEach(0..<8, id: \.self) { i in
                     VStack(spacing: 4) {
@@ -1059,7 +1083,7 @@ struct ContentView: View {
 
     var cab: some View {
         let lib = m.s.cabModel == CAB_LIB
-        return UnitBox(title: "CABINET", on: $m.s.cabOn, color: ch) {
+        return UnitBox(title: "CABINET", on: $m.s.cabOn, onKey: "cabOn", color: ch) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Picker("", selection: $m.s.cabModel) {
@@ -1075,14 +1099,14 @@ struct ContentView: View {
                 }
                 HStack(spacing: 2) {
                     if lib {
-                        Knob(label: "A ↔ B", value: $m.s.irBlend, range: 0...1, def: 0.35, fmt: pct, color: ch)
+                        Knob(label: "A ↔ B", value: $m.s.irBlend, key: "irBlend", range: 0...1, def: 0.35, fmt: pct, color: ch)
                     } else if m.s.cabModel < CABS.count {
-                        Knob(label: "Mic Pos", value: $m.s.cabMic, range: 0...1, def: 0.3,
+                        Knob(label: "Mic Pos", value: $m.s.cabMic, key: "cabMic", range: 0...1, def: 0.3,
                              fmt: { $0 < 0.12 ? "center" : $0 > 0.88 ? "edge" : String(format: "%.1f", $0 * 10) }, color: ch)
                     }
-                    Knob(label: "Low Cut", value: $m.s.cabLowCut, range: 20...300, def: 80, fmt: { "\(Int($0)) Hz" }, color: ch)
-                    Knob(label: "High Cut", value: $m.s.cabHighCut, range: 2500...16000, def: 10000, fmt: { String(format: "%.1fk", $0 / 1000) }, color: ch)
-                    Knob(label: "Level", value: $m.s.cabLevel, range: -12...12, def: 0, fmt: { String(format: "%+.1f", $0) }, color: ch)
+                    Knob(label: "Low Cut", value: $m.s.cabLowCut, key: "cabLowCut", range: 20...300, def: 80, fmt: { "\(Int($0)) Hz" }, color: ch)
+                    Knob(label: "High Cut", value: $m.s.cabHighCut, key: "cabHighCut", range: 2500...16000, def: 10000, fmt: { String(format: "%.1fk", $0 / 1000) }, color: ch)
+                    Knob(label: "Level", value: $m.s.cabLevel, key: "cabLevel", range: -12...12, def: 0, fmt: { String(format: "%+.1f", $0) }, color: ch)
                 }
             }
         }
@@ -1118,21 +1142,21 @@ struct ContentView: View {
     }
 
     var delay: some View {
-        UnitBox(title: "DELAY", on: $m.s.delayOn, color: ch) {
+        UnitBox(title: "DELAY", on: $m.s.delayOn, onKey: "delayOn", color: ch) {
             HStack(spacing: 2) {
-                Knob(label: "Time", value: $m.s.delayTime, range: 40...1500, def: 420, fmt: { "\(Int($0)) ms" }, color: ch)
-                Knob(label: "Feedback", value: $m.s.delayFeedback, range: 0...0.92, def: 0.28, fmt: pct, color: ch)
-                Knob(label: "Tone", value: $m.s.delayTone, range: 0...1, def: 0.45, color: ch)
-                Knob(label: "Mix", value: $m.s.delayMix, range: 0...1, def: 0.2, fmt: pct, color: ch)
+                Knob(label: "Time", value: $m.s.delayTime, key: "delayTime", range: 40...1500, def: 420, fmt: { "\(Int($0)) ms" }, color: ch)
+                Knob(label: "Feedback", value: $m.s.delayFeedback, key: "delayFeedback", range: 0...0.92, def: 0.28, fmt: pct, color: ch)
+                Knob(label: "Tone", value: $m.s.delayTone, key: "delayTone", range: 0...1, def: 0.45, color: ch)
+                Knob(label: "Mix", value: $m.s.delayMix, key: "delayMix", range: 0...1, def: 0.2, fmt: pct, color: ch)
             }
         }
     }
 
     var reverb: some View {
-        UnitBox(title: "REVERB", on: $m.s.revOn, color: ch) {
+        UnitBox(title: "REVERB", on: $m.s.revOn, onKey: "revOn", color: ch) {
             HStack(spacing: 2) {
-                Knob(label: "Size", value: $m.s.revSize, range: 0...1, def: 0.45, color: ch)
-                Knob(label: "Mix", value: $m.s.revMix, range: 0...1, def: 0.18, fmt: pct, color: ch)
+                Knob(label: "Size", value: $m.s.revSize, key: "revSize", range: 0...1, def: 0.45, color: ch)
+                Knob(label: "Mix", value: $m.s.revMix, key: "revMix", range: 0...1, def: 0.18, fmt: pct, color: ch)
             }
         }
     }
@@ -1140,7 +1164,7 @@ struct ContentView: View {
     var master: some View {
         UnitBox(title: "MASTER") {
             VStack {
-                Knob(label: "Output", value: $m.s.masterVol, range: -40...12, def: -6, fmt: { String(format: "%+.1f dB", $0) }, color: ch)
+                Knob(label: "Output", value: $m.s.masterVol, key: "masterVol", range: -40...12, def: -6, fmt: { String(format: "%+.1f dB", $0) }, color: ch)
                 Button("Reset") { m.loadFactory(FACTORY[0].0) }.controlSize(.small)
             }
         }
@@ -1152,7 +1176,7 @@ struct LeviathanApp: App {
     @StateObject private var model = Model()
     var body: some Scene {
         WindowGroup("Leviathan") {
-            RootView().environmentObject(model).environmentObject(model.sessions)
+            RootView().environmentObject(model).environmentObject(model.sessions).environmentObject(model.midi)
                 .preferredColorScheme(.dark).frame(minWidth: 900, minHeight: 600)
         }
         .windowResizability(.contentMinSize)
