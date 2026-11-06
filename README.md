@@ -30,7 +30,7 @@ Plug in your guitar, pick a sound, play. Real amp tones, pedals, cabinets, a tun
 
    <img src="docs/open-anyway.png" width="560" alt="System Settings → Privacy &amp; Security, showing &quot;Leviathan.app was blocked to protect your Mac&quot; with an Open Anyway button">
 
-5. When asked, **allow microphone access**. This is how Leviathan hears your guitar through the interface.
+5. When asked, **allow microphone access**. This is how Leviathan hears your guitar through the interface. macOS remembers your answer, including after updates.
 
 ### Windows
 
@@ -92,6 +92,7 @@ Leviathan checks for new versions itself. When one is out, a banner appears at t
 **Recording**
 - **Press Rec** to record. Leviathan saves your clean guitar signal and the finished sound side by side, along with the exact settings you used. While you record, the top bar shows the take's waveform.
 - **Recordings screen:** listen back, click anywhere on the waveform to jump there, rename and delete takes.
+- **Trim takes:** click **✂ Trim**, drag the yellow handles to cut silence or mistakes from the start and end, then **Apply trim**. The original is kept, so **Restore untrimmed** always brings the full take back.
 - **Re-amp:** play an old take back through a different sound, live or into a new file, without playing it again.
 - **Import** recordings from other apps, single files or whole folders.
 - **Takes are never lost.** If the app quits or crashes mid-take, the recording is recovered next time.

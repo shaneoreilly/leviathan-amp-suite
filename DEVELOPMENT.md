@@ -83,6 +83,24 @@ To build on macOS for testing, run `cmake -B build -G Ninja` and then `cmake --b
 
 The in-app updaters read the latest GitHub release.
 
+### Mac signing and the microphone permission
+
+macOS remembers the microphone permission per app identity *and* code signature. An ad-hoc signature changes with every build, so users would be asked again after every update, and again each time they switched between a release and a local build. To prevent that, `mac/scripts/sign.sh` picks a signature in this order:
+
+1. **Developer ID**, when `LEVIATHAN_SIGN_IDENTITY` is set. In CI this comes from the `MACOS_CERT_*` secrets (see below).
+2. **The project's stable self-signed certificate** ("Leviathan Local Signing"). In CI it's imported from the `LEVIATHAN_STABLE_P12_BASE64` and `LEVIATHAN_STABLE_P12_PASSWORD` secrets, which hold the same certificate that local builds on the maintainer's Mac use. So releases and local builds share one permission that survives updates.
+3. **Locally:** the "Leviathan Local Signing" certificate in `~/Library/Application Support/Leviathan/Signing/`, created on first build.
+4. **Ad-hoc:** only in CI when none of the above is available.
+
+To rotate the stable certificate:
+1. Export the identity from the signing keychain: `security export -k <keychain> -t identities -f pkcs12 -P <password> -o id.p12`. The keychain's password is in `keychain-password` next to it.
+2. Store it with `base64 -i id.p12 | gh secret set LEVIATHAN_STABLE_P12_BASE64` and `gh secret set LEVIATHAN_STABLE_P12_PASSWORD`.
+3. Delete `id.p12`.
+
+Users are asked for the microphone once more after the first release with a new certificate.
+
+### Notarized releases
+
 To make Mac releases that open without the "Open Anyway" step, add these repository secrets (they need an Apple Developer account):
 
 - `MACOS_CERT_P12_BASE64` and `MACOS_CERT_PASSWORD`: your *Developer ID Application* certificate, exported as a `.p12` file.
@@ -117,7 +135,7 @@ mac/                     macOS app (Swift, SwiftUI, CoreAudio)
     Audio.swift          CoreAudio HAL engine (aggregate devices, latency, dropout handling)
     DSP.swift            all signal processing: gate, pitch, pedals, amp, NAM, EQ, cab, delay, reverb, limiter, metronome
     Nam.swift            NAM captures: folder, loading, hand-off to the audio thread
-    Sessions.swift       recorder, recordings library, playback, re-amp, import, recovery, live waveform
+    Sessions.swift       recorder, recordings library, playback, re-amp, import, recovery, trim, live waveform
     Midi.swift           MIDI learn, footswitch actions, Program Change, clock
     Tempo.swift          tempo, metronome, tap
     Updater.swift        self-update from GitHub releases
