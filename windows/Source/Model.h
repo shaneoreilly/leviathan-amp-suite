@@ -61,7 +61,11 @@ public:
     std::optional<Settings> presetSettings(const juce::String& n) const;
     juce::StringArray presetOrder() const;
     /// When each preset was created, last saved and last loaded (ms since 1970, 0 = never), for sorting.
-    struct PresetMeta { juce::int64 created = 0, modified = 0, played = 0; };
+    struct PresetMeta {
+        juce::int64 created = 0, modified = 0, played = 0;
+        juce::int64 imported = 0;   // from a .leviathan file, or first seen by a version that keeps dates
+        juce::int64 shownModified() const { return modified > 0 ? modified : imported; }   // the Modified column
+    };
     std::map<juce::String, PresetMeta> presetMeta;
     int presetSort = 0;   // 0 list order, 1 recently played, 2 recently modified, 3 recently created
     bool presetSortReversed = false;   // list order Z-A / oldest first

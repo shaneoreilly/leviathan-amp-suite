@@ -510,7 +510,7 @@ final class Model: ObservableObject {
         guard sort != .list else { return reversed ? list.reversed() : list }
         func date(_ n: String) -> Date? {
             let m = presetMeta[n]
-            switch sort { case .played: return m?.played; case .modified: return m?.modified; case .created: return m?.created; case .list: return nil }
+            switch sort { case .played: return m?.played; case .modified: return m?.shownModified; case .created: return m?.created ?? m?.imported; case .list: return nil }
         }
         let dated = list.filter { date($0) != nil }.sorted { reversed ? date($0)! < date($1)! : date($0)! > date($1)! }
         return dated + list.filter { date($0) == nil }   // never saved / played: always after, in list order
@@ -622,6 +622,9 @@ final class Model: ObservableObject {
                 else { unreadablePresets[name] = v }
             }
         }
+        // Presets saved before dates were kept: date them from now so Modified isn't blank
+        let now = Date()
+        for n in userPresets.keys where presetMeta[n]?.shownModified == nil { presetMeta[n, default: PresetMeta()].imported = now }
         irLib.scan(sampleRate: 48000)
         if !irLib.isEmpty && !UserDefaults.standard.bool(forKey: "godsCabIntro") {   // first run with the IR pack: switch to it
             s.cabModel = CAB_LIB; s.cabHighCut = 10000; UserDefaults.standard.set(true, forKey: "godsCabIntro")
@@ -2031,7 +2034,13 @@ extension View {
 }
 
 
-struct PresetMeta: Codable { var created: Date?; var modified: Date?; var played: Date? }
+struct PresetMeta: Codable {
+    var created: Date?, modified: Date?, played: Date?
+    /// When it came in from a .leviathan file (or, for presets saved before dates were kept, when this version first saw it).
+    var imported: Date?
+    /// What the Modified column shows: the last save, or the import date if it was never changed.
+    var shownModified: Date? { modified ?? imported }
+}
 
 enum PresetSort: String, CaseIterable, Identifiable {
     case list, played, modified, created

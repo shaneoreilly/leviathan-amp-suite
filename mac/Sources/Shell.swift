@@ -282,7 +282,7 @@ struct PresetsView: View {
                 Text(subtitle(n, factory: factory, edited: edited)).font(.system(size: 10 * UI)).foregroundStyle(.secondary)
             }
             Spacer()
-            Text(stamp(m.presetMeta[n]?.modified)).font(.system(size: 12 * UI).monospacedDigit()).foregroundStyle(.secondary)
+            Text(stamp(m.presetMeta[n]?.shownModified)).font(.system(size: 12 * UI).monospacedDigit()).foregroundStyle(.secondary)
                 .lineLimit(1).fixedSize().frame(width: PresetsView.dateColumn * Z, alignment: .leading)
             Text(stamp(m.presetMeta[n]?.played)).font(.system(size: 12 * UI).monospacedDigit()).foregroundStyle(.secondary)
                 .lineLimit(1).fixedSize().frame(width: PresetsView.dateColumn * Z, alignment: .leading)

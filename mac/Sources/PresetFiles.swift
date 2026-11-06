@@ -88,6 +88,7 @@ extension Model {
             var name = wanted, i = 2
             while isFactory(name) || userPresets[name] != nil { name = "\(wanted) \(i)"; i += 1 }
             userPresets[name] = settings
+            presetMeta[name, default: PresetMeta()].imported = Date()
             added.append(name)
         }
         if !added.isEmpty { persistPresets(); loadUser(added.last!) }

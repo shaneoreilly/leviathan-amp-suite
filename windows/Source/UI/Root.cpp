@@ -368,7 +368,7 @@ struct PresetsScreen : Screen_, juce::FileDragAndDropTarget {
             g.drawText(sub, 44, 32, cols.modified - 54, 18, juce::Justification::centredLeft, true);
             Model::PresetMeta mt; if (auto it = model.presetMeta.find(name); it != model.presetMeta.end()) mt = it->second;
             g.setFont(theme::font(12));
-            g.drawText(Model::stamp(mt.modified), cols.modified, 0, cols.width, getHeight(), juce::Justification::centredLeft);
+            g.drawText(Model::stamp(mt.shownModified()), cols.modified, 0, cols.width, getHeight(), juce::Justification::centredLeft);
             g.drawText(Model::stamp(mt.played), cols.played, 0, cols.width, getHeight(), juce::Justification::centredLeft);
         }
         void mouseDoubleClick(const juce::MouseEvent&) override { model.loadAny(name); model.setScreen(Screen::rig); }

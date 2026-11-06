@@ -35,7 +35,10 @@ Model::Model() {
     favorites = juce::StringArray::fromLines(p.getValue("favorites")); favorites.removeEmptyStrings();
     if (auto v = juce::JSON::parse(p.getValue("presetMeta")); auto* obj = v.getDynamicObject())
         for (const auto& kv : obj->getProperties())
-            presetMeta[kv.name.toString()] = { (juce::int64) kv.value.getProperty("created", 0), (juce::int64) kv.value.getProperty("modified", 0), (juce::int64) kv.value.getProperty("played", 0) };
+            presetMeta[kv.name.toString()] = { (juce::int64) kv.value.getProperty("created", 0), (juce::int64) kv.value.getProperty("modified", 0),
+                                               (juce::int64) kv.value.getProperty("played", 0), (juce::int64) kv.value.getProperty("imported", 0) };
+    for (const auto& [n, s] : userPresets)   // presets saved before dates were kept: date them from now
+        if (presetMeta[n].shownModified() == 0) presetMeta[n].imported = juce::Time::currentTimeMillis();
     presetSort = juce::jlimit(0, 3, p.getIntValue("presetSort", 0));
     presetSortReversed = p.getBoolValue("presetSortReversed", false);
     tuningIndex = p.getIntValue("tuning", 1); a4 = p.getDoubleValue("a4", 440);
@@ -156,7 +159,7 @@ void Model::saveState() {
         auto* o = new juce::DynamicObject();
         for (const auto& [k, mt] : presetMeta) {
             auto* e = new juce::DynamicObject();
-            e->setProperty("created", mt.created); e->setProperty("modified", mt.modified); e->setProperty("played", mt.played);
+            e->setProperty("created", mt.created); e->setProperty("modified", mt.modified); e->setProperty("played", mt.played); e->setProperty("imported", mt.imported);
             o->setProperty(k, juce::var(e));
         }
         p.setValue("presetMeta", juce::JSON::toString(juce::var(o), juce::JSON::FormatOptions{}.withSpacing(juce::JSON::Spacing::none)));
@@ -432,7 +435,7 @@ juce::StringArray Model::sortedPresets(int sort, bool reversed) const {
     auto date = [&](const juce::String& n) -> juce::int64 {
         auto it = presetMeta.find(n);
         if (it == presetMeta.end()) return 0;
-        return sort == 1 ? it->second.played : sort == 2 ? it->second.modified : it->second.created;
+        return sort == 1 ? it->second.played : sort == 2 ? it->second.shownModified() : (it->second.created > 0 ? it->second.created : it->second.imported);
     };
     std::vector<juce::String> dated, rest;
     for (auto& n : list) (date(n) > 0 ? dated : rest).push_back(n);
@@ -531,6 +534,7 @@ void Model::importPresets(const juce::Array<juce::File>& files) {
         auto name = wanted; int i = 2;
         while (isFactory(name) || userPresets.count(name)) name = wanted + " " + juce::String(i++);
         userPresets[name] = s;
+        presetMeta[name].imported = juce::Time::currentTimeMillis();
         added.add(name);
     }
     if (!added.isEmpty()) { persistPresets(); loadUser(added[added.size() - 1]); }
