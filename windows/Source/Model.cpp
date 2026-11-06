@@ -39,7 +39,7 @@ Model::Model() {
                                                (juce::int64) kv.value.getProperty("played", 0), (juce::int64) kv.value.getProperty("imported", 0) };
     for (const auto& [n, s] : userPresets)   // presets saved before dates were kept: date them from now
         if (presetMeta[n].shownModified() == 0) presetMeta[n].imported = juce::Time::currentTimeMillis();
-    presetSort = juce::jlimit(0, 3, p.getIntValue("presetSort", 0));
+    presetSort = juce::jlimit(0, 4, p.getIntValue("presetSort", 0));
     presetSortReversed = p.getBoolValue("presetSortReversed", false);
     tuningIndex = p.getIntValue("tuning", 1); a4 = p.getDoubleValue("a4", 440);
     bpm = p.getDoubleValue("bpm", 120); beatsPerBar = p.getIntValue("beatsPerBar", 4); metroVol = p.getDoubleValue("metroVol", -12);
@@ -427,11 +427,16 @@ void Model::savePreset(const juce::String& name) {
 
 void Model::deletePreset(const juce::String& n) { userPresets.erase(n); presetMeta.erase(n); persistPresets(); }
 
-void Model::setPresetSort(int s) { presetSort = juce::jlimit(0, 3, s); saveState(); changed(); }
+void Model::setPresetSort(int s) { presetSort = juce::jlimit(0, 4, s); saveState(); changed(); }
 
 juce::StringArray Model::sortedPresets(int sort, bool reversed) const {
     const auto list = presetOrder();
-    if (sort <= 0) { if (!reversed) return list; juce::StringArray r; for (int i = list.size(); --i >= 0;) r.add(list[i]); return r; }
+    if (sort <= 0 || sort == 4) {
+        auto l = list;
+        if (sort == 4) l.sortNatural();
+        if (!reversed) return l;
+        juce::StringArray r; for (int i = l.size(); --i >= 0;) r.add(l[i]); return r;
+    }
     auto date = [&](const juce::String& n) -> juce::int64 {
         auto it = presetMeta.find(n);
         if (it == presetMeta.end()) return 0;

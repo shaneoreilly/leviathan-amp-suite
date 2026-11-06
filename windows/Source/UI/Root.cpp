@@ -382,7 +382,7 @@ struct PresetsScreen : Screen_, juce::FileDragAndDropTarget {
         explicit Header(Model& m) : model(m) {}
         void paint(juce::Graphics& g) override {
             const auto c = columns(getWidth());
-            draw(g, "NAME", 44, 0); draw(g, "MODIFIED", c.modified, 2); draw(g, "LAST PLAYED", c.played, 1);
+            draw(g, "NAME", 44, 4); draw(g, "MODIFIED", c.modified, 2); draw(g, "LAST PLAYED", c.played, 1);
         }
         void draw(juce::Graphics& g, const juce::String& t, int x, int sort) {
             const bool on = model.presetSort == sort;
@@ -394,7 +394,7 @@ struct PresetsScreen : Screen_, juce::FileDragAndDropTarget {
             const auto c = columns(getWidth());
             if (e.x >= c.played && e.x < c.played + c.width) onSort(1);
             else if (e.x >= c.modified && e.x < c.modified + c.width) onSort(2);
-            else if (e.x < c.modified) onSort(0);
+            else if (e.x < c.modified) onSort(4);
         }
         Model& model; std::function<void(int)> onSort;
     };

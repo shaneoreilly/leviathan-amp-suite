@@ -67,7 +67,7 @@ public:
         juce::int64 shownModified() const { return modified > 0 ? modified : imported; }   // the Modified column
     };
     std::map<juce::String, PresetMeta> presetMeta;
-    int presetSort = 0;   // 0 list order, 1 recently played, 2 recently modified, 3 recently created
+    int presetSort = 0;   // 0 list order, 1 recently played, 2 recently modified, 3 recently created, 4 name A-Z
     bool presetSortReversed = false;   // list order Z-A / oldest first
     void setPresetSort(int s);
     /// Click a column header: sort by it, or reverse if it's already the sort.

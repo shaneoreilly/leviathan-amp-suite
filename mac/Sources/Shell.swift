@@ -250,7 +250,7 @@ struct PresetsView: View {
     var columnHeaders: some View {
         HStack(spacing: 12) {
             Color.clear.frame(width: 20, height: 1)
-            header("NAME", .list).frame(maxWidth: .infinity, alignment: .leading)
+            header("NAME", .name).frame(maxWidth: .infinity, alignment: .leading)
             header("MODIFIED", .modified).frame(width: PresetsView.dateColumn * Z, alignment: .leading)
             header("LAST PLAYED", .played).frame(width: PresetsView.dateColumn * Z, alignment: .leading)
             Color.clear.frame(width: PresetsView.actionsColumn * Z, height: 1)
@@ -269,7 +269,7 @@ struct PresetsView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(sort == .list ? "Sort by the preset list (click again to reverse)" : "Sort newest first (click again for oldest first)")
+        .help(sort == .name ? "Sort A to Z (click again for Z to A)" : "Sort newest first (click again for oldest first)")
     }
 
     func row(_ n: String) -> some View {

@@ -508,9 +508,13 @@ final class Model: ObservableObject {
     func sortedPresets(_ sort: PresetSort, reversed: Bool = false) -> [String] {
         let list = presetOrder
         guard sort != .list else { return reversed ? list.reversed() : list }
+        if sort == .name {
+            let az = list.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+            return reversed ? az.reversed() : az
+        }
         func date(_ n: String) -> Date? {
             let m = presetMeta[n]
-            switch sort { case .played: return m?.played; case .modified: return m?.shownModified; case .created: return m?.created ?? m?.imported; case .list: return nil }
+            switch sort { case .played: return m?.played; case .modified: return m?.shownModified; case .created: return m?.created ?? m?.imported; case .list, .name: return nil }
         }
         let dated = list.filter { date($0) != nil }.sorted { reversed ? date($0)! < date($1)! : date($0)! > date($1)! }
         return dated + list.filter { date($0) == nil }   // never saved / played: always after, in list order
@@ -2059,10 +2063,10 @@ struct PresetMeta: Codable {
 }
 
 enum PresetSort: String, CaseIterable, Identifiable {
-    case list, played, modified, created
+    case list, played, modified, created, name
     var id: String { rawValue }
     var title: String {
-        switch self { case .list: "List order"; case .played: "Recently played"; case .modified: "Recently modified"; case .created: "Recently created" }
+        switch self { case .list: "List order"; case .played: "Recently played"; case .modified: "Recently modified"; case .created: "Recently created"; case .name: "Name" }
     }
 }
 
