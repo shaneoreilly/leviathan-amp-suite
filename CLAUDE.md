@@ -26,7 +26,7 @@ The README is for **non-technical players**. Keep it free of build and code deta
 # Mac app (also builds the NAM static lib on first run, cached in mac/.build-nam/<arch>/)
 cd mac && ./build.sh                       # -> mac/Leviathan.app, signed with the stable local cert
 UNIVERSAL=1 ./build.sh                     # arm64 + x86_64
-scripts/make_dmg.sh 0.4.4                  # release DMG in mac/dist/
+scripts/make_dmg.sh X.Y.Z                  # release DMG in mac/dist/
 
 # Windows app (builds and runs on macOS too, which is how it is tested here)
 cd windows && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build --target Leviathan

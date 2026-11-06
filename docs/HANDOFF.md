@@ -1,19 +1,19 @@
 # Leviathan: handoff notes
 
-The state of the project as of **6 November 2026 (v0.4.6)**, for whoever picks it up next.
+The state of the project, for whoever picks it up next. For the current version, see the latest GitHub release (`gh release view`).
 - [CLAUDE.md](../CLAUDE.md): working rules and commands.
 - [DEVELOPMENT.md](../DEVELOPMENT.md): build and release.
 - [README.md](../README.md): the player-facing description.
 
 ## Where things stand
 
-- **Released:** v0.4.4 is the latest release, with both installers, and auto-update works on both platforms. Tags `v0.1.0`–`v0.4.4` are in GitHub; `v0.2.0` has no release because its CI failed and it was superseded by 0.2.1.
-- **Working tree:** `main` is clean. Everything is committed and pushed.
+- **Released:** every release carries both installers, and auto-update works on both platforms. `v0.2.0` is the one tag with no release: its CI failed and 0.2.1 superseded it.
+- **CI:** `ci.yml` builds the Mac app and runs the engine parity check on every push to `main` and on pull requests; `windows.yml` builds the Windows installer when `windows/` or `shared/` change.
 - **Secrets:** `LEVIATHAN_STABLE_P12_BASE64` and `LEVIATHAN_STABLE_P12_PASSWORD` hold the Mac signing certificate. The Apple Developer ID and notarization secrets (`MACOS_CERT_*`, `APPLE_*`) are *not* set.
 - **Owner's setup:**
   - Interface and outputs: an iRig HD into a Mac (Apple silicon), listening through an HDMI monitor (H27P22) or headphones.
-  - Daily copy: the 0.4.x release in `/Applications`. A development build also lives in `mac/Leviathan.app`.
-  - Bundled NAM captures: 34 (23 added after 0.4.5, mostly metal), all from pelennor2170/NAM_models at the pinned commit and credited in `shared/nam/captures/CREDITS.md`.
+  - Daily copy: the latest release, in `/Applications`. A development build also lives in `mac/Leviathan.app`.
+  - Bundled NAM captures: 34, mostly metal, all from pelennor2170/NAM_models at the pinned commit and credited in `shared/nam/captures/CREDITS.md`.
   - Data: real recordings back to 2018 in `~/Music/Leviathan/Sessions`, and a 194-IR Tone3000 "METAL BAND TONES" pack in `IRs/Library/`.
 
 ## Not yet verified
@@ -40,7 +40,6 @@ These are built and reasoned through, but nobody has tried them on real hardware
 - **NAM sample-rate mismatch:** a capture trained at a different sample rate plays with a warning but isn't resampled.
 - **Long IRs** are cut at 4096 samples (`DSP.maxIR`), with a fade.
 - **Delay wrapping:** in the default layout, Delay wraps onto its own row at common window widths. It wasn't in the owner's requested order.
-- **The README screenshot** (`docs/screenshot.png`) predates the two-row layout, NAM and the explanation strip.
 - **Old prototypes:** `index.html` and `serve.sh` are an early Web Audio prototype that no longer matches the apps. `mac/Capture/` (the Python capture fitter) is superseded by NAM.
 - **Stray tracked file:** `windows/THIRD-PARTY.md` overlaps `NOTICE.md`.
 
@@ -48,19 +47,17 @@ These are built and reasoned through, but nobody has tried them on real hardware
 
 **Most value:**
 1. Test on a real Windows PC (see "Not yet verified").
-2. Run the engine parity script and a build of both apps in CI on every push, not just at release.
-3. Retake the README screenshot.
 
 **Features players expect:**
-4. A plugin version (VST3/AU). JUCE makes the Windows side straightforward; the Mac app would need the JUCE build or an AU wrapper.
-5. Stereo output (a doubler or room). Currently the rig is mono until the reverb.
-6. A looper or backing-track player. The engine already has a backing slot (`bk*` in `Params`).
-7. Undo, and A/B comparison of settings.
-8. Resampling NAM captures recorded at other sample rates.
+2. A plugin version (VST3/AU). JUCE makes the Windows side straightforward; the Mac app would need the JUCE build or an AU wrapper.
+3. Stereo output (a doubler or room). Currently the rig is mono until the reverb.
+4. A looper or backing-track player. The engine already has a backing slot (`bk*` in `Params`).
+5. Undo, and A/B comparison of settings.
+6. Resampling NAM captures recorded at other sample rates.
 
 **Distribution:**
-9. An Apple Developer ID and notarization (removes "Open Anyway"; CI is already wired for the `MACOS_CERT_*` / `APPLE_*` secrets).
-10. Windows code signing (removes SmartScreen).
+7. An Apple Developer ID and notarization (removes "Open Anyway"; CI is already wired for the `MACOS_CERT_*` / `APPLE_*` secrets).
+8. Windows code signing (removes SmartScreen).
 
 ## Decisions and why
 
