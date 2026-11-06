@@ -67,12 +67,14 @@ final class Params: @unchecked Sendable {
     var masterVol: Float = -6
 
     // pedal chain (pre-amp, user ordered). Entries are PedalKind raw values.
-    static let maxChain = 8
+    static let maxChain = 9
     let chain = UnsafeMutablePointer<Int32>.allocate(capacity: Params.maxChain)
     var chainCount = 0
     var compOn = true, compSustain: Float = 0.5, compAttack: Float = 10, compLevel: Float = 0, compBlend: Float = 1
     var wahOn = true, wahAuto = false, wahPos: Float = 0.5, wahSens: Float = 0.5, wahQ: Float = 0.5
     var fuzzOn = true, fuzzAmt: Float = 0.6, fuzzTone: Float = 0.5, fuzzLevel: Float = 0.5
+    var bladeOn = true, bladeDrive: Float = 0.5, bladeLow: Float = 0.5, bladeMid: Float = 0.5, bladeHigh: Float = 0.5, bladeLevel: Float = 0.5
+    var bladeBoost: Float = 0.5, bladeBoostOn = false, bladeShift = false, bladeDiode = 0
     var chorusOn = true, chorusRate: Float = 0.8, chorusDepth: Float = 0.5, chorusMix: Float = 0.5
     var flangerOn = true, flangerRate: Float = 0.25, flangerDepth: Float = 0.7, flangerFb: Float = 0.5, flangerMix: Float = 0.5
     var phaserOn = true, phaserRate: Float = 0.5, phaserDepth: Float = 0.7, phaserFb: Float = 0.4
@@ -154,10 +156,10 @@ final class Ring: @unchecked Sendable {
 // MARK: - Pedals
 
 enum PedalKind: Int, CaseIterable, Codable, Identifiable {
-    case comp, wah, fuzz, od, chorus, flanger, phaser, trem
+    case comp, wah, fuzz, od, chorus, flanger, phaser, trem, blade
     var id: Int { rawValue }
     var title: String {
-        ["COMPRESSOR", "WAH", "FUZZ", "OVERDRIVE", "CHORUS", "FLANGER", "PHASER", "TREMOLO"][rawValue]
+        ["COMPRESSOR", "WAH", "FUZZ", "OVERDRIVE", "CHORUS", "FLANGER", "PHASER", "TREMOLO", "BLADE"][rawValue]
     }
 }
 
@@ -189,6 +191,7 @@ func makePedal(_ k: PedalKind, sr: Float) -> Pedal {
     case .flanger: return Flanger(sr: sr)
     case .phaser: return Phaser(sr: sr)
     case .trem: return Tremolo(sr: sr)
+    case .blade: return Blade(sr: sr)
     }
 }
 
@@ -280,6 +283,53 @@ final class Overdrive: Pedal {
     }
     override func tick(_ x: Float) -> Float {
         lp.run(tanhf(hump.run(shelf.run(hp.run(x))) * pre + 0.05) - 0.04996) * lvl
+    }
+}
+
+/// Op-amp distortion voiced after the EAE Longsword: switchable front-end mid boost, a high-gain stage with
+/// selectable clipping (MOSFET, none = op-amp headroom then the rails, silicon) and an active 3-band EQ whose mid
+/// shifts between 650 Hz and 1.5 kHz. 4x oversampled like the fuzz.
+final class Blade: Pedal {
+    private let hp = Biquad(), bHP = Biquad(), bLP = Biquad(), focus = Biquad(), post = Biquad(), dc = Biquad()
+    private let low = Biquad(), mid = Biquad(), high = Biquad()
+    private let up = (0..<4).map { _ in Biquad() }, down = (0..<4).map { _ in Biquad() }
+    private var gain: Float = 1, boost: Float = 1, boostOn = false, lvl: Float = 1, diode = 0, t: Float = 1, norm: Float = 1
+    override init(sr: Float) {
+        super.init(sr: sr)
+        let os = Double(sr) * 4, aa = min(20000, Double(sr) * 0.45)
+        for (i, q) in [0.5098, 0.6013, 0.9000, 2.5629].enumerated() { up[i].set(.lp, aa, os, q: q); down[i].set(.lp, aa, os, q: q) }
+    }
+    override func update(_ p: Params) {
+        let s = Double(sr)
+        mix.target = p.bladeOn ? 1 : 0
+        hp.set(.hp, 70, s); bHP.set(.hp, 220, s, q: 0.6); bLP.set(.lp, 4500, s, q: 0.6)
+        focus.set(.peak, 720, s, q: 0.7, db: 4); post.set(.lp, 6800, s, q: 0.6); dc.set(.hp, 20, s)
+        low.set(.lowShelf, 180, s, db: Double((p.bladeLow - 0.5) * 24))
+        mid.set(.peak, p.bladeShift ? 1500 : 650, s, q: 0.9, db: Double((p.bladeMid - 0.5) * 24))
+        high.set(.highShelf, 2800, s, db: Double((p.bladeHigh - 0.5) * 24))
+        gain = 1 + p.bladeDrive * p.bladeDrive * 200
+        boostOn = p.bladeBoostOn; boost = dbLin(p.bladeBoost * 20)
+        diode = p.bladeDiode
+        t = diode == 0 ? 0.8 : (diode == 1 ? 3.0 : 0.45)
+        norm = 1 / sqrtf(t)
+        lvl = lerp(p.bladeLevel, 0.05, 1.5)
+    }
+    @inline(__always) private func clip(_ u: Float) -> Float {
+        if diode == 0 { return t * (tanhf(u / t + 0.08) - tanhf(0.08)) }        // MOSFET: smooth, slightly asymmetric
+        if diode == 1 { return u / powf(1 + powf(abs(u) / t, 6), 1.0 / 6) }      // no diodes: clean headroom, then the rails
+        return u / powf(1 + powf(abs(u) / t, 2.5), 1.0 / 2.5)                     // silicon: tight and compressed
+    }
+    override func tick(_ x: Float) -> Float {
+        var y = hp.run(x)
+        if boostOn { y += bLP.run(bHP.run(y)) * (boost - 1) }
+        let v = focus.run(y) * gain
+        var o: Float = 0
+        for k in 0..<4 {
+            let u = up[3].run(up[2].run(up[1].run(up[0].run(k == 0 ? v * 4 : 0))))
+            o = down[3].run(down[2].run(down[1].run(down[0].run(clip(u)))))
+        }
+        let z = post.run(dc.run(o)) * norm
+        return high.run(mid.run(low.run(z))) * lvl
     }
 }
 

@@ -31,6 +31,8 @@ void fillDefaults(juce::NamedValueSet& v) {
     put("flangerOn", true); put("flangerRate", 0.25); put("flangerDepth", 0.7); put("flangerFb", 0.5); put("flangerMix", 0.5);
     put("phaserOn", true); put("phaserRate", 0.5); put("phaserDepth", 0.7); put("phaserFb", 0.4);
     put("tremOn", true); put("tremRate", 5.0); put("tremDepth", 0.6); put("tremShape", 0.0);
+    put("bladeOn", true); put("bladeDrive", 0.5); put("bladeLow", 0.5); put("bladeMid", 0.5); put("bladeHigh", 0.5); put("bladeLevel", 0.5);
+    put("bladeBoost", 0.5); put("bladeBoostOn", false); put("bladeShift", false); put("bladeDiode", 0);
     put("capture", ""); put("capDrive", 0.0); put("capLevel", 0.0);
     put("nam", ""); put("namInput", 0.0); put("namOutput", 0.0);
 }
@@ -130,6 +132,8 @@ void Settings::apply(Params& p) const {
     p.flangerOn = b("flangerOn"); p.flangerRate = f("flangerRate"); p.flangerDepth = f("flangerDepth"); p.flangerFb = f("flangerFb"); p.flangerMix = f("flangerMix");
     p.phaserOn = b("phaserOn"); p.phaserRate = f("phaserRate"); p.phaserDepth = f("phaserDepth"); p.phaserFb = f("phaserFb");
     p.tremOn = b("tremOn"); p.tremRate = f("tremRate"); p.tremDepth = f("tremDepth"); p.tremShape = f("tremShape");
+    p.bladeOn = b("bladeOn"); p.bladeDrive = f("bladeDrive"); p.bladeLow = f("bladeLow"); p.bladeMid = f("bladeMid"); p.bladeHigh = f("bladeHigh");
+    p.bladeLevel = f("bladeLevel"); p.bladeBoost = f("bladeBoost"); p.bladeBoostOn = b("bladeBoostOn"); p.bladeShift = b("bladeShift"); p.bladeDiode = i("bladeDiode");
     p.capDrive = f("capDrive"); p.capLevel = f("capLevel");
     p.namIn = f("namInput"); p.namOut = f("namOutput");
     p.inGain = f("inGain"); p.inputChannel = i("inputChannel");

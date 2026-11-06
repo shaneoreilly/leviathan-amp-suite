@@ -42,6 +42,24 @@ let scenarios: [Scenario] = [
         p.inGain = 9.65; p.gateOn = false; p.chainCount = 0
         p.ampOn = true; p.ampChannel = 2; p.ampGain = 0.65; p.eqOn = false; p.cabOn = false; p.masterVol = -3
     }, ir: nil),
+    Scenario(name: "blade_mosfet", setup: { p in
+        p.gateOn = false; p.chain[0] = Int32(PedalKind.blade.rawValue); p.chainCount = 1; p.bladeOn = true
+        p.bladeDrive = 0.8; p.bladeLow = 0.4; p.bladeMid = 0.7; p.bladeHigh = 0.6; p.bladeLevel = 0.5; p.bladeBoost = 0.6
+        p.bladeBoostOn = true; p.bladeShift = false; p.bladeDiode = 0
+        p.ampOn = false; p.eqOn = false; p.cabOn = false; p.masterVol = -6
+    }, ir: nil),
+    Scenario(name: "blade_open", setup: { p in
+        p.gateOn = false; p.chain[0] = Int32(PedalKind.blade.rawValue); p.chainCount = 1; p.bladeOn = true
+        p.bladeDrive = 0.8; p.bladeLow = 0.4; p.bladeMid = 0.7; p.bladeHigh = 0.6; p.bladeLevel = 0.5; p.bladeBoost = 0.6
+        p.bladeBoostOn = false; p.bladeShift = true; p.bladeDiode = 1
+        p.ampOn = false; p.eqOn = false; p.cabOn = false; p.masterVol = -6
+    }, ir: nil),
+    Scenario(name: "blade_silicon", setup: { p in
+        p.gateOn = false; p.chain[0] = Int32(PedalKind.blade.rawValue); p.chainCount = 1; p.bladeOn = true
+        p.bladeDrive = 0.8; p.bladeLow = 0.4; p.bladeMid = 0.7; p.bladeHigh = 0.6; p.bladeLevel = 0.5; p.bladeBoost = 0.6
+        p.bladeBoostOn = true; p.bladeShift = true; p.bladeDiode = 2
+        p.ampOn = false; p.eqOn = false; p.cabOn = false; p.masterVol = -6
+    }, ir: nil),
     Scenario(name: "od_only", setup: { p in
         p.gateOn = false; p.chain[0] = Int32(PedalKind.od.rawValue); p.chainCount = 1; p.odDrive = 0.85
         p.ampOn = false; p.eqOn = false; p.cabOn = false; p.masterVol = -3

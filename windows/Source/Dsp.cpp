@@ -50,11 +50,11 @@ int Ring::read(float* dst, int n) {
 // MARK: - Pedals
 
 const char* pedalTitle(PedalKind k) {
-    static const char* t[] = { "COMPRESSOR", "WAH", "FUZZ", "OVERDRIVE", "CHORUS", "FLANGER", "PHASER", "TREMOLO" };
+    static const char* t[] = { "COMPRESSOR", "WAH", "FUZZ", "OVERDRIVE", "CHORUS", "FLANGER", "PHASER", "TREMOLO", "BLADE" };
     return t[(int) k];
 }
 const char* pedalOnKey(PedalKind k) {
-    static const char* t[] = { "compOn", "wahOn", "fuzzOn", "odOn", "chorusOn", "flangerOn", "phaserOn", "tremOn" };
+    static const char* t[] = { "compOn", "wahOn", "fuzzOn", "odOn", "chorusOn", "flangerOn", "phaserOn", "tremOn", "bladeOn" };
     return t[(int) k];
 }
 
@@ -151,6 +151,50 @@ public:
 private:
     Biquad hp, lpT, hpT, dc, up[4], down[4];
     float pre = 1, tone = 0.5f, lvl = 1;
+};
+
+/// Op-amp distortion voiced after the EAE Longsword (see Blade in DSP.swift): boost, selectable clipping, 3-band EQ.
+class Blade : public Pedal {
+public:
+    explicit Blade(float s) : Pedal(s) {
+        const double os = (double) s * 4, aa = std::min(20000.0, (double) s * 0.45);
+        for (int i = 0; i < 4; ++i) { up[i].set(Biquad::lp, aa, os, kAAQ[i]); down[i].set(Biquad::lp, aa, os, kAAQ[i]); }
+    }
+    void update(const Params& p) override {
+        const double s = sr;
+        mix.target = p.bladeOn ? 1.f : 0.f;
+        hp.set(Biquad::hp, 70, s); bHP.set(Biquad::hp, 220, s, 0.6); bLP.set(Biquad::lp, 4500, s, 0.6);
+        focus.set(Biquad::peak, 720, s, 0.7, 4); post.set(Biquad::lp, 6800, s, 0.6); dc.set(Biquad::hp, 20, s);
+        low.set(Biquad::lowShelf, 180, s, 0.7071, (double) ((p.bladeLow - 0.5f) * 24));
+        mid.set(Biquad::peak, p.bladeShift ? 1500 : 650, s, 0.9, (double) ((p.bladeMid - 0.5f) * 24));
+        high.set(Biquad::highShelf, 2800, s, 0.7071, (double) ((p.bladeHigh - 0.5f) * 24));
+        gain = 1 + p.bladeDrive * p.bladeDrive * 200;
+        boostOn = p.bladeBoostOn; boost = dbLin(p.bladeBoost * 20);
+        diode = p.bladeDiode;
+        t = diode == 0 ? 0.8f : (diode == 1 ? 3.0f : 0.45f);
+        norm = 1 / std::sqrt(t);
+        lvl = lerpf(p.bladeLevel, 0.05f, 1.5f);
+    }
+    float clip(float u) const {
+        if (diode == 0) return t * (std::tanh(u / t + 0.08f) - std::tanh(0.08f));
+        if (diode == 1) return u / std::pow(1 + std::pow(std::abs(u) / t, 6.0f), 1.0f / 6.0f);
+        return u / std::pow(1 + std::pow(std::abs(u) / t, 2.5f), 1.0f / 2.5f);
+    }
+    float tick(float x) override {
+        float y = hp.run(x);
+        if (boostOn) y += bLP.run(bHP.run(y)) * (boost - 1);
+        const float v = focus.run(y) * gain;
+        float o = 0;
+        for (int k = 0; k < 4; ++k) {
+            const float u = up[3].run(up[2].run(up[1].run(up[0].run(k == 0 ? v * 4 : 0))));
+            o = down[3].run(down[2].run(down[1].run(down[0].run(clip(u)))));
+        }
+        const float z = post.run(dc.run(o)) * norm;
+        return high.run(mid.run(low.run(z))) * lvl;
+    }
+private:
+    Biquad hp, bHP, bLP, focus, post, dc, low, mid, high, up[4], down[4];
+    float gain = 1, boost = 1, lvl = 1, t = 1, norm = 1; bool boostOn = false; int diode = 0;
 };
 
 class Overdrive : public Pedal {
@@ -270,6 +314,7 @@ std::unique_ptr<Pedal> makePedal(PedalKind k, float sr) {
     case PedalKind::comp: return std::make_unique<Compressor>(sr);
     case PedalKind::wah: return std::make_unique<Wah>(sr);
     case PedalKind::fuzz: return std::make_unique<Fuzz>(sr);
+    case PedalKind::blade: return std::make_unique<Blade>(sr);
     case PedalKind::od: return std::make_unique<Overdrive>(sr);
     case PedalKind::chorus: return std::make_unique<Chorus>(sr);
     case PedalKind::flanger: return std::make_unique<Flanger>(sr);

@@ -57,8 +57,8 @@ private:
 
 // MARK: - Shared parameters (UI thread writes, audio thread reads once per buffer)
 
-enum class PedalKind : int { comp, wah, fuzz, od, chorus, flanger, phaser, trem };
-constexpr int kPedalCount = 8;
+enum class PedalKind : int { comp, wah, fuzz, od, chorus, flanger, phaser, trem, blade };
+constexpr int kPedalCount = 9;
 const char* pedalTitle(PedalKind k);
 const char* pedalOnKey(PedalKind k);   // "compOn", "wahOn", ... (the Settings field)
 
@@ -76,12 +76,14 @@ struct Params {
     bool revOn = false; float revSize = 0.45f, revMix = 0.18f;
     float masterVol = -6;
 
-    static constexpr int maxChain = 8;
-    int chain[maxChain] = { -1, -1, -1, -1, -1, -1, -1, -1 };
+    static constexpr int maxChain = 9;
+    int chain[maxChain] = { -1, -1, -1, -1, -1, -1, -1, -1, -1 };
     int chainCount = 0;
     bool compOn = true; float compSustain = 0.5f, compAttack = 10, compLevel = 0, compBlend = 1;
     bool wahOn = true, wahAuto = false; float wahPos = 0.5f, wahSens = 0.5f, wahQ = 0.5f;
     bool fuzzOn = true; float fuzzAmt = 0.6f, fuzzTone = 0.5f, fuzzLevel = 0.5f;
+    bool bladeOn = true; float bladeDrive = 0.5f, bladeLow = 0.5f, bladeMid = 0.5f, bladeHigh = 0.5f, bladeLevel = 0.5f;
+    float bladeBoost = 0.5f; bool bladeBoostOn = false, bladeShift = false; int bladeDiode = 0;
     bool chorusOn = true; float chorusRate = 0.8f, chorusDepth = 0.5f, chorusMix = 0.5f;
     bool flangerOn = true; float flangerRate = 0.25f, flangerDepth = 0.7f, flangerFb = 0.5f, flangerMix = 0.5f;
     bool phaserOn = true; float phaserRate = 0.5f, phaserDepth = 0.7f, phaserFb = 0.4f;

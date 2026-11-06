@@ -88,5 +88,14 @@
   "top:preset": "The current preset. A dot means it has unsaved changes. Click to choose another preset.",
   "top:save": "Saves your changes into this preset (Cmd/Ctrl+S).",
   "top:saveAs": "Saves the current sound as a new preset, leaving this one unchanged (Shift+Cmd/Ctrl+S).",
-  "top:recWave": "The take being recorded so far."
+  "top:recWave": "The take being recorded so far.",
+  "bladeDrive": "Gain of the distortion stage: from crunchy overdrive to heavy, saturated distortion.",
+  "bladeLow": "Active low shelf (around 180 Hz), up to ±12 dB. Cut for tight palm mutes, boost for weight.",
+  "bladeMid": "Active midrange, up to ±12 dB, at the frequency set by the Mid shift switch. Boost to cut through a mix.",
+  "bladeHigh": "Active high shelf (around 2.8 kHz), up to ±12 dB. Adds or tames bite and fizz.",
+  "bladeLevel": "The pedal's output volume.",
+  "bladeBoost": "How much the Boost adds when it's switched on, up to +20 dB of mid-focused gain into the distortion.",
+  "bladeBoostOn": "Switches the front-end mid boost on: more gain and a tighter, mid-forward attack, like a boost pedal in front.",
+  "bladeShift": "Moves the Mid control: 650 Hz for body and growl, 1.5 kHz for presence and cut.",
+  "bladeDiode": "Clipping: MOSFET is smooth and open; Off uses no diodes, for the most headroom and least compression; Silicon is tight, compressed and saturated."
 }

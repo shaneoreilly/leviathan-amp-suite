@@ -32,6 +32,8 @@ struct Settings: Codable, Equatable {
     var flangerOn = true, flangerRate = 0.25, flangerDepth = 0.7, flangerFb = 0.5, flangerMix = 0.5
     var phaserOn = true, phaserRate = 0.5, phaserDepth = 0.7, phaserFb = 0.4
     var tremOn = true, tremRate = 5.0, tremDepth = 0.6, tremShape = 0.0
+    var bladeOn = true, bladeDrive = 0.5, bladeLow = 0.5, bladeMid = 0.5, bladeHigh = 0.5, bladeLevel = 0.5
+    var bladeBoost = 0.5, bladeBoostOn = false, bladeShift = false, bladeDiode = 0
 
     // captured amp: name of a file in Application Support/Leviathan/Captures ("" = use the voicings)
     var capture = "", capDrive = 0.0, capLevel = 0.0
@@ -51,6 +53,8 @@ struct Settings: Codable, Equatable {
         p.flangerOn = flangerOn; p.flangerRate = Float(flangerRate); p.flangerDepth = Float(flangerDepth); p.flangerFb = Float(flangerFb); p.flangerMix = Float(flangerMix)
         p.phaserOn = phaserOn; p.phaserRate = Float(phaserRate); p.phaserDepth = Float(phaserDepth); p.phaserFb = Float(phaserFb)
         p.tremOn = tremOn; p.tremRate = Float(tremRate); p.tremDepth = Float(tremDepth); p.tremShape = Float(tremShape)
+        p.bladeOn = bladeOn; p.bladeDrive = Float(bladeDrive); p.bladeLow = Float(bladeLow); p.bladeMid = Float(bladeMid); p.bladeHigh = Float(bladeHigh)
+        p.bladeLevel = Float(bladeLevel); p.bladeBoost = Float(bladeBoost); p.bladeBoostOn = bladeBoostOn; p.bladeShift = bladeShift; p.bladeDiode = bladeDiode
         p.capDrive = Float(capDrive); p.capLevel = Float(capLevel)
         p.namIn = Float(namInput); p.namOut = Float(namOutput)
         p.inGain = Float(inGain); p.inputChannel = inputChannel
@@ -923,6 +927,7 @@ final class Model: ObservableObject {
         case .flanger: s.flangerOn
         case .phaser: s.phaserOn
         case .trem: s.tremOn
+        case .blade: s.bladeOn
         }
     }
 
@@ -936,6 +941,7 @@ final class Model: ObservableObject {
         case .flanger: n.flangerOn = on
         case .phaser: n.phaserOn = on
         case .trem: n.tremOn = on
+        case .blade: n.bladeOn = on
         }
     }
 
@@ -1591,6 +1597,24 @@ struct ContentView: View {
                 Knob(label: "Fuzz", value: $m.s.fuzzAmt, key: "fuzzAmt", range: 0...1, def: 0.6, color: ch)
                 Knob(label: "Tone", value: $m.s.fuzzTone, key: "fuzzTone", range: 0...1, def: 0.5, color: ch)
                 Knob(label: "Level", value: $m.s.fuzzLevel, key: "fuzzLevel", range: 0...1, def: 0.5, color: ch)
+            }
+        case .blade:
+            VStack(alignment: .center, spacing: 6) {
+                HStack(spacing: 6) {
+                    Picker("", selection: $m.s.bladeDiode) { Text("MOSFET").tag(0); Text("Off").tag(1); Text("Silicon").tag(2) }
+                        .pickerStyle(.segmented).labelsHidden().frame(width: 190 * W).explain("bladeDiode", "Blade · Diode")
+                    Picker("", selection: $m.s.bladeShift) { Text("650").tag(false); Text("1.5k").tag(true) }
+                        .pickerStyle(.segmented).labelsHidden().frame(width: 100 * W).explain("bladeShift", "Blade · Mid shift")
+                    Toggle("Boost", isOn: $m.s.bladeBoostOn).toggleStyle(.button).explain("bladeBoostOn", "Blade · Boost")
+                }
+                HStack(spacing: 2) {
+                    Knob(label: "Drive", value: $m.s.bladeDrive, key: "bladeDrive", range: 0...1, def: 0.5, color: ch)
+                    Knob(label: "Low", value: $m.s.bladeLow, key: "bladeLow", range: 0...1, def: 0.5, fmt: { String(format: "%+.0f", ($0 - 0.5) * 24) }, color: ch)
+                    Knob(label: "Mid", value: $m.s.bladeMid, key: "bladeMid", range: 0...1, def: 0.5, fmt: { String(format: "%+.0f", ($0 - 0.5) * 24) }, color: ch)
+                    Knob(label: "High", value: $m.s.bladeHigh, key: "bladeHigh", range: 0...1, def: 0.5, fmt: { String(format: "%+.0f", ($0 - 0.5) * 24) }, color: ch)
+                    Knob(label: "Boost", value: $m.s.bladeBoost, key: "bladeBoost", range: 0...1, def: 0.5, fmt: { String(format: "+%.0f dB", $0 * 20) }, color: ch)
+                    Knob(label: "Level", value: $m.s.bladeLevel, key: "bladeLevel", range: 0...1, def: 0.5, color: ch)
+                }
             }
         case .od:
             HStack(spacing: 2) {

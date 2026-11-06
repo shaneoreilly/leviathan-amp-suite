@@ -563,6 +563,27 @@ std::unique_ptr<UnitBox> RigView::makePedal(PedalKind k) {
         auto r = row(); r->add(knob("Fuzz", "fuzzAmt", 0, 1, 0.6)); r->add(knob("Tone", "fuzzTone", 0, 1, 0.5)); r->add(knob("Level", "fuzzLevel", 0, 1, 0.5));
         content = std::move(r); break;
     }
+    case PedalKind::blade: {
+        auto c = col(6);
+        auto sw = row(6);
+        auto diode = std::make_unique<Segments>(m, juce::StringArray { "MOSFET", "Off", "Silicon" }, [&m] { return m.s().i("bladeDiode"); },
+                                                [&m](int i) { m.set("bladeDiode", i); }, [&m](int) { return m.accent(); }, (int) (190 * theme::W), 26, 10);
+        sw->add(std::move(diode));
+        auto shift = std::make_unique<Segments>(m, juce::StringArray { "650", "1.5k" }, [&m] { return m.s().b("bladeShift") ? 1 : 0; },
+                                                [&m](int i) { m.set("bladeShift", i == 1); }, [&m](int) { return m.accent(); }, (int) (100 * theme::W), 26, 10);
+        sw->add(std::move(shift));
+        auto boost = std::make_unique<Segments>(m, juce::StringArray { "Boost" }, [&m] { return m.s().b("bladeBoostOn") ? 0 : -1; },
+                                                [&m](int) { m.set("bladeBoostOn", !m.s().b("bladeBoostOn")); }, [&m](int) { return m.accent(); }, 70, 26, 10);
+        sw->add(std::move(boost));
+        c->add(std::move(sw));
+        auto db24 = [](double v) { return juce::String::formatted("%+.0f", (v - 0.5) * 24); };
+        auto r = row();
+        r->add(knob("Drive", "bladeDrive", 0, 1, 0.5)); r->add(knob("Low", "bladeLow", 0, 1, 0.5, db24)); r->add(knob("Mid", "bladeMid", 0, 1, 0.5, db24));
+        r->add(knob("High", "bladeHigh", 0, 1, 0.5, db24));
+        r->add(knob("Boost", "bladeBoost", 0, 1, 0.5, [](double v) { return juce::String::formatted("+%.0f dB", v * 20); })); r->add(knob("Level", "bladeLevel", 0, 1, 0.5));
+        c->add(std::move(r));
+        content = std::move(c); break;
+    }
     case PedalKind::od: {
         auto r = row(); r->add(knob("Drive", "odDrive", 0, 1, 0)); r->add(knob("Tone", "odTone", 0, 1, 0.6)); r->add(knob("Level", "odLevel", 0, 1, 0.75));
         content = std::move(r); break;

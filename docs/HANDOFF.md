@@ -95,6 +95,7 @@ These are built and reasoned through, but nobody has tried them on real hardware
 | 0.4.2 | Update banner, check every launch, single instance |
 | 0.4.3 | Cab IR library; two-row layout; input picker; scroll and reset on dials; hover explanations; Save as; live recording waveform; metronome click; seek fixes |
 | 0.4.4 | Stable Mac signing (microphone permission sticks); trim recordings |
+| unreleased | Hidden-recordings fix (lenient session.json); seek while playing; no-input playback; no built-in mic fallback; Space plays on Recordings; Blade pedal (Longsword-inspired distortion, 9th pedal, maxChain 9) |
 
 Full detail is in the GitHub release notes for each version.
 

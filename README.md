@@ -71,7 +71,7 @@ Leviathan checks for new versions itself. When one is out, a banner appears at t
 - **Leviathan's own amp** with three channels: Clean, Rust and Hot.
 
 **Effects**
-- **Pedals:** compressor, wah (with a pedal or automatic), fuzz, overdrive, chorus, flanger, phaser and tremolo. Drag them into any order.
+- **Pedals:** compressor, wah (with a pedal or automatic), fuzz, overdrive, chorus, flanger, phaser and tremolo, plus **Blade**: a high-gain distortion inspired by the EAE Longsword, with a 3-band EQ, a mid boost and three clipping modes. Drag pedals into any order.
 - **Noise gate** to silence hiss between notes.
 - **Pitch / Play as:** play songs in other tunings without retuning, up or down by up to an octave. Every tuning shows its notes, for example "Drop C · C G C F A D".
 - **Cabinet:** the speaker and microphone sound. Use the built-in cabinets, or add your own speaker files (IRs) and search through them by band or song.

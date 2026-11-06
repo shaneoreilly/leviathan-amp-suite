@@ -53,6 +53,24 @@ static const Scenario scenarios[] = {
         p.inGain = 9.65f; p.gateOn = false; p.chainCount = 0;
         p.ampOn = true; p.ampChannel = 2; p.ampGain = 0.65f; p.eqOn = false; p.cabOn = false; p.masterVol = -3;
     }, nullptr },
+    { "blade_mosfet", [](Params& p) {
+        p.gateOn = false; p.chain[0] = (int) PedalKind::blade; p.chainCount = 1; p.bladeOn = true;
+        p.bladeDrive = 0.8f; p.bladeLow = 0.4f; p.bladeMid = 0.7f; p.bladeHigh = 0.6f; p.bladeLevel = 0.5f; p.bladeBoost = 0.6f;
+        p.bladeBoostOn = true; p.bladeShift = false; p.bladeDiode = 0;
+        p.ampOn = false; p.eqOn = false; p.cabOn = false; p.masterVol = -6;
+    }, nullptr },
+    { "blade_open", [](Params& p) {
+        p.gateOn = false; p.chain[0] = (int) PedalKind::blade; p.chainCount = 1; p.bladeOn = true;
+        p.bladeDrive = 0.8f; p.bladeLow = 0.4f; p.bladeMid = 0.7f; p.bladeHigh = 0.6f; p.bladeLevel = 0.5f; p.bladeBoost = 0.6f;
+        p.bladeBoostOn = false; p.bladeShift = true; p.bladeDiode = 1;
+        p.ampOn = false; p.eqOn = false; p.cabOn = false; p.masterVol = -6;
+    }, nullptr },
+    { "blade_silicon", [](Params& p) {
+        p.gateOn = false; p.chain[0] = (int) PedalKind::blade; p.chainCount = 1; p.bladeOn = true;
+        p.bladeDrive = 0.8f; p.bladeLow = 0.4f; p.bladeMid = 0.7f; p.bladeHigh = 0.6f; p.bladeLevel = 0.5f; p.bladeBoost = 0.6f;
+        p.bladeBoostOn = true; p.bladeShift = true; p.bladeDiode = 2;
+        p.ampOn = false; p.eqOn = false; p.cabOn = false; p.masterVol = -6;
+    }, nullptr },
     { "od_only", [](Params& p) {
         p.gateOn = false; p.chain[0] = (int) PedalKind::od; p.chainCount = 1; p.odDrive = 0.85f;
         p.ampOn = false; p.eqOn = false; p.cabOn = false; p.masterVol = -3;
