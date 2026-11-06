@@ -27,6 +27,7 @@ private:
     std::unique_ptr<Screen_> presets, recordings, settings;
     juce::OwnedArray<juce::Component> banners;
     juce::String bannerSig;
+    std::unique_ptr<juce::Component> whatsNew;   // the What's new popup, over everything
     Screen shown = Screen::rig;
 
     void changeListenerCallback(juce::ChangeBroadcaster*) override;

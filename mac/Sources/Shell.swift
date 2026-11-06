@@ -17,7 +17,7 @@ struct RootView: View {
             Rectangle().fill(line).frame(width: 1)
             VStack(spacing: 0) {
                 TopBar()
-                if updater.showBanner, let r = updater.available { UpdateBanner(release: r) }
+                if updater.showBanner, let r = updater.available { UpdateBanner(release: r) } else { UpdateProgressBanner() }
                 ForEach([m.status, rec.message].filter { !$0.isEmpty }, id: \.self) { msg in
                     HStack {
                         Text(msg).font(.system(size: 12 * UI))
@@ -42,6 +42,9 @@ struct RootView: View {
         .controlSize(.large)
         .background(Color(white: 0.05))
         .tint(ch)
+        .sheet(isPresented: $updater.showNotes) {
+            if let r = updater.available { WhatsNewSheet(updater: updater, release: r).tint(ch) }
+        }
         .alert("Save preset", isPresented: $m.savingPreset) {
             TextField("Name", text: $m.newPresetName)
             Button("Save") { m.savePreset(m.newPresetName) }
@@ -962,8 +965,8 @@ struct UpdateBanner: View {
             Image(systemName: "arrow.down.circle.fill").foregroundStyle(Color.accentColor)
             Text("Leviathan \(release.version) is available (you have \(updater.current)).").font(.system(size: 12 * UI))
             Spacer()
-            Button("What\u{2019}s new") { NSWorkspace.shared.open(release.page) }
-            Button("Update and relaunch") { updater.install(release) }.buttonStyle(.borderedProminent)
+            Button("What\u{2019}s new") { updater.showNotes = true }
+            Button("Update now") { updater.install(release) }.buttonStyle(.borderedProminent)
             Button { updater.dismissedVersion = release.version } label: { Image(systemName: "xmark") }.buttonStyle(.borderless).help("Hide until the next version")
         }
         .padding(10)
@@ -971,6 +974,30 @@ struct UpdateBanner: View {
     }
 }
 
+
+/// While an update downloads or installs, and if it fails: the update banner's place, so progress shows on every screen.
+struct UpdateProgressBanner: View {
+    @EnvironmentObject var updater: Updater
+    var body: some View {
+        switch updater.phase {
+        case .downloading(let f):
+            row { Text("Downloading the update\u{2026}"); ProgressView(value: f).frame(width: 160); Text("\(Int(f * 100))%").monospacedDigit().foregroundStyle(.secondary) }
+        case .installing:
+            row { Text("Installing the update. Leviathan will reopen in a moment\u{2026}"); ProgressView().controlSize(.small) }
+        case .failed(let msg):
+            row {
+                Text(msg).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                Spacer()
+                Button { updater.phase = .idle } label: { Image(systemName: "xmark") }.buttonStyle(.borderless)
+            }
+        default: EmptyView()
+        }
+    }
+    private func row<C: View>(@ViewBuilder _ c: () -> C) -> some View {
+        HStack(spacing: 12) { Image(systemName: "arrow.down.circle.fill").foregroundStyle(Color.accentColor); c(); Spacer(minLength: 0) }
+            .font(.system(size: 12 * UI)).padding(10).background(Color.accentColor.opacity(0.15))
+    }
+}
 
 /// Cabinet panel row for the IR library: the current IR (click to search and pick), and ‹ › to step through.
 struct IRLibraryRow: View {

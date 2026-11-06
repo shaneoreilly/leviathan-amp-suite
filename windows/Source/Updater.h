@@ -20,9 +20,14 @@ public:
     double progressValue = 0;
     juce::String error;
     bool autoCheck = true;
+    /// The What's new popup is open.
+    bool showNotes = false;
 
     static juce::String current() { return LEVIATHAN_VERSION; }
     static bool newer(const juce::String& a, const juce::String& b);
+    /// Release notes as players see them in the app: without the Downloads section, the "click Update" hint and the
+    /// GitHub changelog link, which only make sense on the release page.
+    static juce::String playerNotes(const juce::String& body);
     bool busy() const { return phase == Phase::checking || phase == Phase::downloading || phase == Phase::installing; }
 
     void checkOnLaunch();

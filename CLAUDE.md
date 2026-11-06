@@ -82,7 +82,7 @@ There is no unit-test suite. Verification means the parity script, `preset_check
 
 ## Testing the UI without disturbing the user
 
-- **Run a separate Mac test copy.** Copy `mac/Leviathan.app`, set `CFBundleIdentifier` to `local.leviathan.uitest` with PlistBuddy, `codesign -f -s -` it, and launch with `LEVIATHAN_NO_AUDIO=1`. Add `LEVIATHAN_SCREEN=settings|presets|recordings` to open on another screen. Its separate bundle ID gives it separate settings; seed them with `defaults export local.leviathan.ampsuite - | defaults import local.leviathan.uitest -`.
+- **Run a separate Mac test copy.** Copy `mac/Leviathan.app`, set `CFBundleIdentifier` to `local.leviathan.uitest` with PlistBuddy, `codesign -f -s -` it, and launch with `LEVIATHAN_NO_AUDIO=1`. Add `LEVIATHAN_SCREEN=settings|presets|recordings` to open on another screen. To see the update banner and What's new popup, set the copy's `CFBundleShortVersionString` below the latest release and add `LEVIATHAN_SHOW_NOTES=1` (the JUCE build: put a lower version in `windows/VERSION` for the test build, then restore it). Its separate bundle ID gives it separate settings; seed them with `defaults export local.leviathan.ampsuite - | defaults import local.leviathan.uitest -`.
 - **Don't use the same bundle ID.** The single-instance guard makes a second copy with the user's bundle ID exit immediately.
 - **The JUCE build** on macOS stores its settings in `~/Library/Application Support/Leviathan/Leviathan.settings`. Back that file up before editing it for a test, and restore it afterwards.
 - **Screenshots:** `screencapture -l <windowID> -o -x out.png`, with window IDs from `CGWindowListCopyWindowInfo` filtered by the PID you launched. The display is often asleep; `-l` still works.

@@ -1,6 +1,7 @@
 #include "Root.h"
 #include "../Sessions.h"
 #include "../Updater.h"
+#include "Markdown.h"
 
 namespace lev {
 
@@ -732,8 +733,8 @@ struct SettingsScreen : Screen_ {
         autoUpd.setButtonText("Check for updates when Leviathan opens"); autoUpd.onClick = [this] { model.updater->setAutoCheck(autoUpd.getToggleState()); };
         installB.setButtonText("Update and relaunch"); installB.setToggleState(true, juce::dontSendNotification); installB.onClick = [this] { model.updater->install(); };
         pageB.setButtonText("View on GitHub"); pageB.onClick = [this] { if (model.updater->release) model.updater->release->page.launchInDefaultBrowser(); };
-        notes.setMultiLine(true); notes.setReadOnly(true); notes.setFont(theme::font(10));
-        for (auto* c : std::initializer_list<juce::Component*> { &checkNow, &autoUpd, &installB, &pageB, &notes, &updProgress }) upd.addAndMakeVisible(c);
+        newsB.setButtonText(juce::String::fromUTF8("What\xe2\x80\x99s new")); newsB.onClick = [this] { model.updater->showNotes = true; model.changed(); };
+        for (auto* c : std::initializer_list<juce::Component*> { &checkNow, &autoUpd, &installB, &newsB, &pageB, &updProgress }) upd.addAndMakeVisible(c);
 
         // midi
         pcT.setButtonText(juce::String::fromUTF8("Program 1, 2, 3\xe2\x80\xa6 loads the 1st, 2nd, 3rd\xe2\x80\xa6 preset in the Presets list"));
@@ -779,7 +780,6 @@ struct SettingsScreen : Screen_ {
             for (auto& mp : m.midi->maps) {
                 auto r = std::make_unique<MapRow>(m, mp); mid.addAndMakeVisible(*r); mapRows.push_back(std::move(r));
             }
-            notes.setText(m.updater->release ? m.updater->release->notes : juce::String(), false);
         }
         inputCh.setSelectedId(m.s().i("inputChannel") + 1, juce::dontSendNotification);
         a4.setValue(m.a4, juce::dontSendNotification);
@@ -789,7 +789,7 @@ struct SettingsScreen : Screen_ {
         explain.setToggleState(m.explainOnHover, juce::dontSendNotification);
         checkNow.setEnabled(!m.updater->busy());
         const bool avail = m.updater->phase == Updater::Phase::available;
-        installB.setVisible(avail); pageB.setVisible(m.updater->release.has_value()); notes.setVisible(avail && notes.getText().isNotEmpty());
+        installB.setVisible(avail); newsB.setVisible(avail); pageB.setVisible(m.updater->release.has_value());
         updProgress.setVisible(m.updater->phase == Updater::Phase::downloading); progressValue = m.updater->progressValue;
         pcT.setToggleState(m.midi->programChange, juce::dontSendNotification);
         clearB.setEnabled(!m.midi->maps.empty());
@@ -833,8 +833,7 @@ struct SettingsScreen : Screen_ {
         group(tun, 124);
         checkNow.setBounds(260, 44, 110, 28); autoUpd.setBounds(192, 80, 400, 26);
         int uy = 116;
-        if (notes.isVisible()) { notes.setBounds(16, uy, w - 32, 130); uy += 140; }
-        installB.setBounds(16, uy, 180, 30); pageB.setBounds(installB.isVisible() ? 206 : 16, uy, 140, 30); updProgress.setBounds(380, 44, 200, 24);
+        installB.setBounds(16, uy, 180, 30); newsB.setBounds(206, uy, 130, 30); pageB.setBounds(installB.isVisible() ? 346 : 16, uy, 140, 30); updProgress.setBounds(380, 44, 200, 24);
         upd.labels = { { 44, "Version" }, { 80, "Automatic" } };
         upd.extra = [this](juce::Graphics& g) {
             auto& u = *model.updater;
@@ -1008,7 +1007,7 @@ struct SettingsScreen : Screen_ {
     juce::TextButton followAmp, zoomMinus, zoomPlus;
     juce::ToggleButton explain;
     juce::Slider a4; juce::ComboBox tuning;
-    juce::TextButton checkNow, installB, pageB; juce::ToggleButton autoUpd; juce::TextEditor notes;
+    juce::TextButton checkNow, installB, newsB, pageB; juce::ToggleButton autoUpd;
     double progressValue = 0; juce::ProgressBar updProgress { progressValue };
     juce::ToggleButton pcT; juce::TextButton learnB, clearB;
     std::vector<std::unique_ptr<MapRow>> mapRows;
@@ -1022,17 +1021,103 @@ struct GroupText : juce::Component {};
 // MARK: - banners
 
 struct Banner : juce::Component {
-    Banner(juce::String t, juce::Colour bgc, juce::Colour fg, std::function<void()> close, juce::String action = {}, std::function<void()> act = {})
-        : text(std::move(t)), bgColour(bgc), fgColour(fg), x(IconButton::cross, std::move(close), 11) {
-        addAndMakeVisible(x);
-        if (act) { button.setButtonText(action); button.onClick = std::move(act); addAndMakeVisible(button); }
+    using Actions = std::vector<std::pair<juce::String, std::function<void()>>>;
+    /// close: the ✕ (none when empty). actions: buttons at the right, the last one highlighted.
+    Banner(juce::String t, juce::Colour bgc, juce::Colour fg, std::function<void()> close, Actions actions = {})
+        : text(std::move(t)), bgColour(bgc), fgColour(fg), x(IconButton::cross, close ? close : [] {}, 11) {
+        if (close) addAndMakeVisible(x);
+        for (size_t i = 0; i < actions.size(); ++i) {
+            auto* b = buttons.add(new juce::TextButton(actions[i].first));
+            b->onClick = std::move(actions[i].second);
+            if (i + 1 == actions.size() && actions.size() > 1) b->setToggleState(true, juce::dontSendNotification);   // primary
+            addAndMakeVisible(b);
+        }
     }
-    void resized() override { x.setBounds(getWidth() - 34, (getHeight() - 24) / 2, 24, 24); if (button.isVisible()) button.setBounds(getWidth() - 110, (getHeight() - 26) / 2, 66, 26); }
+    int buttonsWidth() const { int w = 0; for (auto* b : buttons) w += b->getBestWidthForHeight(26) + 24 + 8; return w; }
+    void resized() override {
+        int right = getWidth() - (x.isVisible() ? 40 : 10);
+        x.setBounds(getWidth() - 34, (getHeight() - 24) / 2, 24, 24);
+        for (int i = buttons.size(); --i >= 0;) {
+            const int w = buttons[i]->getBestWidthForHeight(26) + 24;
+            buttons[i]->setBounds(right - w, (getHeight() - 26) / 2, w, 26); right -= w + 8;
+        }
+    }
     void paint(juce::Graphics& g) override {
         g.fillAll(bgColour); g.setColour(fgColour); g.setFont(theme::font(12));
-        g.drawFittedText(text, getLocalBounds().reduced(10, 0).withTrimmedRight(button.isVisible() ? 120 : 40), juce::Justification::centredLeft, 2);
+        g.drawFittedText(text, getLocalBounds().reduced(10, 0).withTrimmedRight(buttonsWidth() + (x.isVisible() ? 40 : 10)), juce::Justification::centredLeft, 2);
+        if (progress >= 0) {
+            const auto r = juce::Rectangle<float>((float) getWidth() - 220.f, (float) getHeight() / 2 - 3, 180, 6);
+            g.setColour(theme::line); g.fillRoundedRectangle(r, 3);
+            g.setColour(fgColour.withAlpha(0.9f)); g.fillRoundedRectangle(r.withWidth(r.getWidth() * (float) progress), 3);
+        }
     }
-    juce::String text; juce::Colour bgColour, fgColour; IconButton x; juce::TextButton button;
+    juce::String text; juce::Colour bgColour, fgColour; IconButton x; juce::OwnedArray<juce::TextButton> buttons;
+    double progress = -1;
+};
+
+/// "What's new": the release notes, then Update Now or Ignore (hides this version until the next one). Covers the
+/// window, dimming it; ✕, Esc or a click outside closes it without ignoring.
+struct WhatsNew : juce::Component {
+    WhatsNew(Model& m) : model(m), close(IconButton::cross, [this] { done(); }, 11) {
+        auto& r = *m.updater->release;
+        title = juce::String::fromUTF8("What\xe2\x80\x99s new in Leviathan ") + r.version;
+        sub = "You have " + Updater::current() + ". Updating replaces this copy and reopens Leviathan.";
+        notes.accent = m.accent();
+        notes.setMarkdown(r.notes.isNotEmpty() ? r.notes : juce::String("No notes for this release."));
+        view.setViewedComponent(&notes, false); view.setScrollBarsShown(true, false);
+        addAndMakeVisible(view); addAndMakeVisible(close);
+        ignore.setButtonText("Ignore"); ignore.setTooltip("Hide this update until the next version (Settings, Updates still has it)");
+        ignore.onClick = [this] { model.updater->dismiss(); done(); };
+        update.setButtonText("Update Now"); update.setToggleState(true, juce::dontSendNotification);
+        update.onClick = [this] { done(); model.updater->install(); };
+        addAndMakeVisible(ignore); addAndMakeVisible(update);
+        setWantsKeyboardFocus(true);
+    }
+    void done() { model.updater->showNotes = false; model.changed(); }
+    juce::Rectangle<int> card() const {
+        const int w = std::min(900, getWidth() - 40), h = std::min(940, getHeight() - 40);
+        return getLocalBounds().withSizeKeepingCentre(w, h);
+    }
+    void resized() override {
+        const auto c = card();
+        close.setBounds(c.getRight() - 40, c.getY() + 16, 24, 24);
+        const int bh = 34, uw = update.getBestWidthForHeight(bh) + 32, iw = ignore.getBestWidthForHeight(bh) + 32;
+        update.setBounds(c.getRight() - 20 - uw, c.getBottom() - 16 - bh, uw, bh);
+        ignore.setBounds(update.getX() - 10 - iw, update.getY(), iw, bh);
+        const auto body = c.withTrimmedTop(headH).withTrimmedBottom(footH).reduced(28, 18);
+        view.setBounds(body);
+        notes.layout(body.getWidth() - view.getScrollBarThickness() - 6);
+    }
+    void paint(juce::Graphics& g) override {
+        g.fillAll(juce::Colours::black.withAlpha(0.55f));
+        const auto c = card().toFloat();
+        g.setColour(juce::Colour(0xff121212)); g.fillRoundedRectangle(c, 12);
+        g.setColour(theme::line); g.drawRoundedRectangle(c.reduced(0.5f), 12, 1);
+        g.fillRect(c.getX(), c.getY() + (float) headH, c.getWidth(), 1.f);
+        g.fillRect(c.getX(), c.getBottom() - (float) footH, c.getWidth(), 1.f);
+        // header: icon, title, subtitle
+        const auto ic = juce::Rectangle<float>(c.getX() + 28, c.getY() + 26, 34, 34);
+        g.setColour(model.accent()); g.fillEllipse(ic);
+        g.setColour(juce::Colours::black);
+        juce::Path arrow; const auto cx = ic.getCentreX(), cy = ic.getCentreY();
+        arrow.startNewSubPath(cx, cy - 9); arrow.lineTo(cx, cy + 8); arrow.startNewSubPath(cx - 7, cy + 1); arrow.lineTo(cx, cy + 8); arrow.lineTo(cx + 7, cy + 1);
+        g.strokePath(arrow, juce::PathStrokeType(3.f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        g.setColour(theme::text); g.setFont(theme::font(17, true));
+        g.drawText(title, (int) ic.getRight() + 16, (int) c.getY() + 18, (int) c.getWidth() - 160, 34, juce::Justification::centredLeft);
+        g.setColour(theme::secondary); g.setFont(theme::font(11));
+        g.drawText(sub, (int) ic.getRight() + 16, (int) c.getY() + 52, (int) c.getWidth() - 160, 24, juce::Justification::centredLeft);
+    }
+    void mouseUp(const juce::MouseEvent& e) override { if (!card().contains(e.getPosition())) done(); }
+    bool keyPressed(const juce::KeyPress& k) override {
+        if (k == juce::KeyPress::escapeKey) { done(); return true; }
+        if (k == juce::KeyPress::returnKey) { update.triggerClick(); return true; }
+        return true;   // the popup is modal: keep shortcuts (Space plays, etc.) away from the rig
+    }
+    Model& model;
+    juce::String title, sub;
+    MarkdownView notes; juce::Viewport view;
+    IconButton close; juce::TextButton ignore, update;
+    static constexpr int headH = 96, footH = 66;
 };
 
 } // namespace
@@ -1063,23 +1148,39 @@ void Root::timerCallback() {
 
 void Root::rebuildBanners() {
     auto& m = model;
-    juce::StringArray sig { m.updater->showBanner() ? "upd" + m.updater->release->version : juce::String(), m.status, m.sessions->message, (m.midi->learning && m.screen == Screen::rig) ? "learn" + (m.midi->armed ? m.midi->armed->key : juce::String()) : juce::String() };
+    const auto ph = m.updater->phase;
+    juce::String updSig = m.updater->showBanner() ? "upd" + m.updater->release->version : juce::String();
+    if (ph == Updater::Phase::downloading) updSig = "dl" + juce::String((int) (m.updater->progressValue * 100));
+    if (ph == Updater::Phase::installing) updSig = "inst";
+    if (ph == Updater::Phase::failed) updSig = "fail" + m.updater->error;
+    juce::StringArray sig { updSig, m.status, m.sessions->message, (m.midi->learning && m.screen == Screen::rig) ? "learn" + (m.midi->armed ? m.midi->armed->key : juce::String()) : juce::String() };
     if (sig.joinIntoString("|") == bannerSig) return;
     bannerSig = sig.joinIntoString("|");
     banners.clear();
     const juce::Colour warnBg(0xff291f0f), warnFg(0xffffd999);
+    const auto updBg = m.accent().withAlpha(0.18f).overlaidWith(theme::bg.withAlpha(0.0f));
     if (m.updater->showBanner())
-        banners.add(new Banner("Leviathan " + m.updater->release->version + " is available (you have " + Updater::current() + ").",
-                               m.accent().withAlpha(0.18f).overlaidWith(theme::bg.withAlpha(0.0f)), theme::text,
-                               [&m] { m.updater->dismiss(); }, "Update", [&m] { m.updater->install(); }));
+        banners.add(new Banner("Leviathan " + m.updater->release->version + " is available (you have " + Updater::current() + ").", updBg, theme::text,
+                               [&m] { m.updater->dismiss(); },
+                               { { juce::String::fromUTF8("What\xe2\x80\x99s new"), [&m] { m.updater->showNotes = true; m.changed(); } },
+                                 { "Update now", [&m] { m.updater->install(); } } }));
+    else if (ph == Updater::Phase::downloading) {
+        auto* b = new Banner(juce::String::fromUTF8("Downloading the update\xe2\x80\xa6 ") + juce::String((int) (m.updater->progressValue * 100)) + "%",
+                                         updBg, theme::text, {});
+        b->progress = m.updater->progressValue;
+        banners.add(b);
+    } else if (ph == Updater::Phase::installing)
+        banners.add(new Banner(juce::String::fromUTF8("Installing the update. Leviathan will reopen in a moment\xe2\x80\xa6"), updBg, theme::text, {}));
+    else if (ph == Updater::Phase::failed && m.updater->error.isNotEmpty())
+        banners.add(new Banner(m.updater->error, warnBg, warnFg, [&m] { m.updater->phase = Updater::Phase::idle; m.changed(); }));
     if (m.status.isNotEmpty()) banners.add(new Banner(m.status, warnBg, warnFg, [&m] { m.status = {}; m.changed(); }));
     if (m.sessions->message.isNotEmpty()) banners.add(new Banner(m.sessions->message, warnBg, warnFg, [&m] { m.sessions->message = {}; m.changed(); }));
     if (m.midi->learning && m.screen == Screen::rig) {
         const auto t = m.midi->armed ? "Move a knob, pedal or switch on your MIDI device to assign it to " + m.midi->armed->name + "."
                                      : juce::String("MIDI learn: click a knob or an ON/OFF switch, then move a control on your MIDI device.")
                                            + (m.midi->sources.isEmpty() ? "   No MIDI devices connected." : "");
-        banners.add(new Banner(t, m.accent().withAlpha(0.18f).overlaidWith(theme::bg.withAlpha(0.0f)), theme::text, [&m] { m.midi->setLearning(false); }, "Done",
-                               [&m] { m.midi->setLearning(false); }));
+        banners.add(new Banner(t, m.accent().withAlpha(0.18f).overlaidWith(theme::bg.withAlpha(0.0f)), theme::text, [&m] { m.midi->setLearning(false); },
+                               { { "Done", [&m] { m.midi->setLearning(false); } } }));
     }
     for (auto* b : banners) addAndMakeVisible(b);
 }
@@ -1087,6 +1188,9 @@ void Root::rebuildBanners() {
 void Root::changeListenerCallback(juce::ChangeBroadcaster*) {
     lnf.setAccent(model.accent());
     rebuildBanners();
+    const bool notesOpen = model.updater->showNotes && model.updater->release.has_value();
+    if (notesOpen && !whatsNew) { whatsNew = std::make_unique<WhatsNew>(model); addAndMakeVisible(*whatsNew); whatsNew->grabKeyboardFocus(); }
+    if (!notesOpen && whatsNew) whatsNew.reset();
     if (auto* t = dynamic_cast<TopBar*>(topbar.get())) t->sync();
     sidebar->repaint();
     rig->setVisible(model.screen == Screen::rig);
@@ -1110,6 +1214,7 @@ void Root::resized() {
     topbar->setBounds(r.removeFromTop(64));
     for (auto* b : banners) b->setBounds(r.removeFromTop(40));
     for (auto* s : std::initializer_list<juce::Component*> { rig.get(), presets.get(), recordings.get(), settings.get() }) s->setBounds(r);
+    if (whatsNew) { whatsNew->setBounds(getLocalBounds()); whatsNew->toFront(false); }
 }
 
 bool Root::keyPressed(const juce::KeyPress& k) {

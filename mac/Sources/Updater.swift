@@ -21,6 +21,8 @@ final class Updater: ObservableObject {
     }
 
     @Published var phase: Phase = .idle
+    /// The What's new popup is open.
+    @Published var showNotes = false
     @Published var autoCheck = UserDefaults.standard.object(forKey: "autoUpdateCheck") as? Bool ?? true {
         didSet { UserDefaults.standard.set(autoCheck, forKey: "autoUpdateCheck") }
     }
@@ -43,7 +45,11 @@ final class Updater: ObservableObject {
     /// Check at every launch, then every 6 hours while running (each copy checks for itself).
     func checkOnLaunch() {
         guard autoCheck else { return }
-        Task { await check(quiet: true) }
+        Task {
+            await check(quiet: true)
+            // LEVIATHAN_SHOW_NOTES=1 opens What's new once an update is found (UI testing)
+            if ProcessInfo.processInfo.environment["LEVIATHAN_SHOW_NOTES"] != nil, available != nil { showNotes = true }
+        }
         periodic = Timer.scheduledTimer(withTimeInterval: 6 * 3600, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 // not while an update is already known, downloading or installing
@@ -67,7 +73,8 @@ final class Updater: ObservableObject {
             guard Updater.newer(v, than: current) else { phase = .upToDate; return }
             guard let dmg = r.assets.first(where: { $0.name.hasSuffix(".dmg") }) else { throw Fail("Release \(v) has no DMG") }
             let sha = r.assets.first { $0.name == dmg.name + ".sha256" }
-            phase = .available(Release(version: v, notes: r.body ?? "", dmg: dmg.browser_download_url, sha: sha?.browser_download_url,
+            let notes = await Updater.notesSince(current, upTo: v) ?? Updater.playerNotes(r.body ?? "")
+            phase = .available(Release(version: v, notes: notes, dmg: dmg.browser_download_url, sha: sha?.browser_download_url,
                                        page: r.html_url))
         } catch {
             phase = quiet ? .idle : .failed("Couldn't check for updates: \(error.localizedDescription)")
@@ -170,7 +177,39 @@ final class Updater: ObservableObject {
 
     private struct GHRelease: Decodable {
         let tag_name: String, body: String?, html_url: URL, assets: [Asset]
+        let draft: Bool?, prerelease: Bool?
         struct Asset: Decodable { let name: String, browser_download_url: URL }
+        var version: String { tag_name.hasPrefix("v") ? String(tag_name.dropFirst()) : tag_name }
+    }
+
+    /// Notes for every release after `current` up to `latest`, newest first, each under its version. nil when GitHub
+    /// can't be reached or only one release is new (then the latest release's own notes are used).
+    private static func notesSince(_ current: String, upTo latest: String) async -> String? {
+        var req = URLRequest(url: URL(string: "https://api.github.com/repos/\(repo)/releases?per_page=30")!)
+        req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        req.setValue("Leviathan-Updater", forHTTPHeaderField: "User-Agent")
+        guard let (data, resp) = try? await URLSession.shared.data(for: req), (resp as? HTTPURLResponse)?.statusCode == 200,
+              let all = try? JSONDecoder().decode([GHRelease].self, from: data) else { return nil }
+        let new = all.filter { $0.draft != true && $0.prerelease != true && newer($0.version, than: current) && !newer($0.version, than: latest) }
+            .sorted { newer($0.version, than: $1.version) }
+        guard new.count > 1 else { return nil }
+        return new.map { "# Leviathan \($0.version)\n\n" + playerNotes($0.body ?? "") }.joined(separator: "\n\n")
+    }
+
+    /// Release notes as players see them in the app: without the Downloads section, the "click Update" hint
+    /// and the GitHub changelog link, which only make sense on the release page.
+    nonisolated static func playerNotes(_ body: String) -> String {
+        var out: [String] = [], skipping = false
+        for line in body.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n") {
+            let t = line.trimmingCharacters(in: .whitespaces)
+            if t.hasPrefix("#") {
+                skipping = t.drop(while: { $0 == "#" }).trimmingCharacters(in: .whitespaces).lowercased() == "downloads"
+                if skipping { continue }
+            }
+            if skipping || t.hasPrefix("**Already on") || t.hasPrefix("**Full Changelog") { continue }
+            out.append(line)
+        }
+        return out.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// "0.1.10" > "0.1.9"
@@ -221,12 +260,9 @@ struct UpdateSettings: View {
             if let r = up.available {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Leviathan \(r.version) is available").font(.system(size: 13 * UI, weight: .semibold))
-                    if !r.notes.isEmpty {
-                        ScrollView { Text(r.notes).font(.system(size: 11 * UI)).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled) }
-                            .frame(maxHeight: 140)
-                    }
                     HStack {
                         Button("Update and relaunch") { up.install(r) }.buttonStyle(.borderedProminent)
+                        Button("What\u{2019}s new") { up.showNotes = true }
                         Button("View on GitHub") { NSWorkspace.shared.open(r.page) }
                     }
                 }
@@ -248,5 +284,50 @@ struct UpdateSettings: View {
         case .failed(let m): Text(m).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
         default: EmptyView()
         }
+    }
+}
+
+/// "What's new": the release notes, then Update Now or Ignore (hides this version until the next one).
+struct WhatsNewSheet: View {
+    @ObservedObject var updater: Updater
+    let release: Updater.Release
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "arrow.down.circle.fill").font(.system(size: 26 * Z)).foregroundStyle(.tint)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("What\u{2019}s new in Leviathan \(release.version)").font(.system(size: 17 * UI, weight: .semibold))
+                    Text("You have \(updater.current). Updating replaces this copy and reopens Leviathan.")
+                        .font(.system(size: 11 * UI)).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button { updater.showNotes = false } label: { Image(systemName: "xmark") }
+                    .buttonStyle(.borderless).keyboardShortcut(.cancelAction).help("Close")
+            }
+            .padding(20 * Z)
+            Rectangle().fill(line).frame(height: 1)
+            ScrollView {
+                if release.notes.isEmpty {
+                    Text("No notes for this release.").foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    MarkdownView(release.notes)
+                }
+            }
+            .padding(.horizontal, 20 * Z).padding(.vertical, 14 * Z)
+            .frame(minHeight: 240 * Z, idealHeight: 460 * Z, maxHeight: 620 * Z)
+            Rectangle().fill(line).frame(height: 1)
+            HStack {
+                Spacer()
+                Button("Ignore") { updater.dismissedVersion = release.version; updater.showNotes = false }
+                    .help("Hide this update until the next version (Settings → Updates still has it)")
+                Button("Update Now") { updater.showNotes = false; updater.install(release) }
+                    .buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
+            }
+            .padding(16 * Z)
+        }
+        .frame(width: 600 * Z)
+        .controlSize(.large)
+        .background(Color(white: 0.07))
     }
 }

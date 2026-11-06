@@ -18,6 +18,45 @@ bool Updater::newer(const juce::String& a, const juce::String& b) {
     return false;
 }
 
+juce::String Updater::playerNotes(const juce::String& body) {
+    juce::StringArray out;
+    bool skipping = false;
+    for (auto& line : juce::StringArray::fromLines(body)) {
+        const auto t = line.trim();
+        if (t.startsWithChar('#')) {
+            skipping = t.trimCharactersAtStart("#").trim().equalsIgnoreCase("downloads");
+            if (skipping) continue;
+        }
+        if (skipping || t.startsWith("**Already on") || t.startsWith("**Full Changelog")) continue;
+        out.add(line);
+    }
+    return out.joinIntoString("\n").trim();
+}
+
+/// Notes for every release after `current` up to `latest`, newest first, each under its version; empty when GitHub
+/// can't be reached or only one release is new (then the latest release's own notes are used). Runs off the message thread.
+static juce::String notesSince(const juce::String& current, const juce::String& latest) {
+    int code = 0;
+    const juce::URL url(juce::String("https://api.github.com/repos/") + Updater::repo + "/releases?per_page=30");
+    auto stream = url.createInputStream(juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
+                                            .withExtraHeaders(kHeaders).withConnectionTimeoutMs(15000).withStatusCode(&code));
+    if (!stream || code != 200) return {};
+    const auto v = juce::JSON::parse(stream->readEntireStreamAsString());
+    auto* arr = v.getArray();
+    if (arr == nullptr) return {};
+    std::vector<std::pair<juce::String, juce::String>> found;
+    for (auto& r : *arr) {
+        if ((bool) r["draft"] || (bool) r["prerelease"]) continue;
+        auto tag = r["tag_name"].toString(); if (tag.startsWith("v")) tag = tag.substring(1);
+        if (Updater::newer(tag, current) && !Updater::newer(tag, latest)) found.push_back({ tag, r["body"].toString() });
+    }
+    if (found.size() < 2) return {};
+    std::sort(found.begin(), found.end(), [](auto& a, auto& b) { return Updater::newer(a.first, b.first); });
+    juce::StringArray parts;
+    for (auto& [tag, body] : found) parts.add("# Leviathan " + tag + "\n\n" + Updater::playerNotes(body));
+    return parts.joinIntoString("\n\n");
+}
+
 void Updater::setAutoCheck(bool on) { autoCheck = on; m.props().setValue("autoUpdateCheck", on); m.changed(); }
 
 /// Check at every launch, then every 6 hours while running.
@@ -47,7 +86,14 @@ void Updater::check(bool quiet) {
         auto stream = url.createInputStream(juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
                                                 .withExtraHeaders(kHeaders).withConnectionTimeoutMs(15000).withStatusCode(&code));
         const auto body = stream ? stream->readEntireStreamAsString() : juce::String();
-        juce::MessageManager::callAsync([this, aliveFlag, quiet, code, body] {
+        // a second request when an update exists: the notes of every version since this one
+        juce::String since;
+        if (code == 200) {
+            auto tag = juce::JSON::parse(body)["tag_name"].toString();
+            if (tag.startsWith("v")) tag = tag.substring(1);
+            if (newer(tag, current())) since = notesSince(current(), tag);
+        }
+        juce::MessageManager::callAsync([this, aliveFlag, quiet, code, body, since] {
             if (!aliveFlag->load()) return;
             const auto v = juce::JSON::parse(body);
             if (code != 200 || !v.isObject()) {
@@ -59,7 +105,7 @@ void Updater::check(bool quiet) {
             auto tag = v["tag_name"].toString();
             if (tag.startsWith("v")) tag = tag.substring(1);
             if (!newer(tag, current())) { phase = Phase::upToDate; m.changed(); return; }
-            Release r; r.version = tag; r.notes = v["body"].toString(); r.page = juce::URL(v["html_url"].toString());
+            Release r; r.version = tag; r.notes = since.isNotEmpty() ? since : playerNotes(v["body"].toString()); r.page = juce::URL(v["html_url"].toString());
             juce::String installerName;
             if (auto* assets = v["assets"].getArray()) {
                 for (const auto& a : *assets) {
@@ -71,6 +117,8 @@ void Updater::check(bool quiet) {
             release = r;
             if (installerName.isEmpty()) { phase = quiet ? Phase::idle : Phase::failed; error = "Release " + tag + " has no Windows installer yet."; m.changed(); return; }
             phase = Phase::available;
+            // LEVIATHAN_SHOW_NOTES=1 opens What's new once an update is found (UI testing)
+            if (juce::SystemStats::getEnvironmentVariable("LEVIATHAN_SHOW_NOTES", {}).isNotEmpty()) showNotes = true;
             m.changed();
         });
     });
