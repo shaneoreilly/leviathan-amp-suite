@@ -78,8 +78,13 @@ jobs:
           security import "$RUNNER_TEMP/stable.p12" -k "$KC" -P "$P12_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KP" "$KC"
           rm -f "$RUNNER_TEMP/stable.p12"
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          echo "identities in the imported keychain:"; security find-identity -p codesigning "$KC" || true
           HASH=$(security find-identity -p codesigning "$KC" | awk '/Leviathan Local Signing/ { print $2; exit }')
+          # self-signed certificates can be filtered out of find-identity; fall back to the certificate's own SHA-1
+          [ -n "$HASH" ] || HASH=$(security find-certificate -a -Z -c "Leviathan Local Signing" "$KC" | awk '/SHA-1/ { print $NF; exit }')
           [ -n "$HASH" ] || { echo "stable certificate not found in the p12"; exit 1; }
+          echo "signing identity: $HASH"
           echo "LEVIATHAN_SIGN_KEYCHAIN=$KC" >> "$GITHUB_ENV"
           echo "LEVIATHAN_SIGN_HASH=$HASH" >> "$GITHUB_ENV"
 
