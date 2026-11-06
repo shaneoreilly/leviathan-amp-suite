@@ -496,16 +496,24 @@ final class Model: ObservableObject {
     @Published var presetSort = PresetSort(rawValue: UserDefaults.standard.string(forKey: "presetSort") ?? "") ?? .list {
         didSet { UserDefaults.standard.set(presetSort.rawValue, forKey: "presetSort") }
     }
+    /// false: list order A→Z / newest first; true: reversed.
+    @Published var presetSortReversed = UserDefaults.standard.bool(forKey: "presetSortReversed") {
+        didSet { UserDefaults.standard.set(presetSortReversed, forKey: "presetSortReversed") }
+    }
+    /// Click a column header: sort by it, or reverse if it's already the sort.
+    func sortPresets(by sort: PresetSort) {
+        if presetSort == sort { presetSortReversed.toggle() } else { presetSort = sort; presetSortReversed = false }
+    }
     /// All presets in the chosen order (the list order is factory first, then yours A-Z; it's what ‹ › and MIDI use).
-    func sortedPresets(_ sort: PresetSort) -> [String] {
+    func sortedPresets(_ sort: PresetSort, reversed: Bool = false) -> [String] {
         let list = presetOrder
-        guard sort != .list else { return list }
+        guard sort != .list else { return reversed ? list.reversed() : list }
         func date(_ n: String) -> Date? {
             let m = presetMeta[n]
             switch sort { case .played: return m?.played; case .modified: return m?.modified; case .created: return m?.created; case .list: return nil }
         }
-        let dated = list.filter { date($0) != nil }.sorted { date($0)! > date($1)! }
-        return dated + list.filter { date($0) == nil }
+        let dated = list.filter { date($0) != nil }.sorted { reversed ? date($0)! < date($1)! : date($0)! > date($1)! }
+        return dated + list.filter { date($0) == nil }   // never saved / played: always after, in list order
     }
     var recentlyPlayed: [String] {
         presetOrder.filter { presetMeta[$0]?.played != nil }.sorted { presetMeta[$0]!.played! > presetMeta[$1]!.played! }
@@ -2031,4 +2039,9 @@ enum PresetSort: String, CaseIterable, Identifiable {
     var title: String {
         switch self { case .list: "List order"; case .played: "Recently played"; case .modified: "Recently modified"; case .created: "Recently created" }
     }
+}
+
+extension DateFormatter {
+    /// 2026-11-06 14:05
+    static let presetStamp: DateFormatter = { let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM-dd HH:mm"; return f }()
 }

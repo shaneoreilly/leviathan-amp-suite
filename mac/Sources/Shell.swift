@@ -202,7 +202,7 @@ struct PresetsView: View {
     @StateObject private var ui = PresetsUI()
 
     var names: [String] {
-        let all = m.sortedPresets(m.presetSort)
+        let all = m.sortedPresets(m.presetSort, reversed: m.presetSortReversed)
         return ui.favOnly ? all.filter(m.favorites.contains) : all
     }
 
@@ -212,14 +212,13 @@ struct PresetsView: View {
                 Text("PRESETS").font(.system(size: 10 * UI, weight: .bold)).tracking(2).foregroundStyle(.secondary)
                 Picker("", selection: $ui.favOnly) { Text("All").tag(false); Text("★ Favorites").tag(true) }
                     .pickerStyle(.segmented).labelsHidden().frame(width: 260 * Z)
-                Picker("Sort", selection: $m.presetSort) { ForEach(PresetSort.allCases) { Text($0.title).tag($0) } }
-                    .frame(width: 230 * Z)
                 Spacer()
                 Button("Import…") { m.importPresetsPanel() }.help("Add .leviathan preset files (or drop them here)")
                 Button("Export all…") { m.exportAllPresets() }.help("Save every preset as a .leviathan file in a folder")
                 Button("Save as new…") { m.newPresetName = ""; m.savingPreset = true }
             }
             .padding(14)
+            columnHeaders
             List {
                 ForEach(names, id: \.self) { n in row(n) }
             }
@@ -242,17 +241,35 @@ struct PresetsView: View {
         }
     }
 
-    func subtitle(_ n: String, factory: Bool, edited: Bool) -> String {
-        var parts = [factory ? (edited ? "Factory · edited" : "Factory") : "Yours"]
-        let meta = m.presetMeta[n]
-        let f = RelativeDateTimeFormatter()
-        switch m.presetSort {
-        case .played: if let d = meta?.played { parts.append("played " + f.localizedString(for: d, relativeTo: Date())) }
-        case .modified: if let d = meta?.modified { parts.append("saved " + f.localizedString(for: d, relativeTo: Date())) }
-        case .created: if let d = meta?.created { parts.append("created " + f.localizedString(for: d, relativeTo: Date())) }
-        case .list: break
+    func subtitle(_ n: String, factory: Bool, edited: Bool) -> String { factory ? (edited ? "Factory · edited" : "Factory") : "Yours" }
+
+    static let dateColumn: CGFloat = 170, actionsColumn: CGFloat = 340
+    func stamp(_ d: Date?) -> String { d.map { DateFormatter.presetStamp.string(from: $0) } ?? "—" }
+
+    /// Click a header to sort by it; click again to reverse.
+    var columnHeaders: some View {
+        HStack(spacing: 12) {
+            Color.clear.frame(width: 20, height: 1)
+            header("NAME", .list).frame(maxWidth: .infinity, alignment: .leading)
+            header("MODIFIED", .modified).frame(width: PresetsView.dateColumn * Z, alignment: .leading)
+            header("LAST PLAYED", .played).frame(width: PresetsView.dateColumn * Z, alignment: .leading)
+            Color.clear.frame(width: PresetsView.actionsColumn * Z, height: 1)
         }
-        return parts.joined(separator: " · ")
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(.horizontal, 24).padding(.bottom, 4)
+    }
+    func header(_ title: String, _ sort: PresetSort) -> some View {
+        let on = m.presetSort == sort
+        return Button { m.sortPresets(by: sort) } label: {
+            HStack(spacing: 4) {
+                Text(title).font(.system(size: 10 * UI, weight: .bold)).tracking(1.2)
+                if on { Image(systemName: m.presetSortReversed ? "chevron.up" : "chevron.down").font(.system(size: 8 * UI, weight: .bold)) }
+            }
+            .foregroundStyle(on ? Color.accentColor : .secondary)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(sort == .list ? "Sort by the preset list (click again to reverse)" : "Sort newest first (click again for oldest first)")
     }
 
     func row(_ n: String) -> some View {
@@ -265,7 +282,12 @@ struct PresetsView: View {
                 Text(subtitle(n, factory: factory, edited: edited)).font(.system(size: 10 * UI)).foregroundStyle(.secondary)
             }
             Spacer()
-            if current { Text(m.presetModified ? "Loaded · unsaved changes" : "Loaded").font(.system(size: 10 * UI)).foregroundStyle(.secondary) }
+            Text(stamp(m.presetMeta[n]?.modified)).font(.system(size: 12 * UI).monospacedDigit()).foregroundStyle(.secondary)
+                .lineLimit(1).fixedSize().frame(width: PresetsView.dateColumn * Z, alignment: .leading)
+            Text(stamp(m.presetMeta[n]?.played)).font(.system(size: 12 * UI).monospacedDigit()).foregroundStyle(.secondary)
+                .lineLimit(1).fixedSize().frame(width: PresetsView.dateColumn * Z, alignment: .leading)
+            HStack(spacing: 8) {
+            if current { Text(m.presetModified ? "Loaded · unsaved" : "Loaded").font(.system(size: 10 * UI)).foregroundStyle(.secondary).lineLimit(1).fixedSize() }
             Button("Load") { m.loadAny(n); m.screen = .rig }
             Button("Export…") { m.exportPreset(n) }
             if !factory {
@@ -274,6 +296,8 @@ struct PresetsView: View {
             } else if edited {
                 Button("Restore factory") { m.restoreFactory(n) }
             }
+            }
+            .frame(width: PresetsView.actionsColumn * Z, alignment: .trailing)
         }
         .padding(.vertical, 6)
         .contentShape(Rectangle())

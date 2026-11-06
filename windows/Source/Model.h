@@ -64,8 +64,12 @@ public:
     struct PresetMeta { juce::int64 created = 0, modified = 0, played = 0; };
     std::map<juce::String, PresetMeta> presetMeta;
     int presetSort = 0;   // 0 list order, 1 recently played, 2 recently modified, 3 recently created
+    bool presetSortReversed = false;   // list order Z-A / oldest first
     void setPresetSort(int s);
-    juce::StringArray sortedPresets(int sort) const;
+    /// Click a column header: sort by it, or reverse if it's already the sort.
+    void sortPresetsBy(int s) { if (presetSort == s) presetSortReversed = !presetSortReversed; else { presetSort = s; presetSortReversed = false; } setPresetSort(presetSort); }
+    juce::StringArray sortedPresets(int sort, bool reversed = false) const;
+    static juce::String stamp(juce::int64 ms) { return ms > 0 ? juce::Time(ms).formatted("%Y-%m-%d %H:%M") : juce::String::fromUTF8("\xe2\x80\x94"); }
     juce::StringArray recentlyPlayed() const {
         juce::StringArray out;
         for (auto& n : sortedPresets(1)) if (auto it = presetMeta.find(n); it != presetMeta.end() && it->second.played > 0) out.add(n);

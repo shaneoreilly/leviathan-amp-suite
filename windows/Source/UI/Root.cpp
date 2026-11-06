@@ -287,10 +287,8 @@ struct PresetsScreen : Screen_, juce::FileDragAndDropTarget {
     explicit PresetsScreen(Model& m) : model(m), importB("Import" + ellipsis), exportB("Export all" + ellipsis), saveB("Save as new" + ellipsis) {
         filter.addItem("All", 1); filter.addItem(juce::String::fromUTF8("\xe2\x98\x85 Favorites"), 2); filter.setSelectedId(1);
         filter.onChange = [this] { signature.clear(); refresh(); };
-        for (auto* t : { "List order", "Recently played", "Recently modified", "Recently created" }) sort.addItem(t, sort.getNumItems() + 1);
-        sort.setSelectedId(m.presetSort + 1, juce::dontSendNotification);
-        sort.onChange = [this] { model.setPresetSort(sort.getSelectedId() - 1); signature.clear(); refresh(); };
-        addAndMakeVisible(sort);
+        header.onSort = [this](int s) { model.sortPresetsBy(s); signature.clear(); refresh(); };
+        addAndMakeVisible(header);
         importB.onClick = [&m] { m.importPresetsDialog(); }; importB.setTooltip("Add .leviathan preset files (or drop them here)");
         exportB.onClick = [&m] { m.exportAllPresets(); }; exportB.setTooltip("Save every preset as a .leviathan file in a folder");
         saveB.onClick = [&m] { askText("Save preset", {}, "Save", [&m](juce::String n) { m.savePreset(n); }); };
@@ -298,12 +296,12 @@ struct PresetsScreen : Screen_, juce::FileDragAndDropTarget {
         viewport.setViewedComponent(&list, false); viewport.setScrollBarsShown(true, false);
     }
     juce::StringArray names() const {
-        auto all = model.sortedPresets(model.presetSort);
+        auto all = model.sortedPresets(model.presetSort, model.presetSortReversed);
         if (filter.getSelectedId() == 2) { juce::StringArray f; for (auto& n : all) if (model.favorites.contains(n)) f.add(n); return f; }
         return all;
     }
     void refresh() override {
-        juce::StringArray sig { names().joinIntoString("|"), model.favorites.joinIntoString("|"), model.presetName, model.presetModified() ? "m" : "", juce::String(model.presetSort) };
+        juce::StringArray sig { names().joinIntoString("|"), model.favorites.joinIntoString("|"), model.presetName, model.presetModified() ? "m" : "", juce::String(model.presetSort) + (model.presetSortReversed ? "r" : "") };
         for (auto& [k, v] : model.userPresets) sig.add(k);
         if (sig.joinIntoString("/") == signature) return;
         signature = sig.joinIntoString("/");
@@ -315,10 +313,11 @@ struct PresetsScreen : Screen_, juce::FileDragAndDropTarget {
         auto r = getLocalBounds().reduced(14, 0);
         auto head = r.removeFromTop(56).withTrimmedTop(14).withHeight(28);
         filter.setBounds(head.getX() + 110, head.getY(), 200, 28);
-        sort.setBounds(head.getX() + 320, head.getY(), 190, 28);
+
         saveB.setBounds(head.removeFromRight(120)); head.removeFromRight(8);
         exportB.setBounds(head.removeFromRight(100)); head.removeFromRight(8);
         importB.setBounds(head.removeFromRight(90));
+        header.setBounds(r.removeFromTop(24));
         viewport.setBounds(r.withTrimmedBottom(10));
         int y = 0; for (auto& row : rows) { row->setBounds(0, y, viewport.getMaximumVisibleWidth(), 58); y += 58; }
         list.setSize(viewport.getMaximumVisibleWidth(), y);
@@ -361,21 +360,45 @@ struct PresetsScreen : Screen_, juce::FileDragAndDropTarget {
         void paint(juce::Graphics& g) override {
             const bool current = name == model.presetName, factory = model.isFactory(name), edited = factory && model.userPresets.count(name);
             g.setColour(theme::line.withAlpha(0.5f)); g.fillRect(0, getHeight() - 1, getWidth(), 1);
-            g.setColour(theme::text); g.setFont(theme::font(14, current)); g.drawText(name, 44, 8, 600, 24, juce::Justification::centredLeft);
+            const auto cols = columns(getWidth());
+            g.setColour(theme::text); g.setFont(theme::font(14, current)); g.drawText(name, 44, 8, cols.modified - 54, 24, juce::Justification::centredLeft, true);
             g.setColour(theme::secondary); g.setFont(theme::font(10));
             juce::String sub = factory ? (edited ? juce::String::fromUTF8("Factory \xc2\xb7 edited") : juce::String("Factory")) : juce::String("Yours");
-            if (auto it = model.presetMeta.find(name); it != model.presetMeta.end() && model.presetSort > 0) {
-                const auto ms = model.presetSort == 1 ? it->second.played : model.presetSort == 2 ? it->second.modified : it->second.created;
-                if (ms > 0) sub += juce::String::fromUTF8(" \xc2\xb7 ") + (model.presetSort == 1 ? "played " : model.presetSort == 2 ? "saved " : "created ")
-                                 + juce::Time(ms).formatted("%d %b %H:%M");
-            }
-            g.drawText(sub, 44, 32, 400, 18, juce::Justification::centredLeft);
-            if (current) g.drawText(model.presetModified() ? juce::String::fromUTF8("Loaded \xc2\xb7 unsaved changes") : juce::String("Loaded"), statusX - 260, 0, 250, getHeight(), juce::Justification::centredRight);
+            if (current) sub += juce::String::fromUTF8(model.presetModified() ? " \xc2\xb7 loaded \xc2\xb7 unsaved changes" : " \xc2\xb7 loaded");
+            g.drawText(sub, 44, 32, cols.modified - 54, 18, juce::Justification::centredLeft, true);
+            Model::PresetMeta mt; if (auto it = model.presetMeta.find(name); it != model.presetMeta.end()) mt = it->second;
+            g.setFont(theme::font(12));
+            g.drawText(Model::stamp(mt.modified), cols.modified, 0, cols.width, getHeight(), juce::Justification::centredLeft);
+            g.drawText(Model::stamp(mt.played), cols.played, 0, cols.width, getHeight(), juce::Justification::centredLeft);
         }
         void mouseDoubleClick(const juce::MouseEvent&) override { model.loadAny(name); model.setScreen(Screen::rig); }
         Model& model; juce::String name; IconButton star; juce::TextButton load, exportB, rename, del, restore; int statusX = 0;
     };
-    Model& model; juce::ComboBox filter, sort; juce::TextButton importB, exportB, saveB; juce::Viewport viewport; juce::Component list;
+    /// Column positions shared by the header and the rows: dates right of the name, actions at the right edge.
+    struct Columns { int modified, played, width; };
+    static Columns columns(int w) { const int actions = 380, dw = 170; return { w - actions - 2 * dw, w - actions - dw, dw }; }
+    /// NAME / MODIFIED / LAST PLAYED: click to sort, click again to reverse.
+    struct Header : juce::Component {
+        explicit Header(Model& m) : model(m) {}
+        void paint(juce::Graphics& g) override {
+            const auto c = columns(getWidth());
+            draw(g, "NAME", 44, 0); draw(g, "MODIFIED", c.modified, 2); draw(g, "LAST PLAYED", c.played, 1);
+        }
+        void draw(juce::Graphics& g, const juce::String& t, int x, int sort) {
+            const bool on = model.presetSort == sort;
+            g.setColour(on ? model.accent() : theme::secondary); g.setFont(theme::font(10, true, 1.2f));
+            const auto label = t + (on ? (model.presetSortReversed ? juce::String::fromUTF8(" \xe2\x96\xb4") : juce::String::fromUTF8(" \xe2\x96\xbe")) : juce::String());
+            g.drawText(label, x, 0, 170, getHeight(), juce::Justification::centredLeft);
+        }
+        void mouseUp(const juce::MouseEvent& e) override {
+            const auto c = columns(getWidth());
+            if (e.x >= c.played && e.x < c.played + c.width) onSort(1);
+            else if (e.x >= c.modified && e.x < c.modified + c.width) onSort(2);
+            else if (e.x < c.modified) onSort(0);
+        }
+        Model& model; std::function<void(int)> onSort;
+    };
+    Model& model; Header header { model }; juce::ComboBox filter; juce::TextButton importB, exportB, saveB; juce::Viewport viewport; juce::Component list;
     std::vector<std::unique_ptr<Row>> rows; juce::String signature;
 };
 

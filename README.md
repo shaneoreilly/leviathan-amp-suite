@@ -57,15 +57,10 @@ Leviathan checks for new versions itself. When one is out, a banner appears at t
 ## What's inside
 
 **Amps**
-- **Real amps.** Leviathan plays *NAM captures*: recordings of real amplifiers turned into models, similar to Kemper profiles. It comes with 11 of them:
-  - Peavey 5150 and 6505+
-  - Mesa/Boogie Mark IV
-  - Splawn Pro Mod
-  - Marshall JVM
-  - Laney GH100S
-  - ENGL
-  - Soldano-style drive
-  - Fender Twin
+- **Real amps.** Leviathan plays *NAM captures*: recordings of real amplifiers turned into models, similar to Kemper profiles. It comes with 34 of them:
+  - **Metal:** Peavey 5150, 5150 II, 6505+, 6534+, JSX and XXX; Mesa/Boogie Mark IV; Splawn Pro Mod; ENGL E530 and Savage; Suhr high-gain; Yerasov Meshuggah; Marshall JCM2000 and JCM900; Laney GH100S; Sovtek MIG-50 (doom); Boss HM-2 "Swedish chainsaw" and Line 6 Uber Metal pedals.
+  - **Rock:** Marshall JVM; Orange Rockerverb; Victory V4 Countess; Ceriatone King Kong; Friedman Dirty Shirley; Soldano-style drive; Jet City; Laney crunch.
+  - **Clean, blues and indie:** Fender Twin; Marshall JVM clean; Vox AC15 Top Boost; Magnatone Super 59.
 
   You can add thousands more for free (see [Getting more sounds](#getting-more-sounds)).
 - **Leviathan's own amp** with three channels: Clean, Rust and Hot.

@@ -37,6 +37,7 @@ Model::Model() {
         for (const auto& kv : obj->getProperties())
             presetMeta[kv.name.toString()] = { (juce::int64) kv.value.getProperty("created", 0), (juce::int64) kv.value.getProperty("modified", 0), (juce::int64) kv.value.getProperty("played", 0) };
     presetSort = juce::jlimit(0, 3, p.getIntValue("presetSort", 0));
+    presetSortReversed = p.getBoolValue("presetSortReversed", false);
     tuningIndex = p.getIntValue("tuning", 1); a4 = p.getDoubleValue("a4", 440);
     bpm = p.getDoubleValue("bpm", 120); beatsPerBar = p.getIntValue("beatsPerBar", 4); metroVol = p.getDoubleValue("metroVol", -12);
     if (p.containsKey("accent")) accentPick = juce::Colour::fromString(p.getValue("accent"));
@@ -160,6 +161,7 @@ void Model::saveState() {
         }
         p.setValue("presetMeta", juce::JSON::toString(juce::var(o), juce::JSON::FormatOptions{}.withSpacing(juce::JSON::Spacing::none)));
         p.setValue("presetSort", presetSort);
+        p.setValue("presetSortReversed", presetSortReversed);
     }
     if (auto xml = devices.createStateXml()) p.setValue("audioState", xml->toString());
     p.saveIfNeeded();
@@ -424,9 +426,9 @@ void Model::deletePreset(const juce::String& n) { userPresets.erase(n); presetMe
 
 void Model::setPresetSort(int s) { presetSort = juce::jlimit(0, 3, s); saveState(); changed(); }
 
-juce::StringArray Model::sortedPresets(int sort) const {
+juce::StringArray Model::sortedPresets(int sort, bool reversed) const {
     const auto list = presetOrder();
-    if (sort <= 0) return list;
+    if (sort <= 0) { if (!reversed) return list; juce::StringArray r; for (int i = list.size(); --i >= 0;) r.add(list[i]); return r; }
     auto date = [&](const juce::String& n) -> juce::int64 {
         auto it = presetMeta.find(n);
         if (it == presetMeta.end()) return 0;
@@ -434,7 +436,7 @@ juce::StringArray Model::sortedPresets(int sort) const {
     };
     std::vector<juce::String> dated, rest;
     for (auto& n : list) (date(n) > 0 ? dated : rest).push_back(n);
-    std::stable_sort(dated.begin(), dated.end(), [&](const juce::String& a, const juce::String& b) { return date(a) > date(b); });
+    std::stable_sort(dated.begin(), dated.end(), [&](const juce::String& a, const juce::String& b) { return reversed ? date(a) < date(b) : date(a) > date(b); });
     juce::StringArray out;
     for (auto& n : dated) out.add(n);
     for (auto& n : rest) out.add(n);   // never played/saved: after the dated ones, in list order

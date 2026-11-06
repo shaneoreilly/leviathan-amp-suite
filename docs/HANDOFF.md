@@ -13,6 +13,7 @@ The state of the project as of **6 November 2026 (v0.4.5)**, for whoever picks i
 - **Owner's setup:**
   - Interface and outputs: an iRig HD into a Mac (Apple silicon), listening through an HDMI monitor (H27P22) or headphones.
   - Daily copy: the 0.4.x release in `/Applications`. A development build also lives in `mac/Leviathan.app`.
+  - Bundled NAM captures: 34 (23 added after 0.4.5, mostly metal), all from pelennor2170/NAM_models at the pinned commit and credited in `shared/nam/captures/CREDITS.md`.
   - Data: real recordings back to 2018 in `~/Music/Leviathan/Sessions`, and a 194-IR Tone3000 "METAL BAND TONES" pack in `IRs/Library/`.
 
 ## Not yet verified
