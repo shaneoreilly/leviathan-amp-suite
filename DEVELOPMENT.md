@@ -1,6 +1,6 @@
 # Developing Leviathan
 
-Everything about building, testing and releasing Leviathan. For using the app, see the [README](README.md).
+Everything about building, testing and releasing Leviathan. For using the app, see the [README](README.md). For the project's current state, open issues and the reasoning behind decisions, see [docs/HANDOFF.md](docs/HANDOFF.md). Agent guidance is in [CLAUDE.md](CLAUDE.md).
 
 Leviathan is two native apps with the same features, presets and file formats:
 
