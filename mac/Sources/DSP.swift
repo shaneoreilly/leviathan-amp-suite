@@ -99,6 +99,9 @@ final class Params: @unchecked Sendable {
     // backing track: stereo, mixed after the master
     var bkL: UnsafeMutablePointer<Float>?, bkR: UnsafeMutablePointer<Float>?, bkLen = 0, bkPos = 0
     var bkPlaying = false, bkLoop = true, bkVol: Float = -6
+    /// A jump requested by the UI (-1 = none); the audio thread applies it at the start of a block, so it can't be
+    /// overwritten by the block's own position update.
+    var bkSeek = -1
 
     init() {
         eq.initialize(repeating: 0, count: 8)
@@ -720,6 +723,7 @@ final class DSP {
         // backing track + metronome ride on top of the rig, after the recorder tap
         let bkOn = p.bkPlaying, bl = p.bkL, br = p.bkR, bLen = p.bkLen, bg = dbLin(p.bkVol)
         var bPos = p.bkPos
+        if bkOn, p.bkSeek >= 0 { bPos = min(p.bkSeek, max(bLen - 1, 0)); p.bkSeek = -1 }
         let metro = p.metroOn, mg = dbLin(p.metroVol)
         if metro && !mWas { mCount = 0; mBeat = -1 }
         mWas = metro

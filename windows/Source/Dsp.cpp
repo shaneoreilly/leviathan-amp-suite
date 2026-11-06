@@ -554,6 +554,7 @@ void DSP::process(const float* input, float* outL, float* outR, int frames) {
     const float* bl = p.bkL.load(); const float* br = p.bkR.load();
     const int bLen = p.bkLen.load(); const float bg = dbLin(p.bkVol);
     int bPos = p.bkPos.load();
+    if (bkOn) { const int sk = p.bkSeek.exchange(-1); if (sk >= 0) bPos = std::min(sk, std::max(bLen - 1, 0)); }
     const bool metro = p.metroOn.load(); const float mg = dbLin(p.metroVol);
     if (metro && !mWas) { mCount = 0; mBeat = -1; }
     mWas = metro;

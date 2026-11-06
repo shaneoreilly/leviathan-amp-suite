@@ -123,7 +123,8 @@ struct TopBar: View {
             }
             .fixedSize()
             Button(m.running ? "⏻ On" : "⏻ Start") { m.toggle() }
-                .buttonStyle(.borderedProminent).tint(m.running ? .green : ch).keyboardShortcut(.space, modifiers: [])
+                .buttonStyle(.borderedProminent).tint(m.running ? .green : ch)
+                .keyboardShortcut(m.screen == .recordings ? nil : KeyboardShortcut(.space, modifiers: []))
                 .explain("top:power", "Audio on/off")
             LevelMeters(mt: m.meters).explain("top:meters", "Levels")
             if let i = m.info { LatencyLabel(info: i, mt: m.meters).explain("top:latency", "Latency") }
@@ -334,6 +335,7 @@ struct RecordingsView: View {
                 Button { step(-1) } label: { Image(systemName: "backward.end.fill") }.help("Previous recording")
                 Button { rec.togglePlay() } label: { Image(systemName: rec.playing ? "pause.fill" : "play.fill").frame(width: 30) }
                     .keyboardShortcut(.return, modifiers: [])
+                Button("") { rec.togglePlay() }.keyboardShortcut(.space, modifiers: []).frame(width: 0, height: 0).opacity(0)   // Space plays/pauses here
                 Button { step(1) } label: { Image(systemName: "forward.end.fill") }.help("Next recording")
                 Spacer()
             }
@@ -570,7 +572,11 @@ struct SettingsView: View {
                 if ui.section == "Audio" {
                 group("Audio") {
                     row("Input") {
-                        Picker("", selection: $m.inputUID) { ForEach(m.inputs) { Text($0.name).tag($0.uid) } }.labelsHidden().frame(width: 320 * Z)
+                        Picker("", selection: $m.inputUID) {
+                            Text("No input (playback only)").tag(Model.noInput)
+                            ForEach(m.inputs) { Text($0.name).tag($0.uid) }
+                            if m.input == nil && m.inputUID != Model.noInput { Text("Not connected").tag(m.inputUID) }
+                        }.labelsHidden().frame(width: 320 * Z)
                         if (m.input?.ins ?? 1) > 1 {
                             Picker("", selection: $m.s.inputChannel) {
                                 ForEach(0..<min(m.input?.ins ?? 1, 8), id: \.self) { Text("Channel \($0 + 1)").tag($0) }

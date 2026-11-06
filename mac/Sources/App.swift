@@ -622,6 +622,8 @@ final class Model: ObservableObject {
     func playAs(_ semis: Int) {
         s.pitchSemis = Double(semis); s.pitchCents = 0; s.pitchOn = semis != 0
     }
+    /// inputUID "none": no input (play recordings, metronome) - the rig gets silence.
+    static let noInput = "none"
     var input: AudioDevice? { inputs.first { $0.uid == inputUID } }
     var output: AudioDevice? { outputs.first { $0.uid == outputUID } }
 
@@ -631,7 +633,9 @@ final class Model: ObservableObject {
         outputs = all.filter { $0.outs > 0 }
         // Prefer an external interface for input. For output, the interface itself when it has one (one clock, no
         // bridging), otherwise the fastest output that isn't wireless, virtual or routed through an EQ app.
-        if input == nil, let d = inputs.first(where: { !$0.isBuiltIn && !$0.isVirtual }) ?? inputs.first { inputUID = d.uid }
+        // Never fall back to the built-in mic: through a high-gain amp it's just static and feedback. With no
+        // interface, run without input (a saved interface that's unplugged stays chosen for when it's back).
+        if inputUID.isEmpty { inputUID = inputs.first(where: { !$0.isBuiltIn && !$0.isVirtual })?.uid ?? Model.noInput }
         if output == nil {
             let good = outputs.filter(\.goodOutput).sorted { $0.outLatencyMs < $1.outLatencyMs }
             if let i = input, i.outs > 0, !i.isVirtual, let d = outputs.first(where: { $0.uid == i.uid }) { outputUID = d.uid }
@@ -643,19 +647,21 @@ final class Model: ObservableObject {
 
     func start() {
         if ProcessInfo.processInfo.environment["LEVIATHAN_NO_AUDIO"] != nil { return }   // UI testing: never open audio devices
-        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        switch input == nil ? .authorized : AVCaptureDevice.authorizationStatus(for: .audio) {   // no input: no mic needed
         case .authorized: break
         case .notDetermined:
             AVCaptureDevice.requestAccess(for: .audio) { ok in DispatchQueue.main.async { ok ? self.start() : self.denied() } }
             return
         default: denied(); return
         }
-        guard let i = input, let o = output else { status = "Pick an input and output device."; return }
+        guard let o = output else { status = "Pick an output device in Settings → Audio."; return }
+        let i = input
         do {
             info = try engine.start(input: i, output: o, buffer: bufferSize)
             running = true
             adviseOverloads = true; recentOverloads = []; startedAt = Date()
-            status = latencyAdvice(i, o)
+            status = i.map { latencyAdvice($0, o) }
+                ?? (inputUID == Model.noInput ? "" : "Your input isn\u{2019}t connected, so Leviathan is running without one. Plug it in, or pick another in the Input panel.")
             updateIR(); updateNam()
         } catch {
             engine.stop(); running = false; info = nil
@@ -690,12 +696,14 @@ final class Model: ObservableObject {
     private func overloaded() {
         meters.dropouts = engine.overloads
         let now = Date()
-        if now.timeIntervalSince(lastOverloadInfo) > 1, let i = input, let o = output, let prev = info {
+        if now.timeIntervalSince(lastOverloadInfo) > 1, let o = output, let prev = info {
+            let i = input
             lastOverloadInfo = now
             info = engine.currentInfo(input: i, output: o, previous: prev)   // cycle usage went up
         }
         // ignore the first seconds after a start: the engine backs off its timing margin on its own then
-        guard now.timeIntervalSince(startedAt) > 3, let i = input, let o = output else { return }
+        guard now.timeIntervalSince(startedAt) > 3, let o = output else { return }
+        let i = input ?? o
         recentOverloads = recentOverloads.filter { now.timeIntervalSince($0) < 10 } + [now]
         guard recentOverloads.count >= 4 else { return }
         recentOverloads = []
@@ -1458,7 +1466,11 @@ struct ContentView: View {
     var inputUnit: some View {
         UnitBox(title: "INPUT") {
             VStack(spacing: 8) {
-                Picker("", selection: $m.inputUID) { ForEach(m.inputs) { Text($0.name).tag($0.uid) } }
+                Picker("", selection: $m.inputUID) {
+                    Text("No input (playback only)").tag(Model.noInput)
+                    ForEach(m.inputs) { Text($0.name).tag($0.uid) }
+                    if m.input == nil && m.inputUID != Model.noInput { Text("Not connected").tag(m.inputUID) }
+                }
                     .labelsHidden().frame(width: 190 * W)
                     .onHover { inside in
                         if inside { HoverHelp.shared.show(id: "inputDevice", title: "Input · Interface", text: EXPLAIN["inputDevice"]) } else { HoverHelp.shared.clear(id: "inputDevice") }

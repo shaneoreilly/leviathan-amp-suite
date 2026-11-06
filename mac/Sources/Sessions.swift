@@ -16,6 +16,20 @@ struct SessionMeta: Codable {
     var source: String? = nil      // "import" for takes brought in from elsewhere
 }
 
+extension SessionMeta {
+    /// Reads session.json. The stored rig settings are filled from defaults where an older version didn't have a key,
+    /// so adding a setting never hides older recordings (as happened in 0.4.3 when irFile was added).
+    static func decode(_ data: Data) -> SessionMeta? {
+        if let m = try? JSONDecoder.iso.decode(SessionMeta.self, from: data) { return m }
+        guard var obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        let settings = obj.removeValue(forKey: "settings")
+        guard let rest = try? JSONSerialization.data(withJSONObject: obj),
+              var m = try? JSONDecoder.iso.decode(SessionMeta.self, from: rest) else { return nil }
+        if let settings, let d = try? JSONSerialization.data(withJSONObject: settings) { m.settings = Settings.lenient(d) }
+        return m
+    }
+}
+
 struct Session: Identifiable, Hashable {
     let id: URL                      // the folder
     var meta: SessionMeta
@@ -72,7 +86,7 @@ final class Sessions: ObservableObject {
         for d in dirs where d != recDir { Sessions.recover(d) }
         list = dirs.compactMap { d in
             guard let data = try? Data(contentsOf: d.appendingPathComponent("session.json")),
-                  let meta = try? JSONDecoder.iso.decode(SessionMeta.self, from: data) else { return nil }
+                  let meta = SessionMeta.decode(data) else { return nil }
             return Session(id: d, meta: meta)
         }.sorted { $0.meta.date > $1.meta.date }
         if let s = selected, !list.contains(where: { $0.id == s }) { selected = nil }
@@ -245,7 +259,7 @@ final class Sessions: ObservableObject {
 
     func seek(_ t: Double) {
         // still playing in the engine: just move the playhead; otherwise (stopped, or it ran off the end) start again from t
-        if playing && m.params.bkPlaying { m.params.bkPos = max(0, min(Int(t * playRate), playLen - 1)); playPos = t } else { play(from: t) }
+        if playing && m.params.bkPlaying { m.params.bkSeek = max(0, min(Int(t * playRate), playLen - 1)); playPos = t } else { play(from: t) }
     }
 
     func stopPlayback() {

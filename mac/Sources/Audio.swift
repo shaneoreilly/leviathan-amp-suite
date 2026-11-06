@@ -172,16 +172,20 @@ final class HALEngine {
         silence.initialize(repeating: 0, count: DSP.maxN)
     }
 
-    func start(input: AudioDevice, output: AudioDevice, buffer: Int) throws -> Info {
+    /// `input` nil: output only (playing recordings without an interface); the rig then gets silence.
+    func start(input: AudioDevice?, output: AudioDevice, buffer: Int) throws -> Info {
         stop()
 
         // Both sides must run at the same rate or CoreAudio has to resample (extra latency). Prefer 48k.
-        let rate = [48000.0, 44100.0].first { supports(input.id, $0) && supports(output.id, $0) } ?? nominalRate(input.id)
-        setRate(input.id, rate)
+        let rate = [48000.0, 44100.0].first { r in (input.map { supports($0.id, r) } ?? true) && supports(output.id, r) }
+            ?? nominalRate(input?.id ?? output.id)
+        if let input { setRate(input.id, rate) }
         setRate(output.id, rate)
 
         let device: AudioDeviceID
-        if input.id == output.id {
+        if input == nil {
+            device = output.id
+        } else if let input, input.id == output.id {
             device = input.id
         } else {
             let desc: [String: Any] = [
@@ -192,13 +196,13 @@ final class HALEngine {
                 "subdevices": [                                     // kAudioAggregateDeviceSubDeviceListKey
                     // the input is resampled to follow the output's clock; the low-quality resampler has the
                     // shortest filter (least added delay) and is still clean for a guitar signal
-                    ["uid": input.uid, "drift": 1, "drift quality": 0x20],   // kAudioAggregateDriftCompensationLowQuality
+                    ["uid": input!.uid, "drift": 1, "drift quality": 0x20],   // kAudioAggregateDriftCompensationLowQuality
                     ["uid": output.uid, "drift": 0],
                 ],
             ]
             var id = AudioDeviceID(0)
             let st = AudioHardwareCreateAggregateDevice(desc as CFDictionary, &id)
-            guard st == noErr, id != 0 else { throw EngineError(msg: "Could not combine \(input.name) and \(output.name) (error \(st)).") }
+            guard st == noErr, id != 0 else { throw EngineError(msg: "Could not combine \(input!.name) and \(output.name) (error \(st)).") }
             aggregate = id; device = id
             Thread.sleep(forTimeInterval: 0.15)   // let the HAL publish the new device
         }
@@ -207,7 +211,7 @@ final class HALEngine {
         if range.mMinimum <= 0 { range.mMinimum = 16 }
         let frames = UInt32(min(max(Double(buffer), range.mMinimum), min(range.mMaximum, Double(DSP.maxN))))
         setValue(device, kAudioDevicePropertyBufferFrameSize, frames)
-        if aggregate != 0 {
+        if aggregate != 0, let input {
             setValue(input.id, kAudioDevicePropertyBufferFrameSize, frames)
             setValue(output.id, kAudioDevicePropertyBufferFrameSize, frames)
         }
@@ -228,16 +232,16 @@ final class HALEngine {
         guard let u = au else { throw EngineError(msg: "audio unit nil") }
         unit = u
 
-        var one: UInt32 = 1
-        try check(AudioUnitSetProperty(u, kAudioOutputUnitProperty_EnableIO, kAudioUnitScope_Input, 1, &one, 4), "enable input")
+        var one: UInt32 = 1, inOn: UInt32 = input == nil ? 0 : 1
+        try check(AudioUnitSetProperty(u, kAudioOutputUnitProperty_EnableIO, kAudioUnitScope_Input, 1, &inOn, 4), "enable input")
         try check(AudioUnitSetProperty(u, kAudioOutputUnitProperty_EnableIO, kAudioUnitScope_Output, 0, &one, 4), "enable output")
         var dev = device
         try check(AudioUnitSetProperty(u, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0, &dev, 4), "select device")
 
-        inCount = max(1, min(input.ins, 8))
-        var inFmt = floatFormat(sr, inCount), outFmt = floatFormat(sr, 2)
+        inCount = input.map { max(1, min($0.ins, 8)) } ?? 0
+        var inFmt = floatFormat(sr, max(inCount, 1)), outFmt = floatFormat(sr, 2)
         let fsz = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
-        try check(AudioUnitSetProperty(u, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, 1, &inFmt, fsz), "input format")
+        if inCount > 0 { try check(AudioUnitSetProperty(u, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, 1, &inFmt, fsz), "input format") }
         try check(AudioUnitSetProperty(u, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, 0, &outFmt, fsz), "output format")
         var maxFrames = UInt32(DSP.maxN)
         AudioUnitSetProperty(u, kAudioUnitProperty_MaximumFramesPerSlice, kAudioUnitScope_Global, 0, &maxFrames, 4)
@@ -245,7 +249,7 @@ final class HALEngine {
         inBufs = (0..<inCount).map { _ in
             let p = UnsafeMutablePointer<Float>.allocate(capacity: DSP.maxN); p.initialize(repeating: 0, count: DSP.maxN); return p
         }
-        let list = AudioBufferList.allocate(maximumBuffers: inCount)
+        let list = AudioBufferList.allocate(maximumBuffers: max(inCount, 1))
         for i in 0..<inCount { list[i] = AudioBuffer(mNumberChannels: 1, mDataByteSize: UInt32(DSP.maxN * 4), mData: inBufs[i]) }
         inList = list
 
@@ -267,7 +271,7 @@ final class HALEngine {
             self.onOverload?()
         }
         // if anything changes the rate under us the HAL unit would quietly insert a resampler (more delay): rebuild
-        for id in Set([device, input.id, output.id]) {
+        for id in Set([device, input?.id ?? device, output.id]) {
             listen(id, kAudioDevicePropertyNominalSampleRate) { [weak self] in
                 guard let self, self.unit != nil, abs(nominalRate(id) - sr) > 0.5 else { return }
                 self.onRestartNeeded?()
@@ -276,16 +280,16 @@ final class HALEngine {
         return info(input: input, output: output, sr: sr, frames: actualFrames)
     }
 
-    private func info(input: AudioDevice, output: AudioDevice, sr: Double, frames: Int) -> Info {
+    private func info(input: AudioDevice?, output: AudioDevice, sr: Double, frames: Int) -> Info {
         let ms = 1000 / sr
         // input: the device + the whole input buffer; output: the device + the part of the cycle we leave unused
         return Info(sampleRate: sr, buffer: frames, inChannels: inCount,
-                    inMs: Double(deviceLatency(input.id, kAudioDevicePropertyScopeInput)) * ms,
+                    inMs: input.map { Double(deviceLatency($0.id, kAudioDevicePropertyScopeInput)) * ms } ?? 0,
                     bufferMs: Double(frames) * (1 + Double(cycleUsage)) * ms,
                     outMs: Double(deviceLatency(output.id, kAudioDevicePropertyScopeOutput)) * ms)
     }
 
-    func currentInfo(input: AudioDevice, output: AudioDevice, previous: Info) -> Info {
+    func currentInfo(input: AudioDevice?, output: AudioDevice, previous: Info) -> Info {
         info(input: input, output: output, sr: previous.sampleRate, frames: previous.buffer)
     }
 
@@ -326,10 +330,15 @@ final class HALEngine {
             if load > loadPeak { loadPeak = load }
         }
         let n = Int(frames)
-        for i in 0..<inCount { list[i].mDataByteSize = frames * 4 }
-        let st = AudioUnitRender(u, flags, ts, 1, frames, list.unsafeMutablePointer)
-        let ch = min(max(params.inputChannel, 0), inCount - 1)
-        let input: UnsafePointer<Float> = st == noErr ? UnsafePointer(inBufs[ch]) : UnsafePointer(silence)
+        let input: UnsafePointer<Float>
+        if inCount > 0 {
+            for i in 0..<inCount { list[i].mDataByteSize = frames * 4 }
+            let st = AudioUnitRender(u, flags, ts, 1, frames, list.unsafeMutablePointer)
+            let ch = min(max(params.inputChannel, 0), inCount - 1)
+            input = st == noErr ? UnsafePointer(inBufs[ch]) : UnsafePointer(silence)
+        } else {
+            input = UnsafePointer(silence)   // output only
+        }
 
         let out = UnsafeMutableAudioBufferListPointer(io)
         guard let l = out[0].mData?.assumingMemoryBound(to: Float.self) else { return noErr }

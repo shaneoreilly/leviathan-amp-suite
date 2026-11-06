@@ -240,7 +240,7 @@ void Sessions::play(double from) {
 
 void Sessions::seek(double t) {
     // still playing in the engine: just move the playhead; otherwise (stopped, or it ran off the end) start again from t
-    if (playing && m.params.bkPlaying.load()) { m.params.bkPos.store(juce::jlimit(0, std::max(playLen - 1, 0), (int) (t * playRate))); playPos = t; }
+    if (playing && m.params.bkPlaying.load()) { m.params.bkSeek.store(juce::jlimit(0, std::max(playLen - 1, 0), (int) (t * playRate))); playPos = t; }
     else play(t);
 }
 

@@ -455,9 +455,12 @@ std::unique_ptr<juce::Component> RigView::inputPickers() {
     auto& m = model;
     auto c = col(6);
     const auto names = m.inputDeviceNames();
-    auto dev = std::make_unique<Picker>((int) (190 * theme::W), [&m, names] { return names.indexOf(m.inputDeviceName()) + 1; },
-                                        [&m, names](int i) { if (juce::isPositiveAndBelow(i - 1, names.size())) m.setInputDevice(names[i - 1]); });
-    for (int i = 0; i < names.size(); ++i) dev->addItem(names[i], i + 1);
+    // id 1 = no input (play recordings without an interface); devices from 2
+    auto dev = std::make_unique<Picker>((int) (190 * theme::W),
+        [&m, names] { const auto n = m.inputDeviceName(); return n.isEmpty() ? 1 : names.indexOf(n) + 2; },
+        [&m, names](int i) { if (i == 1) m.setInputDevice({}); else if (juce::isPositiveAndBelow(i - 2, names.size())) m.setInputDevice(names[i - 2]); });
+    dev->addItem("No input (playback only)", 1);
+    for (int i = 0; i < names.size(); ++i) dev->addItem(names[i], i + 2);
     dev->setTextWhenNothingSelected(names.isEmpty() ? "No input device" : "Choose an interface");
     dev->setTooltip(Model::explain("inputDevice"));
     c->add(std::move(dev));

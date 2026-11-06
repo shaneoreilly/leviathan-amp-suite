@@ -107,6 +107,7 @@ struct Params {
 
     // backing track: stereo, mixed after the master
     std::atomic<const float*> bkL { nullptr }, bkR { nullptr }; std::atomic<int> bkLen { 0 }, bkPos { 0 };
+    std::atomic<int> bkSeek { -1 };   // jump requested by the UI, applied by the audio thread at the start of a block
     std::atomic<bool> bkPlaying { false }, bkLoop { true }; float bkVol = -6;
 
     // written by audio thread, read by UI
