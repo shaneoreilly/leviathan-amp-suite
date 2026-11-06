@@ -69,6 +69,14 @@ There is no unit-test suite. Verification means the parity script, `preset_check
    - On `ubuntu-latest`: publishes both to a release titled `Leviathan - vX.Y.Z`.
 4. Replace the generated notes with written ones: `gh release edit vX.Y.Z --notes-file notes.md`. Write them for players, in the style of earlier releases.
 5. If a build fails after tagging, fix it on `main` and rerun with `gh workflow run release.yml --ref main -f version=X.Y.Z`. Don't delete or move tags.
+6. If the `dmg` job is cancelled with "not acquired by Runner… capacity constraints", GitHub's macOS arm64 runners are busy, as happened with 0.4.6. Two options:
+   - Rerun later with `gh run rerun <id> --failed`.
+   - Build it locally and publish by hand:
+     1. Check HEAD is the tag.
+     2. Run `mac/scripts/make_dmg.sh X.Y.Z`. It signs with the same stable certificate on the owner's Mac.
+     3. Verify the build: `lipo -archs` should show both architectures, `codesign -d -r-` should show leaf `ac2ec283…`, and the bundle should hold 34 `.nam` files.
+     4. Download the run's `windows-installer` artifact with `gh run download <id>`.
+     5. Run `gh release create vX.Y.Z <dmg> <dmg.sha256> <exe> <exe.sha256> --title "Leviathan - vX.Y.Z" --notes-file … --verify-tag`.
 
 **Signing (Mac):** releases must keep the same certificate ("Leviathan Local Signing", leaf `ac2ec283…`). macOS ties the microphone permission to it, so changing the certificate makes every user re-grant access. The Windows builds are unsigned.
 
