@@ -633,8 +633,8 @@ void DSP::process(const float* input, float* outL, float* outR, int frames) {
 // MARK: - Pitch shifter
 
 PitchShifter::PitchShifter(double sr) {
-    L = (int) (sr * 0.005); fadeLen = (int) (sr * 0.006); jMin = (int) (sr * 0.0025); jMinChord = (int) (sr * 0.004);
-    jMax = (int) (sr * 0.018); margin = (int) (sr * 0.0008); estEvery = (int) (sr * 0.006);
+    L = (int) (sr * 0.010); back = L / 2; ahead = L - back; fadeLen = (int) (sr * 0.006); jMin = (int) (sr * 0.0025); jMinChord = (int) (sr * 0.004);
+    jMax = (int) (sr * 0.030); margin = (int) (sr * 0.0008); estEvery = (int) (sr * 0.006);
     period = (int) (sr * 0.008);
     fade = fadeLen;
     buf.assign(size * 2, 0.0f);
@@ -643,7 +643,7 @@ PitchShifter::PitchShifter(double sr) {
 
 void PitchShifter::setRatio(double r) {
     if (r == ratio) return;
-    if (ratio == 1) { read = (double) w - (double) (L + period + margin + 8); fade = fadeLen; avgDelay = (double) (L + period); }
+    if (ratio == 1) { read = (double) w - (double) (ahead + period + margin + 8); fade = fadeLen; avgDelay = (double) (ahead + period); }
     ratio = std::abs(r - 1) < 1e-6 ? 1 : r;
 }
 
@@ -659,22 +659,22 @@ float PitchShifter::process(float x) {
     if (ratio == 1) return x;
     if (++estCount >= estEvery) {
         estCount = 0;
-        period = bestJump(w - L, true, jMax);
+        period = bestJump(w - ahead, true, jMax);
         periodScore = lastScore;
     }
     double d = (double) w - read;
     if (d < 4 || d > (double) (size - 2 * jMax)) {
-        read = (double) w - (double) (L + period + margin + 8); fade = fadeLen; d = (double) w - read;
+        read = (double) w - (double) (ahead + period + margin + 8); fade = fadeLen; d = (double) w - read;
     }
     if (fade >= fadeLen) {
         const bool periodic = periodScore > 0.96f;
         if (ratio > 1) {
-            if (d <= (double) (std::max(L, (int) ((double) fadeLen * (ratio - 1))) + 8)) {
+            if (d <= (double) (std::max(ahead, (int) ((double) fadeLen * (ratio - 1))) + 8)) {
                 const int j = bestJump((int) read, true, jMax, (int) ((double) fadeLen * (ratio - 1)) + 2, periodic);
                 oldRead = read; read -= (double) j; fade = 0;
             }
-        } else if (d >= (double) ((periodic ? std::min(period + margin, jMax) : jMax) + L + 8)) {
-            const int j = bestJump((int) read, false, std::min(jMax, (int) d - L - 8), 0, periodic);
+        } else if (d >= (double) ((periodic ? std::min(period + margin, jMax) : jMax) + ahead + 8)) {
+            const int j = bestJump((int) read, false, std::min(jMax, (int) d - ahead - 8), 0, periodic);
             oldRead = read; read += (double) j; fade = 0;
         }
     }
@@ -693,7 +693,8 @@ float PitchShifter::process(float x) {
 int PitchShifter::bestJump(int base, bool up, int maxJ, int minJ, bool preferShort) {
     const int lo = std::min(std::max(preferShort ? jMin : jMinChord, minJ), jMax);
     if (maxJ < lo) return std::max(maxJ, 1);
-    const float* ref = buf.data() + (base & mask);
+    // the L-sample match window is centred on the splice point: back samples before it, ahead after
+    const float* ref = buf.data() + ((base - back) & mask);
     float re = 0;
     for (int k = 0; k < L; ++k) re += ref[k] * ref[k];
     if (re < 1e-10f) { lastScore = 0; return std::min(std::max(period, lo), maxJ); }
@@ -701,7 +702,7 @@ int PitchShifter::bestJump(int base, bool up, int maxJ, int minJ, bool preferSho
     const int count = maxJ - lo + 1;
     for (int k = 0; k < count; ++k) {
         const int j = lo + k;
-        const float* cand = buf.data() + ((up ? base - j : base + j) & mask);
+        const float* cand = buf.data() + (((up ? base - j : base + j) - back) & mask);
         float dot = 0, e = 0;
         for (int t = 0; t < L; ++t) { dot += ref[t] * cand[t]; e += cand[t] * cand[t]; }
         const float s = dot / std::sqrt(e * re + 1e-12f);

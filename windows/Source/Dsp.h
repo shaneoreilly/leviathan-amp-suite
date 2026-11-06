@@ -158,12 +158,12 @@ public:
     float process(float x);
     double ratio = 1.0, avgDelay = 0.0;
 private:
-    static constexpr int size = 16384, mask = 16383;
+    static constexpr int size = 32768, mask = 32767;   // room for the 30 ms search at 192 kHz
     std::vector<float> buf, scratch;
     int w = 0;
     double read = 0, oldRead = 0;
     int fade;
-    int fadeLen, L, jMin, jMinChord, jMax, margin, period, estCount = 0, estEvery;
+    int fadeLen, L, back, ahead, jMin, jMinChord, jMax, margin, period, estCount = 0, estEvery;
     float periodScore = 0, lastScore = 0;
     inline float at(int i) const { return buf[(size_t) (i & mask)]; }
     float interp(double pos) const;

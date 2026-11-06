@@ -842,26 +842,29 @@ final class Allpass {
 // Delay-line shifter with a single moving read tap. When the tap drifts too close to (shifting up) or too far
 // from (shifting down) the write head it jumps by one or more "periods", choosing the jump that best matches the
 // waveform it's leaving (WSOLA-style), then crossfades. Matching splices keep chords from warbling, and the
-// tap tracks the input's period, so it sits only about one period (plus a 4 ms match window) behind: ~6-12 ms.
+// tap tracks the input's period, so it sits only about one period (plus half the 10 ms match window, which is centred
+// on the splice point) behind: ~15-25 ms.
+// The match window and the 30 ms search must both exceed a low power chord's common period (root and fifth realign
+// every two root cycles: 24 ms on E2, 26 ms on Eb2); shorter ones spliced at false matches and smeared those chords.
 
 final class PitchShifter {
-    private let size = 16384, mask = 16383
+    private let size = 32768, mask = 32767   // room for the 30 ms search at 192 kHz
     private let buf: UnsafeMutablePointer<Float>          // mirrored so any L-sample window is contiguous
     private var w = 0
     private var read = 0.0, oldRead = 0.0
     private var fade: Int
-    private let fadeLen: Int, L: Int, jMin: Int, jMinChord: Int, jMax: Int, margin: Int
+    private let fadeLen: Int, L: Int, back: Int, ahead: Int, jMin: Int, jMinChord: Int, jMax: Int, margin: Int
     private(set) var ratio = 1.0
     private(set) var avgDelay = 0.0
     // running estimate of the input's period: when the signal is clearly periodic (single notes, riffs) a
     // down-shift jumps as soon as one period has built up instead of always waiting for the longest possible
-    // period (18-23 ms behind the dry signal). Chords have no short common period, so they keep the long search.
+    // period (about 40 ms behind the dry signal). Chords have no short common period, so they keep the long search.
     private var period: Int, periodScore: Float = 0, lastScore: Float = 0, estCount = 0
     private let estEvery: Int
     private let scratch: UnsafeMutablePointer<Float>
 
     init(sr: Double) {
-        L = Int(sr * 0.005); fadeLen = Int(sr * 0.006); jMin = Int(sr * 0.0025); jMinChord = Int(sr * 0.004); jMax = Int(sr * 0.018)
+        L = Int(sr * 0.010); back = L / 2; ahead = L - back; fadeLen = Int(sr * 0.006); jMin = Int(sr * 0.0025); jMinChord = Int(sr * 0.004); jMax = Int(sr * 0.030)
         margin = Int(sr * 0.0008); estEvery = Int(sr * 0.006)
         period = Int(sr * 0.008)
         fade = fadeLen
@@ -871,7 +874,7 @@ final class PitchShifter {
 
     func setRatio(_ r: Double) {
         guard r != ratio else { return }
-        if ratio == 1 { read = Double(w) - Double(L + period + margin + 8); fade = fadeLen; avgDelay = Double(L + period) }
+        if ratio == 1 { read = Double(w) - Double(ahead + period + margin + 8); fade = fadeLen; avgDelay = Double(ahead + period) }
         ratio = abs(r - 1) < 1e-6 ? 1 : r
     }
 
@@ -894,22 +897,22 @@ final class PitchShifter {
         estCount += 1
         if estCount >= estEvery {
             estCount = 0
-            period = bestJump(w - L, up: true, maxJ: jMax)
+            period = bestJump(w - ahead, up: true, maxJ: jMax)
             periodScore = lastScore
         }
         var d = Double(w) - read
         if d < 4 || d > Double(size - 2 * jMax) {
-            read = Double(w) - Double(L + period + margin + 8); fade = fadeLen; d = Double(w) - read
+            read = Double(w) - Double(ahead + period + margin + 8); fade = fadeLen; d = Double(w) - read
         }
         if fade >= fadeLen {
             let periodic = periodScore > 0.96
             if ratio > 1 {
-                if d <= Double(max(L, Int(Double(fadeLen) * (ratio - 1))) + 8) {
+                if d <= Double(max(ahead, Int(Double(fadeLen) * (ratio - 1))) + 8) {
                     let j = bestJump(Int(read), up: true, maxJ: jMax, minJ: Int(Double(fadeLen) * (ratio - 1)) + 2, preferShort: periodic)
                     oldRead = read; read -= Double(j); fade = 0
                 }
-            } else if d >= Double((periodic ? min(period + margin, jMax) : jMax) + L + 8) {
-                let j = bestJump(Int(read), up: false, maxJ: min(jMax, Int(d) - L - 8), preferShort: periodic)
+            } else if d >= Double((periodic ? min(period + margin, jMax) : jMax) + ahead + 8) {
+                let j = bestJump(Int(read), up: false, maxJ: min(jMax, Int(d) - ahead - 8), preferShort: periodic)
                 oldRead = read; read += Double(j); fade = 0
             }
         }
@@ -929,7 +932,8 @@ final class PitchShifter {
     private func bestJump(_ base: Int, up: Bool, maxJ: Int, minJ: Int = 0, preferShort: Bool = true) -> Int {
         let jMin = min(max(preferShort ? self.jMin : jMinChord, minJ), jMax)
         guard maxJ >= jMin else { return max(maxJ, 1) }
-        let ref = buf + (base & mask)
+        // the L-sample match window is centred on the splice point: back samples before it, ahead after
+        let ref = buf + ((base - back) & mask)
         var re: Float = 0
         vDSP_svesq(ref, 1, &re, vDSP_Length(L))
         if re < 1e-10 { lastScore = 0; return min(max(period, jMin), maxJ) }
@@ -939,7 +943,7 @@ final class PitchShifter {
         let scores = scratch
         for k in 0..<count {
             let j = jMin + k
-            let cand = buf + ((up ? base - j : base + j) & mask)
+            let cand = buf + (((up ? base - j : base + j) - back) & mask)
             var dot: Float = 0, e: Float = 0
             vDSP_dotpr(ref, 1, cand, 1, &dot, vDSP_Length(L))
             vDSP_svesq(cand, 1, &e, vDSP_Length(L))
