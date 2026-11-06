@@ -53,10 +53,11 @@ There is no unit-test suite. Verification means the parity script, `preset_check
    - NAM models and IR buffers are handed over by pointer swap or double buffering.
    - Old objects are freed later on the main thread.
    - Follow the existing patterns: `NamHost.swap`, `retire()` in Sessions, `setIR` slots.
-5. **Adding a setting:** add it to Swift `Settings` (with a default) and to `fillDefaults` in `Settings.cpp`. Old presets decode by merging over defaults (Mac) or filling defaults (Windows), so new keys are safe.
-6. **Adding a hover explanation:** add a key to `explanations.json`. The Mac bundles it via `build.sh`, Windows via `juce_add_binary_data`.
-7. **Commits** end with the `Co-Authored-By` / `Claude-Session` trailers your harness supplies. Push only when asked.
-8. **Releases are user-visible.** Both apps auto-update from the latest GitHub release, so only tag when the user asks.
+5. **Never decode stored settings strictly.** Presets, session.json, `.leviathan` files and the saved rig must go through `Settings.lenient` on the Mac or `Settings::fromJSON` on Windows. A strict `JSONDecoder().decode(Settings.self)` fails as soon as a new key exists. This hid recordings in 0.4.3–0.4.5 and dropped saved presets in 0.4.5, and the next save then overwrote them.
+6. **Adding a setting:** add it to Swift `Settings` (with a default) and to `fillDefaults` in `Settings.cpp`. Old presets decode by merging over defaults (Mac) or filling defaults (Windows), so new keys are safe.
+7. **Adding a hover explanation:** add a key to `explanations.json`. The Mac bundles it via `build.sh`, Windows via `juce_add_binary_data`.
+8. **Commits** end with the `Co-Authored-By` / `Claude-Session` trailers your harness supplies. Push only when asked.
+9. **Releases are user-visible.** Both apps auto-update from the latest GitHub release, so only tag when the user asks.
 
 ## Release (what actually happens)
 

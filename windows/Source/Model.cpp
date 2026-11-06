@@ -33,6 +33,10 @@ Model::Model() {
         for (const auto& kv : obj->getProperties()) userPresets[kv.name.toString()] = Settings::fromJSON(kv.value);
     presetName = p.getValue("preset", FACTORY[0].name);
     favorites = juce::StringArray::fromLines(p.getValue("favorites")); favorites.removeEmptyStrings();
+    if (auto v = juce::JSON::parse(p.getValue("presetMeta")); auto* obj = v.getDynamicObject())
+        for (const auto& kv : obj->getProperties())
+            presetMeta[kv.name.toString()] = { (juce::int64) kv.value.getProperty("created", 0), (juce::int64) kv.value.getProperty("modified", 0), (juce::int64) kv.value.getProperty("played", 0) };
+    presetSort = juce::jlimit(0, 3, p.getIntValue("presetSort", 0));
     tuningIndex = p.getIntValue("tuning", 1); a4 = p.getDoubleValue("a4", 440);
     bpm = p.getDoubleValue("bpm", 120); beatsPerBar = p.getIntValue("beatsPerBar", 4); metroVol = p.getDoubleValue("metroVol", -12);
     if (p.containsKey("accent")) accentPick = juce::Colour::fromString(p.getValue("accent"));
@@ -147,6 +151,16 @@ void Model::saveState() {
     p.setValue("explainOnHover", explainOnHover);
     p.setValue("collapsed", collapsed.joinIntoString("\n"));
     p.setValue("favorites", favorites.joinIntoString("\n"));
+    {
+        auto* o = new juce::DynamicObject();
+        for (const auto& [k, mt] : presetMeta) {
+            auto* e = new juce::DynamicObject();
+            e->setProperty("created", mt.created); e->setProperty("modified", mt.modified); e->setProperty("played", mt.played);
+            o->setProperty(k, juce::var(e));
+        }
+        p.setValue("presetMeta", juce::JSON::toString(juce::var(o), juce::JSON::FormatOptions{}.withSpacing(juce::JSON::Spacing::none)));
+        p.setValue("presetSort", presetSort);
+    }
     if (auto xml = devices.createStateXml()) p.setValue("audioState", xml->toString());
     p.saveIfNeeded();
 }
@@ -372,8 +386,10 @@ void Model::applyPreset(const Settings& p, const juce::String& name) {
     if (n.i("cabModel") == CAB_LIB && irLib.isEmpty()) n.set("cabModel", 0);
     if (n.i("cabModel") == CAB_IRLIB && !cabIRs.contains(n.s("irFile"))) n.set("cabModel", irLib.isEmpty() ? 0 : CAB_LIB);
     presetName = name;
+    presetMeta[name].played = juce::Time::currentTimeMillis();
     props().setValue("preset", name);
     setSettings(n);
+    saveState();
     changed();
 }
 
@@ -387,6 +403,7 @@ void Model::renamePreset(const juce::String& oldName, const juce::String& newNam
     auto it = userPresets.find(oldName);
     if (n.isEmpty() || n == oldName || it == userPresets.end() || isFactory(n)) return;
     userPresets[n] = it->second; userPresets.erase(oldName);
+    if (auto m = presetMeta.find(oldName); m != presetMeta.end()) { presetMeta[n] = m->second; presetMeta.erase(oldName); }
     if (favorites.contains(oldName)) { favorites.removeString(oldName); favorites.add(n); }
     if (presetName == oldName) presetName = n;
     persistPresets();
@@ -395,11 +412,34 @@ void Model::renamePreset(const juce::String& oldName, const juce::String& newNam
 void Model::savePreset(const juce::String& name) {
     const auto n = name.trim();
     if (n.isEmpty()) return;
+    const auto now = juce::Time::currentTimeMillis();
+    auto& mt = presetMeta[n];
+    if (!userPresets.count(n) && mt.created == 0 && !isFactory(n)) mt.created = now;
+    mt.modified = now; mt.played = now;
     userPresets[n] = settings; presetName = n;
     persistPresets();
 }
 
-void Model::deletePreset(const juce::String& n) { userPresets.erase(n); persistPresets(); }
+void Model::deletePreset(const juce::String& n) { userPresets.erase(n); presetMeta.erase(n); persistPresets(); }
+
+void Model::setPresetSort(int s) { presetSort = juce::jlimit(0, 3, s); saveState(); changed(); }
+
+juce::StringArray Model::sortedPresets(int sort) const {
+    const auto list = presetOrder();
+    if (sort <= 0) return list;
+    auto date = [&](const juce::String& n) -> juce::int64 {
+        auto it = presetMeta.find(n);
+        if (it == presetMeta.end()) return 0;
+        return sort == 1 ? it->second.played : sort == 2 ? it->second.modified : it->second.created;
+    };
+    std::vector<juce::String> dated, rest;
+    for (auto& n : list) (date(n) > 0 ? dated : rest).push_back(n);
+    std::stable_sort(dated.begin(), dated.end(), [&](const juce::String& a, const juce::String& b) { return date(a) > date(b); });
+    juce::StringArray out;
+    for (auto& n : dated) out.add(n);
+    for (auto& n : rest) out.add(n);   // never played/saved: after the dated ones, in list order
+    return out;
+}
 
 void Model::persistPresets() {
     auto* o = new juce::DynamicObject();

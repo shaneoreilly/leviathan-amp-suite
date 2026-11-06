@@ -487,6 +487,29 @@ final class Model: ObservableObject {
     @Published var tunerString: Int? = nil
 
     @Published var userPresets: [String: Settings] = [:]
+    private var unreadablePresets: [String: Any] = [:]
+    /// When each preset was created, last saved and last loaded (for sorting the Presets screen).
+    @Published var presetMeta: [String: PresetMeta] = (UserDefaults.standard.data(forKey: "presetMeta"))
+        .flatMap { try? JSONDecoder().decode([String: PresetMeta].self, from: $0) } ?? [:] {
+        didSet { UserDefaults.standard.set(try? JSONEncoder().encode(presetMeta), forKey: "presetMeta") }
+    }
+    @Published var presetSort = PresetSort(rawValue: UserDefaults.standard.string(forKey: "presetSort") ?? "") ?? .list {
+        didSet { UserDefaults.standard.set(presetSort.rawValue, forKey: "presetSort") }
+    }
+    /// All presets in the chosen order (the list order is factory first, then yours A-Z; it's what ‹ › and MIDI use).
+    func sortedPresets(_ sort: PresetSort) -> [String] {
+        let list = presetOrder
+        guard sort != .list else { return list }
+        func date(_ n: String) -> Date? {
+            let m = presetMeta[n]
+            switch sort { case .played: return m?.played; case .modified: return m?.modified; case .created: return m?.created; case .list: return nil }
+        }
+        let dated = list.filter { date($0) != nil }.sorted { date($0)! > date($1)! }
+        return dated + list.filter { date($0) == nil }
+    }
+    var recentlyPlayed: [String] {
+        presetOrder.filter { presetMeta[$0]?.played != nil }.sorted { presetMeta[$0]!.played! > presetMeta[$1]!.played! }
+    }
     @Published var presetName = UserDefaults.standard.string(forKey: "preset") ?? FACTORY[0].0
     @Published var userIRName: String?
     @Published var captures: [String: Capture] = Capture.loadAll()
@@ -583,7 +606,14 @@ final class Model: ObservableObject {
     init() {
         let saved = UserDefaults.standard.data(forKey: "settings").flatMap(Settings.lenient)
         s = saved ?? Settings()
-        if let d = UserDefaults.standard.data(forKey: "presets"), let p = try? JSONDecoder().decode([String: Settings].self, from: d) { userPresets = p }
+        // Lenient: presets saved before a setting existed get its default (a strict decode dropped them all, and the
+        // next save then overwrote them). Anything still unreadable is kept as-is so a save never loses it.
+        if let d = UserDefaults.standard.data(forKey: "presets"), let all = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any] {
+            for (name, v) in all {
+                if let data = try? JSONSerialization.data(withJSONObject: v), let p = Settings.lenient(data) { userPresets[name] = p }
+                else { unreadablePresets[name] = v }
+            }
+        }
         irLib.scan(sampleRate: 48000)
         if !irLib.isEmpty && !UserDefaults.standard.bool(forKey: "godsCabIntro") {   // first run with the IR pack: switch to it
             s.cabModel = CAB_LIB; s.cabHighCut = 10000; UserDefaults.standard.set(true, forKey: "godsCabIntro")
@@ -996,6 +1026,7 @@ final class Model: ObservableObject {
         let n = new.trimmingCharacters(in: .whitespaces)
         guard !n.isEmpty, n != old, let p = userPresets[old], !isFactory(n) else { return }
         userPresets[n] = p; userPresets[old] = nil
+        presetMeta[n] = presetMeta[old]; presetMeta[old] = nil
         if favorites.contains(old) { favorites.remove(old); favorites.insert(n) }
         if presetName == old { presetName = n }
         persistPresets()
@@ -1027,20 +1058,30 @@ final class Model: ObservableObject {
         if n.cabModel == CAB_IRLIB && !cabIRs.files.contains(n.irFile) { n.cabModel = irLib.isEmpty ? 0 : CAB_LIB }
         if n.cabModel == CAB_LIB && irLib.isEmpty { n.cabModel = 0 }
         s = n; presetName = name
+        presetMeta[name, default: PresetMeta()].played = Date()
         UserDefaults.standard.set(name, forKey: "preset")
     }
 
     func savePreset(_ name: String) {
         let n = name.trimmingCharacters(in: .whitespaces)
         guard !n.isEmpty else { return }
-        userPresets[n] = s; presetName = n
+        let now = Date()
+        var meta = presetMeta[n] ?? PresetMeta()
+        if userPresets[n] == nil && meta.created == nil && !isFactory(n) { meta.created = now }
+        meta.modified = now; meta.played = now
+        presetMeta[n] = meta
+        userPresets[n] = s; presetName = n; unreadablePresets[n] = nil
         persistPresets()
     }
 
-    func deletePreset(_ name: String) { userPresets[name] = nil; persistPresets() }
+    func deletePreset(_ name: String) { userPresets[name] = nil; unreadablePresets[name] = nil; presetMeta[name] = nil; persistPresets() }
 
     func persistPresets() {
-        UserDefaults.standard.set(try? JSONEncoder().encode(userPresets), forKey: "presets")
+        var all = unreadablePresets
+        if let d = try? JSONEncoder().encode(userPresets), let mine = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any] {
+            all.merge(mine) { $1 }
+        }
+        UserDefaults.standard.set(try? JSONSerialization.data(withJSONObject: all), forKey: "presets")
         UserDefaults.standard.set(presetName, forKey: "preset")
     }
 
@@ -1978,5 +2019,16 @@ extension View {
         onHover { inside in
             if inside { HoverHelp.shared.show(id: key, title: title, text: EXPLAIN[key]) } else { HoverHelp.shared.clear(id: key) }
         }
+    }
+}
+
+
+struct PresetMeta: Codable { var created: Date?; var modified: Date?; var played: Date? }
+
+enum PresetSort: String, CaseIterable, Identifiable {
+    case list, played, modified, created
+    var id: String { rawValue }
+    var title: String {
+        switch self { case .list: "List order"; case .played: "Recently played"; case .modified: "Recently modified"; case .created: "Recently created" }
     }
 }

@@ -172,6 +172,8 @@ struct PresetMenu: View {
     @EnvironmentObject var m: Model
     var body: some View {
         Menu((m.presetModified ? "● " : "") + m.presetName) {
+            let recent = Array(m.recentlyPlayed.prefix(5))
+            if !recent.isEmpty { Section("Recently played") { ForEach(recent, id: \.self) { n in Button(n) { m.loadAny(n) } } } }
             if !m.favorites.isEmpty {
                 Section("Favorites") { ForEach(m.favorites.sorted(), id: \.self) { n in Button("★ \(n)") { m.loadAny(n) } } }
             }
@@ -200,7 +202,7 @@ struct PresetsView: View {
     @StateObject private var ui = PresetsUI()
 
     var names: [String] {
-        let all = FACTORY.map(\.0) + m.userPresets.keys.filter { !m.isFactory($0) }.sorted()
+        let all = m.sortedPresets(m.presetSort)
         return ui.favOnly ? all.filter(m.favorites.contains) : all
     }
 
@@ -210,6 +212,8 @@ struct PresetsView: View {
                 Text("PRESETS").font(.system(size: 10 * UI, weight: .bold)).tracking(2).foregroundStyle(.secondary)
                 Picker("", selection: $ui.favOnly) { Text("All").tag(false); Text("★ Favorites").tag(true) }
                     .pickerStyle(.segmented).labelsHidden().frame(width: 260 * Z)
+                Picker("Sort", selection: $m.presetSort) { ForEach(PresetSort.allCases) { Text($0.title).tag($0) } }
+                    .frame(width: 230 * Z)
                 Spacer()
                 Button("Import…") { m.importPresetsPanel() }.help("Add .leviathan preset files (or drop them here)")
                 Button("Export all…") { m.exportAllPresets() }.help("Save every preset as a .leviathan file in a folder")
@@ -238,6 +242,19 @@ struct PresetsView: View {
         }
     }
 
+    func subtitle(_ n: String, factory: Bool, edited: Bool) -> String {
+        var parts = [factory ? (edited ? "Factory · edited" : "Factory") : "Yours"]
+        let meta = m.presetMeta[n]
+        let f = RelativeDateTimeFormatter()
+        switch m.presetSort {
+        case .played: if let d = meta?.played { parts.append("played " + f.localizedString(for: d, relativeTo: Date())) }
+        case .modified: if let d = meta?.modified { parts.append("saved " + f.localizedString(for: d, relativeTo: Date())) }
+        case .created: if let d = meta?.created { parts.append("created " + f.localizedString(for: d, relativeTo: Date())) }
+        case .list: break
+        }
+        return parts.joined(separator: " · ")
+    }
+
     func row(_ n: String) -> some View {
         let current = n == m.presetName, factory = m.isFactory(n), edited = factory && m.userPresets[n] != nil
         return HStack(spacing: 12) {
@@ -245,7 +262,7 @@ struct PresetsView: View {
                 .buttonStyle(.borderless).foregroundStyle(m.favorites.contains(n) ? Color.yellow : .secondary)
             VStack(alignment: .leading, spacing: 2) {
                 Text(n).font(.system(size: 14 * UI, weight: current ? .bold : .regular))
-                Text(factory ? (edited ? "Factory · edited" : "Factory") : "Yours").font(.system(size: 10 * UI)).foregroundStyle(.secondary)
+                Text(subtitle(n, factory: factory, edited: edited)).font(.system(size: 10 * UI)).foregroundStyle(.secondary)
             }
             Spacer()
             if current { Text(m.presetModified ? "Loaded · unsaved changes" : "Loaded").font(.system(size: 10 * UI)).foregroundStyle(.secondary) }

@@ -60,6 +60,17 @@ public:
     bool isFactory(const juce::String& n) const;
     std::optional<Settings> presetSettings(const juce::String& n) const;
     juce::StringArray presetOrder() const;
+    /// When each preset was created, last saved and last loaded (ms since 1970, 0 = never), for sorting.
+    struct PresetMeta { juce::int64 created = 0, modified = 0, played = 0; };
+    std::map<juce::String, PresetMeta> presetMeta;
+    int presetSort = 0;   // 0 list order, 1 recently played, 2 recently modified, 3 recently created
+    void setPresetSort(int s);
+    juce::StringArray sortedPresets(int sort) const;
+    juce::StringArray recentlyPlayed() const {
+        juce::StringArray out;
+        for (auto& n : sortedPresets(1)) if (auto it = presetMeta.find(n); it != presetMeta.end() && it->second.played > 0) out.add(n);
+        return out;
+    }
     void loadFactory(const juce::String& n);
     void loadFactoryOriginal(const juce::String& n);
     void restoreFactory(const juce::String& n);
