@@ -97,5 +97,6 @@
   "bladeBoost": "How much the Boost adds when it's switched on, up to +20 dB of mid-focused gain into the distortion.",
   "bladeBoostOn": "Switches the front-end mid boost on: more gain and a tighter, mid-forward attack, like a boost pedal in front.",
   "bladeShift": "Moves the Mid control: 650 Hz for body and growl, 1.5 kHz for presence and cut.",
-  "bladeDiode": "Clipping: MOSFET is smooth and open; Off uses no diodes, for the most headroom and least compression; Silicon is tight, compressed and saturated."
+  "bladeDiode": "Clipping: MOSFET is smooth and open; Off uses no diodes, for the most headroom and least compression; Silicon is tight, compressed and saturated.",
+  "outputDevice": "Where you hear Leviathan: your audio interface's output (fastest), the Mac's or PC's headphones, or speakers. Bluetooth and monitor speakers add delay (marked ⚠︎)."
 }

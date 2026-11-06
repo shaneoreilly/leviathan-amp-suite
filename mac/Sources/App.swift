@@ -1455,8 +1455,6 @@ struct ContentView: View {
                     }
                 }
                 pedalboard
-                Text("Tip: free cab IRs (God's Cab, Seacow, OwnHammer free packs) sound far more real than the built-in cabs; load them with “IR…”.")
-                    .font(.system(size: 10 * UI)).foregroundStyle(.secondary)
             }
             .padding(14)
         }
@@ -1712,40 +1710,34 @@ struct ContentView: View {
                                                       if v.hasPrefix("nam:") { m.useNam(String(v.dropFirst(4))) }
                                                       else { var n = m.s; n.nam = ""; m.s = n; m.useCapture(v.hasPrefix("cap:") ? String(v.dropFirst(4)) : "") }
                                                   })) {
-                        Text("Leviathan voicings").tag("")
-                        if !m.namHost.files.isEmpty {
-                            Divider()
-                            ForEach(m.namHost.files, id: \.self) { n in Text("NAM · \(n)").tag("nam:" + n) }
+                        Section("Leviathan") { Text("Leviathan amp (Clean · Rust · Hot)").tag("") }
+                        if !m.namHost.files.isEmpty || !m.s.nam.isEmpty {
+                            Section("Real amps (NAM)") {
+                                ForEach(m.namHost.files, id: \.self) { n in Text(namTitle(n)).tag("nam:" + n) }
+                                if !m.s.nam.isEmpty && !m.namHost.files.contains(m.s.nam) { Text(namTitle(m.s.nam) + " (missing)").tag("nam:" + m.s.nam) }
+                            }
                         }
-                        if !m.s.nam.isEmpty && !m.namHost.files.contains(m.s.nam) { Text("NAM · \(m.s.nam) (missing)").tag("nam:" + m.s.nam) }
                         if !m.captures.isEmpty {
-                            Divider()
-                            ForEach(m.captures.keys.sorted(), id: \.self) { n in Text("Capture · \(n)").tag("cap:" + n) }
+                            Section("Your captures") { ForEach(m.captures.keys.sorted(), id: \.self) { n in Text(n).tag("cap:" + n) } }
                         }
-                    }.labelsHidden().frame(width: 260 * W)
-                    Button { m.reloadCaptures(); m.rescanNam() } label: { Image(systemName: "arrow.clockwise") }.help("Rescan captures and NAM models")
-                    Button("Add .nam…") { m.importNam() }.help("Add Neural Amp Modeler captures (free at tone3000.com)")
-                    if let c = m.activeCapture {
-                        Text(String(format: "accuracy %.1f%%", max(0, 1 - c.esr_val) * 100))
-                            .font(.system(size: 10 * UI).monospacedDigit()).foregroundStyle(.secondary)
-                            .help("1 − ESR on held-out audio from the capture")
-                    }
+                    }.labelsHidden().frame(width: 330 * W)
+                    Menu {
+                        Button("Add NAM captures (.nam)…") { m.importNam() }
+                        Button("Open NAM folder") { NSWorkspace.shared.open(NamHost.dir) }
+                        Button("Rescan") { m.reloadCaptures(); m.rescanNam() }
+                    } label: { Image(systemName: "ellipsis.circle") }
+                        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Add or rescan amp captures")
                 }
                 if !m.s.nam.isEmpty {
                     HStack(spacing: 2) {
                         Knob(label: "Input", value: $m.s.namInput, key: "namInput", range: -24...24, def: 0, fmt: { String(format: "%+.1f dB", $0) }, color: ch)
                         Knob(label: "Output", value: $m.s.namOutput, key: "namOutput", range: -24...24, def: 0, fmt: { String(format: "%+.1f dB", $0) }, color: ch)
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(m.params.namOn ? "Neural Amp Modeler capture" : "Loading NAM capture…").font(.system(size: 10 * UI, weight: .semibold))
-                            Text(namDetail).font(.system(size: 10 * UI)).foregroundStyle(.secondary)
-                        }.frame(width: 220 * W, alignment: .leading)
                     }
+                    if m.running && !m.params.namOn { Text("Loading…").font(.system(size: 10 * UI)).foregroundStyle(.secondary) }
                 } else if m.activeCapture != nil {
                     HStack(spacing: 2) {
                         Knob(label: "Drive", value: $m.s.capDrive, key: "capDrive", range: -18...18, def: 0, fmt: { String(format: "%+.1f dB", $0) }, color: ch)
                         Knob(label: "Level", value: $m.s.capLevel, key: "capLevel", range: -24...12, def: 0, fmt: { String(format: "%+.1f dB", $0) }, color: ch)
-                        Text("Drive 0 / Level 0 = as captured. Cab is part of the capture.")
-                            .font(.system(size: 10 * UI)).foregroundStyle(.secondary).frame(width: 180 * W)
                     }
                 } else {
                 HStack(spacing: 6) {
@@ -1770,6 +1762,18 @@ struct ContentView: View {
                 }
             }
         }
+    }
+
+    /// A NAM file name as a readable amp name: "Helga B 5150 BlockLetter - NoBoost" -> "5150 BlockLetter - NoBoost  (Helga B)".
+    func namTitle(_ file: String) -> String {
+        var n = file.replacingOccurrences(of: #"[-_ ]*ESR[-_ ]?[0-9.,]+"#, with: "", options: .regularExpression)
+        n = n.replacingOccurrences(of: "_", with: " ")
+        let words = n.split(separator: " ", omittingEmptySubsequences: true)
+        // community files start with the creator's first name and initial ("Tim R ...")
+        if words.count > 2, words[1].count == 1, words[1].first?.isUppercase == true {
+            return words.dropFirst(2).joined(separator: " ") + "  (" + words[0] + " " + words[1] + ")"
+        }
+        return words.joined(separator: " ")
     }
 
     /// Rate and loudness of the loaded NAM capture, and what the knobs do.
@@ -1804,15 +1808,19 @@ struct ContentView: View {
         return UnitBox(title: "CABINET", on: $m.s.cabOn, onKey: "cabOn", color: ch) {
             VStack(alignment: .center, spacing: 8) {
               VStack(alignment: .leading, spacing: 8) {
-                HStack {
+                HStack(spacing: 6) {
                     Picker("", selection: $m.s.cabModel) {
-                        if !m.irLib.isEmpty { Text("God's Cab · Mesa OS 4x12").tag(CAB_LIB) }
-                        ForEach(CABS.indices, id: \.self) { Text("Built-in · \(CABS[$0].name)").tag($0) }
-                        if !m.cabIRs.isEmpty { Text("IR library · \(m.cabIRs.files.count) IRs").tag(CAB_IRLIB) }
-                        if let n = m.userIRName { Text("File · \(n)").tag(CAB_USER) }
-                    }.labelsHidden().frame(width: 230 * W)
-                    Button("IR file…") { m.loadIR() }
-                    Button("Add IRs…") { m.importCabIRs() }.help("Add a folder of cab IRs (WAV) to the IR library, e.g. a tone pack from tone3000.com")
+                        if !m.cabIRs.isEmpty { Section("Your IRs") { Text("IR library (\(m.cabIRs.files.count))").tag(CAB_IRLIB) } }
+                        if !m.irLib.isEmpty { Section("Multi-mic") { Text("God's Cab · Mesa 4x12").tag(CAB_LIB) } }
+                        Section("Built-in") { ForEach(CABS.indices, id: \.self) { Text(CABS[$0].name).tag($0) } }
+                        if let n = m.userIRName { Section("File") { Text(n).tag(CAB_USER) } }
+                    }.labelsHidden().frame(width: 260 * W)
+                    Menu {
+                        Button("Add IRs to the library (files or a folder)…") { m.importCabIRs() }
+                        Button("Load a single IR file…") { m.loadIR() }
+                        Button("Open IR library folder") { NSWorkspace.shared.open(CabIRLibrary.root) }
+                    } label: { Image(systemName: "ellipsis.circle") }
+                        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Add cabinet IRs")
                 }
                 if m.s.cabModel == CAB_IRLIB { IRLibraryRow() }
                 if lib {
@@ -1848,18 +1856,21 @@ struct ContentView: View {
             })) {
                 if optional || f == nil { Text("Off").tag("") }
                 ForEach(lib.mics, id: \.self) { Text($0).tag($0) }
-            }.labelsHidden().frame(width: 82 * W)
+            }.labelsHidden().frame(width: 90 * W)
             if let f {
                 Picker("", selection: Binding(get: { f.position }, set: { pick(f.mic, f.ts, $0, f.pres) })) {
                     ForEach(lib.positions(mic: f.mic, ts: f.ts), id: \.self) { Text($0).tag($0) }
-                }.labelsHidden().frame(width: 150 * W)
-                Picker("", selection: Binding(get: { f.pres }, set: { pick(f.mic, f.ts, f.position, $0) })) {
-                    ForEach(1...5, id: \.self) { Text("Pres \($0)").tag($0) }
-                }.labelsHidden().frame(width: 76 * W).help("Amp presence when captured (higher = brighter)")
-                Toggle("TS", isOn: Binding(get: { f.ts }, set: { pick(f.mic, $0, f.position, f.pres) }))
-                    .toggleStyle(.button).disabled(!lib.tsAvailable(mic: f.mic)).help("Tube Screamer mid bump baked into the IR")
-                Button { rel.wrappedValue = lib.step(f.rel, by: -1) ?? f.rel } label: { Image(systemName: "chevron.left") }
-                Button { rel.wrappedValue = lib.step(f.rel, by: 1) ?? f.rel } label: { Image(systemName: "chevron.right") }
+                }.labelsHidden().frame(width: 140 * W)
+                Menu {
+                    Picker("Presence", selection: Binding(get: { f.pres }, set: { pick(f.mic, f.ts, f.position, $0) })) {
+                        ForEach(1...5, id: \.self) { Text("Presence \($0)").tag($0) }
+                    }
+                    Toggle("Tube Screamer in front", isOn: Binding(get: { f.ts }, set: { pick(f.mic, $0, f.position, f.pres) }))
+                        .disabled(!lib.tsAvailable(mic: f.mic))
+                } label: { Text("P\(f.pres)" + (f.ts ? " · TS" : "")).monospacedDigit() }
+                    .fixedSize().help("Amp presence when captured, and a Tube Screamer mid bump baked into the IR")
+                Button { rel.wrappedValue = lib.step(f.rel, by: -1) ?? f.rel } label: { Image(systemName: "chevron.left") }.buttonStyle(.borderless)
+                Button { rel.wrappedValue = lib.step(f.rel, by: 1) ?? f.rel } label: { Image(systemName: "chevron.right") }.buttonStyle(.borderless)
             }
         }
     }
@@ -1897,10 +1908,15 @@ struct ContentView: View {
     }
 
     var master: some View {
-        UnitBox(title: "MASTER", trailing: AnyView(
-            Button { m.s.masterVol = -6 } label: { Image(systemName: "arrow.counterclockwise") }
-                .buttonStyle(.borderless).controlSize(.small).help("Reset output to -6 dB (or double-click the knob)"))) {
-            Knob(label: "Output", value: $m.s.masterVol, key: "masterVol", range: -40...12, def: -6, fmt: { String(format: "%+.1f dB", $0) }, color: ch)
+        UnitBox(title: "MASTER") {
+            VStack(spacing: 8) {
+                Picker("", selection: $m.outputUID) {
+                    ForEach(m.outputs) { d in Text(d.outputWarning != nil ? "\(d.name) ⚠︎" : d.name).tag(d.uid) }
+                }
+                .labelsHidden().frame(width: 190 * W)
+                .explain("outputDevice", "Master · Output device")
+                Knob(label: "Output", value: $m.s.masterVol, key: "masterVol", range: -40...12, def: -6, fmt: { String(format: "%+.1f dB", $0) }, color: ch)
+            }
         }
     }
 }

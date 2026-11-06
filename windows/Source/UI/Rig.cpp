@@ -44,6 +44,38 @@ struct Segments : juce::Component {
     Model& model; juce::StringArray labels; std::function<int()> getter; std::function<void(int)> setter; std::function<juce::Colour(int)> colourOf; float pt;
 };
 
+namespace {
+/// "Helga B 5150 BlockLetter - NoBoost" -> "5150 BlockLetter - NoBoost  (Helga B)" (same rule as the Mac app's namTitle).
+juce::String namTitle(juce::String n) {
+    n = n.replaceCharacter('_', ' ');
+    if (const int e = n.indexOfIgnoreCase("ESR"); e > 0) {   // drop the training error suffix ("-ESR0,003", " ESR_0.0115")
+        int s = e; while (s > 0 && juce::String("-_ ").containsChar(n[s - 1])) --s;
+        int t = e + 3; while (t < n.length() && juce::String("-_ 0123456789.,").containsChar(n[t])) ++t;
+        n = n.substring(0, s) + n.substring(t);
+    }
+    juce::StringArray w; w.addTokens(n, " ", ""); w.removeEmptyStrings();
+    if (w.size() > 2 && w[1].length() == 1 && juce::CharacterFunctions::isUpperCase(w[1][0])) {
+        const auto who = w[0] + " " + w[1]; w.removeRange(0, 2);
+        return w.joinIntoString(" ") + "  (" + who + ")";
+    }
+    return w.joinIntoString(" ");
+}
+
+/// A small "..." button that opens a menu of actions.
+std::unique_ptr<juce::TextButton> moreButton(std::vector<std::pair<juce::String, std::function<void()>>> items, const juce::String& tip) {
+    auto b = std::make_unique<juce::TextButton>(juce::String::fromUTF8("\xe2\x8b\xaf"));
+    auto* bp = b.get();
+    b->onClick = [bp, items] {
+        juce::PopupMenu menu;
+        for (auto& [t, fn] : items) menu.addItem(t, fn);
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(bp));
+    };
+    setPref(*b, 30, 26);
+    b->setTooltip(tip);
+    return b;
+}
+} // namespace
+
 std::unique_ptr<juce::TextButton> textButton(const juce::String& t, std::function<void()> fn) {
     auto b = std::make_unique<juce::TextButton>(t);
     b->onClick = std::move(fn);
@@ -110,6 +142,7 @@ juce::String RigView::currentSignature() const {
     sig.add(model.collapsed.joinIntoString("|"));
     sig.add(model.explainOnHover ? "help" : "nohelp"); sig.add(model.panelOrder.joinIntoString(","));
     sig.add(model.inputDeviceName() + "/" + juce::String(model.inputChannelCount()));
+    sig.add(model.outputDeviceName());
     sig.add(s.s("capture")); sig.add(juce::String((int) model.captures.size()));
     sig.add(s.s("nam")); sig.add(model.namFiles.joinIntoString(",")); sig.add(model.namReady() ? "namok" : "");
     sig.add(s.b("wahAuto") ? "wa" : "wm");
@@ -270,7 +303,7 @@ std::unique_ptr<UnitBox> RigView::makePanel(const juce::String& id) {
         auto c = col(10);
         auto r1 = row(6);
         // ids: 1 = built-in voicings, 2.. = fitted captures, 1000.. = NAM captures
-        auto cap = std::make_unique<Picker>((int) (190 * theme::W), [&m] {
+        auto cap = std::make_unique<Picker>((int) (330 * theme::W), [&m] {
             if (const auto nm = m.s().s("nam"); nm.isNotEmpty()) { const int k = m.namFiles.indexOf(nm); return k >= 0 ? 1000 + k : 1; }
             const auto cur = m.s().s("capture"); if (cur.isEmpty()) return 1;
             int i = 2; for (auto& [k, v] : m.captures) { if (k == cur) return i; i++; } return 1;
@@ -279,34 +312,24 @@ std::unique_ptr<UnitBox> RigView::makePanel(const juce::String& id) {
             if (i == 1) { m.useNam(""); m.useCapture(""); return; }
             int k = 2; for (auto& [name, v] : m.captures) { if (k == i) { m.useCapture(name); return; } k++; }
         });
-        cap->addItem("Leviathan voicings", 1);
-        if (!m.namFiles.isEmpty()) { cap->addSeparator(); for (int i = 0; i < m.namFiles.size(); ++i) cap->addItem(juce::String::fromUTF8("NAM \xc2\xb7 ") + m.namFiles[i], 1000 + i); }
-        if (!m.captures.empty()) { cap->addSeparator(); int i = 2; for (auto& [k, v] : m.captures) cap->addItem(juce::String::fromUTF8("Capture \xc2\xb7 ") + k, i++); }
+        cap->addSectionHeading("Leviathan");
+        cap->addItem(juce::String::fromUTF8("Leviathan amp (Clean \xc2\xb7 Rust \xc2\xb7 Hot)"), 1);
+        if (!m.namFiles.isEmpty()) { cap->addSectionHeading("Real amps (NAM)"); for (int i = 0; i < m.namFiles.size(); ++i) cap->addItem(namTitle(m.namFiles[i]), 1000 + i); }
+        if (!m.captures.empty()) { cap->addSectionHeading("Your captures"); int i = 2; for (auto& [k, v] : m.captures) cap->addItem(k, i++); }
         r1->add(std::move(cap));
-        r1->add(std::make_unique<IconButton>(IconButton::refresh, [&m] { m.reloadCaptures(); m.rescanNam(); }, 13))->setTooltip("Rescan captures and NAM models");
-        r1->add(textButton(juce::String::fromUTF8("Add .nam\xe2\x80\xa6"), [&m] { m.importNamDialog(); }))->setTooltip("Add Neural Amp Modeler captures (free at tone3000.com)");
-        if (auto* ac = m.activeCapture())
-            r1->add(std::make_unique<LiveLabel>([ac] { return juce::String::formatted("accuracy %.1f%%", std::max(0.0, 1 - ac->esr_val) * 100); }, 10))
-                ->setTooltip(juce::String::fromUTF8("1 \xe2\x88\x92 ESR on held-out audio from the capture"));
+        r1->add(moreButton({ { juce::String::fromUTF8("Add NAM captures (.nam)\xe2\x80\xa6"), [&m] { m.importNamDialog(); } },
+                             { "Open NAM folder", [] { Model::namDir().createDirectory(); Model::namDir().startAsProcess(); } },
+                             { "Rescan", [&m] { m.reloadCaptures(); m.rescanNam(); } } }, "Add or rescan amp captures"));
         c->add(std::move(r1));
         if (m.s().s("nam").isNotEmpty()) {
             auto r = row();
             r->add(knob("Input", "namInput", -24, 24, 0, dbSigned, "AMP"));
             r->add(knob("Output", "namOutput", -24, 24, 0, dbSigned, "AMP"));
-            auto note = std::make_unique<LiveLabel>([&m] {
-                juce::String t = m.namReady() ? "Neural Amp Modeler capture" : juce::String::fromUTF8("Loading NAM capture\xe2\x80\xa6");
-                if (m.namReady() && m.namExpectedRate > 0) t << "\n" << juce::String(m.namExpectedRate / 1000, 1) << " kHz";
-                if (m.namReady() && m.namLoudness) t << juce::String::fromUTF8(" \xc2\xb7 loudness ") << juce::String(*m.namLoudness, 1) << " dB (normalised)";
-                return t + "\nInput = how hard you hit it; Output = level.";
-            }, 10);
-            setPref(*note, (int) (230 * theme::W), 60); r->add(std::move(note));
             c->add(std::move(r));
         } else if (m.activeCapture()) {
             auto r = row();
             r->add(knob("Drive", "capDrive", -18, 18, 0, dbSigned, "AMP"));
             r->add(knob("Level", "capLevel", -24, 12, 0, dbSigned, "AMP"));
-            auto note = std::make_unique<LiveLabel>([] { return juce::String("Drive 0 / Level 0 = as captured.\nCab is part of the capture."); }, 10);
-            setPref(*note, (int) (180 * theme::W), 40); r->add(std::move(note));
             c->add(std::move(r));
         } else {
             const juce::StringArray names { VOICINGS[0].name, VOICINGS[1].name, VOICINGS[2].name };
@@ -325,25 +348,32 @@ std::unique_ptr<UnitBox> RigView::makePanel(const juce::String& id) {
         }
         box = std::make_unique<UnitBox>(m, "AMP", std::move(c), "ampOn", "panel:amp");
     } else if (id == "master") {
+        auto c = col(8);
+        const auto outs = m.outputDeviceNames();
+        auto dev = std::make_unique<Picker>((int) (190 * theme::W), [&m, outs] { return outs.indexOf(m.outputDeviceName()) + 1; },
+                                            [&m, outs](int i) { if (juce::isPositiveAndBelow(i - 1, outs.size())) m.setOutputDevice(outs[i - 1]); });
+        for (int i = 0; i < outs.size(); ++i) dev->addItem(outs[i], i + 1);
+        dev->setTextWhenNothingSelected(outs.isEmpty() ? "No output device" : "Choose an output");
+        dev->setTooltip(Model::explain("outputDevice"));
+        c->add(std::move(dev));
         auto r = row(); r->add(knob("Output", "masterVol", -40, 12, -6, dbSigned, "MASTER"));
-        box = std::make_unique<UnitBox>(m, "MASTER", std::move(r), "", "panel:master");
-        auto reset = std::make_unique<IconButton>(IconButton::reset, [&m] { m.set("masterVol", -6.0); }, 14);
-        reset->colour = m.accent(); reset->setTooltip("Reset output to -6 dB (or double-click the knob)");
-        box->addTrailing(std::move(reset));
+        c->add(std::move(r));
+        box = std::make_unique<UnitBox>(m, "MASTER", std::move(c), "", "panel:master");
     } else if (id == "cab") {
         const bool lib = s.i("cabModel") == CAB_LIB;
         auto c = col(8);
         auto block = col(8, juce::Justification::left);
         auto r1 = row(8);
-        auto pick = std::make_unique<Picker>((int) (230 * theme::W), [&m] { return m.s().i("cabModel") + 1; }, [&m](int i) { m.set("cabModel", i - 1); });
-        if (!m.irLib.isEmpty()) pick->addItem(juce::String::fromUTF8("God's Cab \xc2\xb7 Mesa OS 4x12"), CAB_LIB + 1);
-        for (int i = 0; i < kCabCount; ++i) pick->addItem(juce::String::fromUTF8("Built-in \xc2\xb7 ") + CABS[i].name, i + 1);
-        if (!m.cabIRs.isEmpty()) pick->addItem(juce::String::fromUTF8("IR library \xc2\xb7 ") + juce::String(m.cabIRs.all().size()) + " IRs", CAB_IRLIB + 1);
-        if (m.userIRName.isNotEmpty()) pick->addItem(juce::String::fromUTF8("File \xc2\xb7 ") + m.userIRName, CAB_USER + 1);
+        auto pick = std::make_unique<Picker>((int) (260 * theme::W), [&m] { return m.s().i("cabModel") + 1; }, [&m](int i) { m.set("cabModel", i - 1); });
+        if (!m.cabIRs.isEmpty()) { pick->addSectionHeading("Your IRs"); pick->addItem("IR library (" + juce::String(m.cabIRs.all().size()) + ")", CAB_IRLIB + 1); }
+        if (!m.irLib.isEmpty()) { pick->addSectionHeading("Multi-mic"); pick->addItem(juce::String::fromUTF8("God's Cab \xc2\xb7 Mesa 4x12"), CAB_LIB + 1); }
+        pick->addSectionHeading("Built-in");
+        for (int i = 0; i < kCabCount; ++i) pick->addItem(CABS[i].name, i + 1);
+        if (m.userIRName.isNotEmpty()) { pick->addSectionHeading("File"); pick->addItem(m.userIRName, CAB_USER + 1); }
         r1->add(std::move(pick));
-        r1->add(textButton(juce::String::fromUTF8("IR file\xe2\x80\xa6"), [&m] { m.loadIR(); }));
-        r1->add(textButton(juce::String::fromUTF8("Add IRs\xe2\x80\xa6"), [&m] { m.importCabIRsDialog(); }))
-            ->setTooltip("Add a folder of cab IRs (WAV) to the IR library, e.g. a tone pack from tone3000.com");
+        r1->add(moreButton({ { juce::String::fromUTF8("Add IRs to the library (files or a folder)\xe2\x80\xa6"), [&m] { m.importCabIRsDialog(); } },
+                             { juce::String::fromUTF8("Load a single IR file\xe2\x80\xa6"), [&m] { m.loadIR(); } },
+                             { "Open IR library folder", [] { CabIRLibrary::root().createDirectory(); CabIRLibrary::root().startAsProcess(); } } }, "Add cabinet IRs"));
         block->add(std::move(r1));
         if (s.i("cabModel") == CAB_IRLIB) block->add(irLibraryRow());
         if (lib) { block->add(irRow("A", "irA", false)); block->add(irRow("B", "irB", true)); }
@@ -474,6 +504,7 @@ std::unique_ptr<juce::Component> RigView::inputPickers() {
     return c;
 }
 
+
 /// The IR library's current IR (click to search and pick), plus prev/next for quick auditioning.
 std::unique_ptr<juce::Component> RigView::irLibraryRow() {
     auto& m = model;
@@ -518,14 +549,18 @@ std::unique_ptr<juce::Component> RigView::irRow(const juce::String& label, const
                                             [positions, cur, pick](int i) { pick(cur.mic, cur.ts, positions[i - 1], cur.pres); });
         for (int i = 0; i < positions.size(); ++i) pos->addItem(positions[i], i + 1);
         r->add(std::move(pos));
-        auto pres = std::make_unique<Picker>((int) (76 * theme::W), [cur] { return cur.pres; }, [cur, pick](int i) { pick(cur.mic, cur.ts, cur.position, i); });
-        for (int i = 1; i <= 5; ++i) pres->addItem("Pres " + juce::String(i), i);
-        pres->setTooltip("Amp presence when captured (higher = brighter)");
-        r->add(std::move(pres));
-        auto ts = textButton("TS", [cur, pick] { pick(cur.mic, !cur.ts, cur.position, cur.pres); });
-        ts->setToggleState(cur.ts, juce::dontSendNotification); ts->setEnabled(m.irLib.tsAvailable(cur.mic));
-        ts->setTooltip("Tube Screamer mid bump baked into the IR");
-        r->add(std::move(ts));
+        const bool tsOK = m.irLib.tsAvailable(cur.mic);
+        auto opt = textButton("P" + juce::String(cur.pres) + (cur.ts ? juce::String::fromUTF8(" \xc2\xb7 TS") : juce::String()), {});
+        auto* op = opt.get();
+        opt->onClick = [op, cur, pick, tsOK] {
+            juce::PopupMenu menu;
+            for (int i = 1; i <= 5; ++i) menu.addItem("Presence " + juce::String(i), true, cur.pres == i, [cur, pick, i] { pick(cur.mic, cur.ts, cur.position, i); });
+            menu.addSeparator();
+            menu.addItem("Tube Screamer in front", tsOK, cur.ts, [cur, pick] { pick(cur.mic, !cur.ts, cur.position, cur.pres); });
+            menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(op));
+        };
+        opt->setTooltip("Amp presence when captured, and a Tube Screamer mid bump baked into the IR");
+        r->add(std::move(opt));
         r->add(std::make_unique<IconButton>(IconButton::chevronLeft, [&m, key, cur] { m.set(key, m.irLib.step(cur.rel, -1)); }, 12));
         r->add(std::make_unique<IconButton>(IconButton::chevronRight, [&m, key, cur] { m.set(key, m.irLib.step(cur.rel, 1)); }, 12));
     }

@@ -883,6 +883,27 @@ void Model::clearHover(const juce::String& id) {
 
 void Model::setExplainOnHover(bool on) { explainOnHover = on; clearHover(); saveState(); changed(); }
 
+// MARK: - output device (Master panel)
+
+juce::StringArray Model::outputDeviceNames() {
+    auto* t = devices.getCurrentDeviceTypeObject();
+    return t ? t->getDeviceNames(false) : juce::StringArray();
+}
+
+juce::String Model::outputDeviceName() const { return devices.getAudioDeviceSetup().outputDeviceName; }
+
+void Model::setOutputDevice(const juce::String& name) {
+    auto setup = devices.getAudioDeviceSetup();
+    if (setup.outputDeviceName == name) return;
+    setup.outputDeviceName = name;
+    if (auto* t = devices.getCurrentDeviceTypeObject(); t && !t->hasSeparateInputsAndOutputs()) setup.inputDeviceName = name;   // ASIO: one device
+    setup.useDefaultOutputChannels = true;
+    const auto err = devices.setAudioDeviceSetup(setup, true);
+    if (err.isNotEmpty()) status = "Couldn't open " + name + ": " + err;
+    restartAudio();
+    changed();
+}
+
 // MARK: - input device (Input panel)
 
 juce::StringArray Model::inputDeviceNames() {

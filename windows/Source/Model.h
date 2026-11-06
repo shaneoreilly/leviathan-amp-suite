@@ -195,6 +195,10 @@ public:
     juce::String inputDeviceName() const;
     int inputChannelCount() const;
     void setInputDevice(const juce::String& name);
+    /// Output device, for the Master panel.
+    juce::StringArray outputDeviceNames();
+    juce::String outputDeviceName() const;
+    void setOutputDevice(const juce::String& name);
 
     Screen screen = Screen::rig;
     void setScreen(Screen s) { screen = s; changed(); }
