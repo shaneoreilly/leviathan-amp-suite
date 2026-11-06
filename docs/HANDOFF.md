@@ -40,8 +40,7 @@ These are built and reasoned through, but nobody has tried them on real hardware
 - **NAM sample-rate mismatch:** a capture trained at a different sample rate plays with a warning but isn't resampled.
 - **Long IRs** are cut at 4096 samples (`DSP.maxIR`), with a fade.
 - **Delay wrapping:** in the default layout, Delay wraps onto its own row at common window widths. It wasn't in the owner's requested order.
-- **Old prototypes:** `index.html` and `serve.sh` are an early Web Audio prototype that no longer matches the apps. `mac/Capture/` (the Python capture fitter) is superseded by NAM.
-- **Stray tracked file:** `windows/THIRD-PARTY.md` overlaps `NOTICE.md`.
+- **The Python capture fitter** (`mac/Capture/`) predates NAM, which gives better results for high-gain amps. Both apps still load the models it writes, so it stays until that feature is removed.
 
 ## Backlog (owner's wishes and sensible next steps)
 

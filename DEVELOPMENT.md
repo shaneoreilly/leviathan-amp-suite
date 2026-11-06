@@ -154,7 +154,6 @@ shared/
   nam/                   Neural Amp Modeler bridge (lev_nam.h/.cpp), fetch/build scripts, bundled captures
   help/                  explanations.json: hover text for every control, used by both apps
 .github/                 release workflows, issue forms
-index.html, serve.sh     early browser prototype (Web Audio); run ./serve.sh
 docs/                    logo, icon and screenshots for the README
 ```
 

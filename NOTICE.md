@@ -26,7 +26,8 @@ Source code: https://github.com/shaneoreilly/leviathan-amp-suite
 - **NeuralAmpModelerCore** (both apps, NAM captures), MIT License, © Steven Atkinson.
   https://github.com/sdatkinson/NeuralAmpModelerCore — with **Eigen** (MPL-2.0, https://eigen.tuxfamily.org) and
   **nlohmann/json** (MIT, © Niels Lohmann). Fetched at build time, not stored in this repository.
-- NAM capture files (`.nam`) are third-party content: they're not included and keep their creators' licenses.
+- **Bundled NAM captures** (`.nam`, both apps) are third-party content under GPLv3, credited per file in
+  `shared/nam/captures/CREDITS.md`. Captures you add yourself keep their creators' licenses.
 - **JUCE** (Windows app, `windows/`), used under the GNU AGPLv3. © Raw Material Software Limited.
   https://github.com/juce-framework/JUCE
 - **Steinberg ASIO SDK** (Windows app, ASIO support), used under the GNU GPLv3; downloaded at build time, not

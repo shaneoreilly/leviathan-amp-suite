@@ -50,7 +50,6 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 Source: "{#BuildDir}\Leviathan.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\THIRD-PARTY.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\shared\nam\captures\*"; DestDir: "{app}\NAM"; Flags: ignoreversion
 Source: "..\..\NOTICE.md"; DestDir: "{app}"; Flags: ignoreversion
 #if FileExists(AddBackslash(SourcePath) + "..\..\LICENSE")
