@@ -21,7 +21,7 @@ c++ -std=c++20 -O2 -ffp-contract=off -DNAM_SAMPLE_FLOAT -I"$ROOT/windows/Source"
 python3 - "$OUT" <<'EOF'
 import sys, struct, math, glob, os
 out = sys.argv[1]
-worst = 0.0
+worst = -999.0   # most negative "dB below signal" wins; start below any real scenario
 for sw in sorted(glob.glob(os.path.join(out, "*.swift.f32"))):
     name = os.path.basename(sw)[:-len(".swift.f32")]
     a = open(sw, "rb").read(); b = open(os.path.join(out, name + ".cpp.f32"), "rb").read()
