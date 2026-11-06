@@ -1554,7 +1554,7 @@ struct ContentView: View {
                 trailing: AnyView(GateDot(mt: m.meters))) {
             HStack {
                 Knob(label: "Thresh", value: $m.s.gateThresh, key: "gateThresh", range: -90...(-20), def: -60, fmt: { "\(Int($0)) dB" }, color: ch)
-                Knob(label: "Release", value: $m.s.gateRelease, key: "gateRelease", range: 10...400, def: 60, fmt: { "\(Int($0)) ms" }, color: ch)
+                Knob(label: "Release", value: $m.s.gateRelease, key: "gateRelease", range: 10...2000, def: 60, fmt: { "\(Int($0)) ms" }, color: ch)
             }
         }
     }

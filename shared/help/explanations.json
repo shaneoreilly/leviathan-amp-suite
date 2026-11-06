@@ -14,7 +14,7 @@
   "inputChannel": "Which input on the interface your guitar is plugged into.",
   "masterVol": "Overall output level of the rig.",
   "gateThresh": "How quiet the signal must get before the gate closes. Raise it (toward -20 dB) if hiss gets through; lower it if note tails get cut off.",
-  "gateRelease": "How quickly the gate closes once you stop playing. Short is tight for chugs; long lets notes ring out.",
+  "gateRelease": "How quickly the gate closes once you stop playing. Short (under 100 ms) is tight for chugs; long (up to 2 s) lets held notes and feedback fade out naturally. Hold Shift while dragging for fine steps.",
   "pitchSemis": "Shift in semitones: -2 turns E standard into D standard, -5 into B standard.",
   "pitchCents": "Fine tuning in cents (1/100 of a semitone), to match a recording that's slightly off concert pitch.",
   "pitchMix": "Blend of shifted and original sound. 100% is a pure retune; lower values give an octave or harmony effect.",

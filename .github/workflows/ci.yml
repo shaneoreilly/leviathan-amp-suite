@@ -1,0 +1,42 @@
+# Checks every push and pull request: builds the Mac app and runs the Swift vs C++ engine parity test.
+# (windows.yml builds the Windows app on pushes that touch windows/ or shared/.)
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+    paths-ignore: ["**.md", "docs/**"]
+  pull_request:
+    paths-ignore: ["**.md", "docs/**"]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mac:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use the newest Xcode
+        # the runner's default Swift can time out type-checking SwiftUI view bodies
+        run: |
+          X=$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)
+          sudo xcode-select -s "$X"
+          swiftc --version
+
+      - name: Cache NAM library
+        uses: actions/cache@v4
+        with:
+          path: |
+            mac/.build-nam
+            shared/nam/deps
+          key: nam-${{ runner.arch }}-${{ hashFiles('shared/nam/fetch_nam.sh', 'shared/nam/build_lib.sh', 'shared/nam/lev_nam.cpp', 'shared/nam/lev_nam.h') }}
+
+      - name: Build Mac app
+        run: cd mac && ./build.sh
+
+      - name: Engine parity (Swift vs C++)
+        run: windows/tools/compare_with_swift.sh

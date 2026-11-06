@@ -1,10 +1,10 @@
 # Builds Leviathan for Windows (JUCE, with ASIO) and its installer.
-# Runs on pushes that touch windows/, by hand, and from release.yml (which publishes the installer).
+# Runs on pushes that touch windows/ or shared/, by hand, and from release.yml (which publishes the installer).
 name: Windows
 
 on:
   push:
-    paths: ["windows/**", ".github/workflows/windows.yml"]
+    paths: ["windows/**", "shared/**", ".github/workflows/windows.yml"]
   workflow_dispatch:
   workflow_call:
     inputs:
