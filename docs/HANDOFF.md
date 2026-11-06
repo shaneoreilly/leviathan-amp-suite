@@ -1,6 +1,6 @@
 # Leviathan: handoff notes
 
-The state of the project as of **6 November 2026 (v0.4.5)**, for whoever picks it up next.
+The state of the project as of **6 November 2026 (v0.4.6)**, for whoever picks it up next.
 - [CLAUDE.md](../CLAUDE.md): working rules and commands.
 - [DEVELOPMENT.md](../DEVELOPMENT.md): build and release.
 - [README.md](../README.md): the player-facing description.
@@ -97,6 +97,7 @@ These are built and reasoned through, but nobody has tried them on real hardware
 | 0.4.3 | Cab IR library; two-row layout; input picker; scroll and reset on dials; hover explanations; Save as; live recording waveform; metronome click; seek fixes |
 | 0.4.4 | Stable Mac signing (microphone permission sticks); trim recordings |
 | 0.4.5 | Hidden-recordings fix (lenient session.json); seek while playing; no-input playback; no built-in mic fallback; Space plays on Recordings; Blade pedal (Longsword-inspired distortion, 9th pedal, maxChain 9) |
+| 0.4.6 | Saved presets load after updates (lenient decode; unreadable ones kept); 23 more NAM captures (34 total); Presets columns NAME / MODIFIED / LAST PLAYED (YYYY-MM-DD HH:MM, import date fallback); decluttered Amp and Cabinet panels; Master output picker; rows fill the width |
 
 Full detail is in the GitHub release notes for each version.
 
