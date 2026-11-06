@@ -158,7 +158,8 @@ private:
 
 /// Panels snap to a 24-column grid; expanded panels in a row share the row's height.
 /// A nullptr item starts a new row.
-void layoutGrid(std::vector<UnitBox*> items, juce::Rectangle<int> area, int& usedHeight, int columns = 24, int spacing = 12);
+/// fill: spread each row's spare columns over its panels so every row ends at the same right edge.
+void layoutGrid(std::vector<UnitBox*> items, juce::Rectangle<int> area, int& usedHeight, int columns = 24, int spacing = 12, bool fill = false);
 
 /// Draws the Leviathan logo (white whale over the sea), strokes scaled to the size.
 void drawLogo(juce::Graphics& g, juce::Rectangle<float> r, juce::Colour c);

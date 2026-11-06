@@ -237,7 +237,7 @@ void RigView::layout() {
         else if (auto it = panels.find(id); it != panels.end()) items.push_back(it->second.get());
     }
     int used = 0;
-    layoutGrid(items, { full.getX(), y, full.getWidth(), 0 }, used);
+    layoutGrid(items, { full.getX(), y, full.getWidth(), 0 }, used, 24, 12, true);
     y += used + 12;
     if (pedalHeader) { pedalHeader->setBounds(full.getX(), y, full.getWidth(), 26); y += 32; }
     if (emptyPedals) { emptyPedals->setBounds(full.getX(), y, full.getWidth(), 40); y += 52; }
@@ -303,7 +303,7 @@ std::unique_ptr<UnitBox> RigView::makePanel(const juce::String& id) {
         auto c = col(10);
         auto r1 = row(6);
         // ids: 1 = built-in voicings, 2.. = fitted captures, 1000.. = NAM captures
-        auto cap = std::make_unique<Picker>((int) (330 * theme::W), [&m] {
+        auto cap = std::make_unique<Picker>((int) (250 * theme::W), [&m] {
             if (const auto nm = m.s().s("nam"); nm.isNotEmpty()) { const int k = m.namFiles.indexOf(nm); return k >= 0 ? 1000 + k : 1; }
             const auto cur = m.s().s("capture"); if (cur.isEmpty()) return 1;
             int i = 2; for (auto& [k, v] : m.captures) { if (k == cur) return i; i++; } return 1;
@@ -350,7 +350,7 @@ std::unique_ptr<UnitBox> RigView::makePanel(const juce::String& id) {
     } else if (id == "master") {
         auto c = col(8);
         const auto outs = m.outputDeviceNames();
-        auto dev = std::make_unique<Picker>((int) (190 * theme::W), [&m, outs] { return outs.indexOf(m.outputDeviceName()) + 1; },
+        auto dev = std::make_unique<Picker>((int) (160 * theme::W), [&m, outs] { return outs.indexOf(m.outputDeviceName()) + 1; },
                                             [&m, outs](int i) { if (juce::isPositiveAndBelow(i - 1, outs.size())) m.setOutputDevice(outs[i - 1]); });
         for (int i = 0; i < outs.size(); ++i) dev->addItem(outs[i], i + 1);
         dev->setTextWhenNothingSelected(outs.isEmpty() ? "No output device" : "Choose an output");
@@ -364,7 +364,7 @@ std::unique_ptr<UnitBox> RigView::makePanel(const juce::String& id) {
         auto c = col(8);
         auto block = col(8, juce::Justification::left);
         auto r1 = row(8);
-        auto pick = std::make_unique<Picker>((int) (260 * theme::W), [&m] { return m.s().i("cabModel") + 1; }, [&m](int i) { m.set("cabModel", i - 1); });
+        auto pick = std::make_unique<Picker>((int) (200 * theme::W), [&m] { return m.s().i("cabModel") + 1; }, [&m](int i) { m.set("cabModel", i - 1); });
         if (!m.cabIRs.isEmpty()) { pick->addSectionHeading("Your IRs"); pick->addItem("IR library (" + juce::String(m.cabIRs.all().size()) + ")", CAB_IRLIB + 1); }
         if (!m.irLib.isEmpty()) { pick->addSectionHeading("Multi-mic"); pick->addItem(juce::String::fromUTF8("God's Cab \xc2\xb7 Mesa 4x12"), CAB_LIB + 1); }
         pick->addSectionHeading("Built-in");
@@ -486,7 +486,7 @@ std::unique_ptr<juce::Component> RigView::inputPickers() {
     auto c = col(6);
     const auto names = m.inputDeviceNames();
     // id 1 = no input (play recordings without an interface); devices from 2
-    auto dev = std::make_unique<Picker>((int) (190 * theme::W),
+    auto dev = std::make_unique<Picker>((int) (160 * theme::W),
         [&m, names] { const auto n = m.inputDeviceName(); return n.isEmpty() ? 1 : names.indexOf(n) + 2; },
         [&m, names](int i) { if (i == 1) m.setInputDevice({}); else if (juce::isPositiveAndBelow(i - 2, names.size())) m.setInputDevice(names[i - 2]); });
     dev->addItem("No input (playback only)", 1);
@@ -496,7 +496,7 @@ std::unique_ptr<juce::Component> RigView::inputPickers() {
     c->add(std::move(dev));
     const int n = std::min(m.inputChannelCount(), 8);
     if (n > 1) {
-        auto ch = std::make_unique<Picker>((int) (190 * theme::W), [&m] { return m.s().i("inputChannel") + 1; }, [&m](int i) { m.set("inputChannel", i - 1); });
+        auto ch = std::make_unique<Picker>((int) (160 * theme::W), [&m] { return m.s().i("inputChannel") + 1; }, [&m](int i) { m.set("inputChannel", i - 1); });
         for (int i = 0; i < n; ++i) ch->addItem("Channel " + juce::String(i + 1), i + 1);
         ch->setTooltip(Model::explain("inputChannel"));
         c->add(std::move(ch));
@@ -515,7 +515,7 @@ std::unique_ptr<juce::Component> RigView::irLibraryRow() {
     b->onClick = [&m, bp] {
         juce::CallOutBox::launchAsynchronously(std::make_unique<IRBrowser>(m), bp->getScreenBounds(), nullptr);
     };
-    setPref(*b, (int) (300 * theme::W), 26);
+    setPref(*b, (int) (240 * theme::W), 26);
     b->setTooltip(rel);
     r->add(std::move(b));
     r->add(std::make_unique<IconButton>(IconButton::chevronLeft, [&m] { m.set("irFile", m.cabIRs.step(m.s().s("irFile"), -1)); }, 12))->setTooltip("Previous IR");

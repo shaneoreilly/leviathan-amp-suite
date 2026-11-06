@@ -1446,7 +1446,7 @@ struct ContentView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 if m.tunerOn { tuner }
-                GridFlow {
+                GridFlow(fill: true) {
                     ForEach(m.panelOrder, id: \.self) { id in
                         panelView(id).environment(\.panelID, id)
                             .onDrop(of: [.text], delegate: PanelDrop(target: id, m: m, drag: drag))
@@ -1527,7 +1527,7 @@ struct ContentView: View {
                     ForEach(m.inputs) { Text($0.name).tag($0.uid) }
                     if m.input == nil && m.inputUID != Model.noInput { Text("Not connected").tag(m.inputUID) }
                 }
-                    .labelsHidden().frame(width: 190 * W)
+                    .labelsHidden().frame(width: 160 * W)
                     .onHover { inside in
                         if inside { HoverHelp.shared.show(id: "inputDevice", title: "Input · Interface", text: EXPLAIN["inputDevice"]) } else { HoverHelp.shared.clear(id: "inputDevice") }
                     }
@@ -1535,7 +1535,7 @@ struct ContentView: View {
                     Picker("", selection: $m.s.inputChannel) {
                         ForEach(0..<min(m.input?.ins ?? 1, 8), id: \.self) { Text("Channel \($0 + 1)").tag($0) }
                     }
-                    .labelsHidden().frame(width: 190 * W)
+                    .labelsHidden().frame(width: 160 * W)
                     .onHover { inside in
                         if inside { HoverHelp.shared.show(id: "inputChannel", title: "Input · Channel", text: EXPLAIN["inputChannel"]) } else { HoverHelp.shared.clear(id: "inputChannel") }
                     }
@@ -1720,7 +1720,7 @@ struct ContentView: View {
                         if !m.captures.isEmpty {
                             Section("Your captures") { ForEach(m.captures.keys.sorted(), id: \.self) { n in Text(n).tag("cap:" + n) } }
                         }
-                    }.labelsHidden().frame(width: 330 * W)
+                    }.labelsHidden().frame(width: 250 * W)
                     Menu {
                         Button("Add NAM captures (.nam)…") { m.importNam() }
                         Button("Open NAM folder") { NSWorkspace.shared.open(NamHost.dir) }
@@ -1814,7 +1814,7 @@ struct ContentView: View {
                         if !m.irLib.isEmpty { Section("Multi-mic") { Text("God's Cab · Mesa 4x12").tag(CAB_LIB) } }
                         Section("Built-in") { ForEach(CABS.indices, id: \.self) { Text(CABS[$0].name).tag($0) } }
                         if let n = m.userIRName { Section("File") { Text(n).tag(CAB_USER) } }
-                    }.labelsHidden().frame(width: 260 * W)
+                    }.labelsHidden().frame(width: 200 * W)
                     Menu {
                         Button("Add IRs to the library (files or a folder)…") { m.importCabIRs() }
                         Button("Load a single IR file…") { m.loadIR() }
@@ -1913,7 +1913,7 @@ struct ContentView: View {
                 Picker("", selection: $m.outputUID) {
                     ForEach(m.outputs) { d in Text(d.outputWarning != nil ? "\(d.name) ⚠︎" : d.name).tag(d.uid) }
                 }
-                .labelsHidden().frame(width: 190 * W)
+                .labelsHidden().frame(width: 160 * W)
                 .explain("outputDevice", "Master · Output device")
                 Knob(label: "Output", value: $m.s.masterVol, key: "masterVol", range: -40...12, def: -6, fmt: { String(format: "%+.1f dB", $0) }, color: ch)
             }

@@ -443,7 +443,7 @@ void UnitBox::itemDragEnter(const SourceDetails& d) {
 
 // MARK: - grid
 
-void layoutGrid(std::vector<UnitBox*> items, juce::Rectangle<int> area, int& usedHeight, int columns, int spacing) {
+void layoutGrid(std::vector<UnitBox*> items, juce::Rectangle<int> area, int& usedHeight, int columns, int spacing, bool fill) {
     const float unit = std::max(((float) area.getWidth() - (float) spacing * (float) (columns - 1)) / (float) columns, 1.f);
     struct Item { UnitBox* box; int col, span; juce::Point<int> size; };
     std::vector<std::vector<Item>> rows(1);
@@ -456,6 +456,17 @@ void layoutGrid(std::vector<UnitBox*> items, juce::Rectangle<int> area, int& use
         rows.back().push_back({ b, col, span, s });
         col += span;
     }
+    if (fill)
+        for (auto& row : rows) {
+            int used = 0; for (auto& it : row) used += it.span;
+            const int spare = columns - used;
+            if (row.empty() || spare <= 0) continue;
+            int c = 0, given = 0;
+            for (size_t k = 0; k < row.size(); ++k) {
+                const int extra = k + 1 == row.size() ? spare - given : spare * row[k].span / used;
+                given += extra; row[k].col = c; row[k].span += extra; c += row[k].span;
+            }
+        }
     int y = area.getY();
     for (auto& row : rows) {
         if (row.empty()) continue;

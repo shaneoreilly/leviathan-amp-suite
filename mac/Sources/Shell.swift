@@ -768,6 +768,8 @@ struct RowBreakKey: LayoutValueKey { static let defaultValue = false }
 struct GridFlow: Layout {
     var columns = 24
     var spacing: CGFloat = 12
+    /// Spread each row's spare columns over its panels so every row ends at the same right edge.
+    var fill = false
 
     private struct Item { let index: Int, col: Int, span: Int, size: CGSize }
 
@@ -784,7 +786,20 @@ struct GridFlow: Layout {
             rows[rows.count - 1].append(Item(index: i, col: col, span: span, size: s))
             col += span
         }
-        return rows.filter { !$0.isEmpty }
+        rows = rows.filter { !$0.isEmpty }
+        guard fill else { return rows }
+        return rows.map { row in
+            let used = row.reduce(0) { $0 + $1.span }, spare = columns - used
+            guard spare > 0 else { return row }
+            var out: [Item] = [], col = 0, given = 0
+            for (k, it) in row.enumerated() {
+                let extra = k == row.count - 1 ? spare - given : spare * it.span / used
+                given += extra
+                out.append(Item(index: it.index, col: col, span: it.span + extra, size: it.size))
+                col += it.span + extra
+            }
+            return out
+        }
     }
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
@@ -956,7 +971,7 @@ struct IRLibraryRow: View {
                     Image(systemName: "magnifyingglass")
                     Text(m.s.irFile.isEmpty ? "Choose an IR…" : CabIRLibrary.title(m.s.irFile)).lineLimit(1)
                     Spacer(minLength: 4)
-                }.frame(width: 300 * W)
+                }.frame(width: 240 * W)
             }
             .popover(isPresented: $ui.open, arrowEdge: .bottom) { IRBrowser(open: $ui.open).environmentObject(m) }
             Button { m.s.irFile = m.cabIRs.step(m.s.irFile, by: -1) ?? m.s.irFile } label: { Image(systemName: "chevron.left") }.help("Previous IR")
