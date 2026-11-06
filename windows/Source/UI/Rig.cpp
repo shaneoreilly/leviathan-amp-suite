@@ -355,7 +355,16 @@ std::unique_ptr<UnitBox> RigView::makePanel(const juce::String& id) {
         for (int i = 0; i < outs.size(); ++i) dev->addItem(outs[i], i + 1);
         dev->setTextWhenNothingSelected(outs.isEmpty() ? "No output device" : "Choose an output");
         dev->setTooltip(Model::explain("outputDevice"));
-        c->add(std::move(dev));
+        // same column as INPUT's pickers; when INPUT shows a channel picker, a blank of its size keeps the device pickers level
+        auto pk = col(6);
+        const auto ph = pref(*dev).y;
+        pk->add(std::move(dev));
+        if (std::min(m.inputChannelCount(), 8) > 1) {
+            auto gap = std::make_unique<juce::Component>();
+            setPref(*gap, (int) (160 * theme::W), ph);
+            pk->add(std::move(gap));
+        }
+        c->add(std::move(pk));
         auto r = row(); r->add(knob("Output", "masterVol", -40, 12, -6, dbSigned, "MASTER"));
         c->add(std::move(r));
         box = std::make_unique<UnitBox>(m, "MASTER", std::move(c), "", "panel:master");

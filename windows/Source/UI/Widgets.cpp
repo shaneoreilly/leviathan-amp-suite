@@ -364,13 +364,13 @@ UnitBox::UnitBox(Model& m, juce::String t, std::unique_ptr<juce::Component> c, j
     chevron.icon = folded() ? IconButton::chevronRight : IconButton::chevronDown;
 }
 
-juce::Point<int> UnitBox::idealSize() const {
+juce::Point<int> UnitBox::idealSize(bool expanded) const {
     int head = 14 + 4 + (gripHandle ? 22 : 0) + juce::GlyphArrangement::getStringWidthInt(theme::font(10, true, 2), title) + 12;
     for (auto& c : leading) head += pref(*c).x + 6;
     for (auto& c : trailing) head += pref(*c).x + 6;
     if (footswitch) head += 12 + pref(*footswitch).x;
     int w = head, h = headerH;
-    if (content && !folded()) {
+    if (content && (expanded || !folded())) {
         const auto p = pref(*content);
         w = std::max(w, p.x); h += gapAfterHeader + p.y;
     }
@@ -450,7 +450,7 @@ void layoutGrid(std::vector<UnitBox*> items, juce::Rectangle<int> area, int& use
     int col = 0;
     for (auto* b : items) {
         if (b == nullptr) { if (col > 0) { rows.emplace_back(); col = 0; } continue; }
-        const auto s = b->idealSize();
+        const auto s = b->idealSize(true);
         const int span = std::min(columns, std::max(1, (int) std::ceil(((float) s.x + (float) spacing) / (unit + (float) spacing) - 0.001f)));
         if (col > 0 && col + span > columns) { rows.emplace_back(); col = 0; }
         rows.back().push_back({ b, col, span, s });
@@ -470,11 +470,13 @@ void layoutGrid(std::vector<UnitBox*> items, juce::Rectangle<int> area, int& use
     int y = area.getY();
     for (auto& row : rows) {
         if (row.empty()) continue;
-        int rh = 0; for (auto& it : row) rh = std::max(rh, it.size.y);
+        // while any panel in the row is open, the row keeps every panel's expanded height; a fully folded row shrinks
+        bool anyOpen = false; for (auto& it : row) anyOpen |= !it.box->folded();
+        int rh = 0; for (auto& it : row) rh = std::max(rh, anyOpen ? it.size.y : it.box->idealSize().y);
         for (auto& it : row) {
             const int x = area.getX() + (int) std::round((float) it.col * (unit + (float) spacing));
             const int w = (int) std::round((float) it.span * unit + (float) (it.span - 1) * (float) spacing);
-            it.box->setBounds(x, y, w, it.box->folded() ? it.size.y : rh);
+            it.box->setBounds(x, y, w, it.box->folded() ? it.box->idealSize().y : rh);
         }
         y += rh + spacing;
     }

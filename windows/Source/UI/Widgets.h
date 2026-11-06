@@ -135,7 +135,8 @@ public:
     std::vector<std::unique_ptr<juce::Component>> leading, trailing;
     void addLeading(std::unique_ptr<juce::Component> c) { addAndMakeVisible(*c); leading.push_back(std::move(c)); }
     void addTrailing(std::unique_ptr<juce::Component> c) { addAndMakeVisible(*c); trailing.push_back(std::move(c)); }
-    juce::Point<int> idealSize() const;
+    /// Size at the panel's preferred layout; expanded = as if open, even while folded (the grid uses it so a collapse moves nothing).
+    juce::Point<int> idealSize(bool expanded = false) const;
     bool folded() const { return model.collapsed.contains(title); }
     void paint(juce::Graphics&) override;
     void resized() override;
@@ -156,7 +157,8 @@ private:
     static constexpr int pad = 12, headerH = 24, gapAfterHeader = 10;
 };
 
-/// Panels snap to a 24-column grid; expanded panels in a row share the row's height.
+/// Panels snap to a 24-column grid; expanded panels in a row share the row's height. Folded panels keep their expanded
+/// width and, while the row has an open panel, their expanded height, so a collapse never moves anything else.
 /// A nullptr item starts a new row.
 /// fill: spread each row's spare columns over its panels so every row ends at the same right edge.
 void layoutGrid(std::vector<UnitBox*> items, juce::Rectangle<int> area, int& usedHeight, int columns = 24, int spacing = 12, bool fill = false);

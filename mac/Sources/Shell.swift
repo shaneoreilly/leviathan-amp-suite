@@ -758,13 +758,16 @@ struct SettingsView: View {
 
 // MARK: - Grid layout: panels snap to a 24-column grid so edges line up across rows
 
-/// Collapsed panels keep their header height instead of stretching to the row.
+/// Collapsed panels show only their header, but keep their expanded width and (while the row has an open panel)
+/// their expanded height in the grid, so collapsing never moves anything else.
 struct FoldedKey: LayoutValueKey { static let defaultValue = false }
 /// A zero-size item that starts a new row ("|" in the panel order).
 struct RowBreakKey: LayoutValueKey { static let defaultValue = false }
 
 /// Each item spans as many columns as its natural width needs; items wrap to a new row when the columns run out.
 /// Expanded items in a row share the row's height, so tops and bottoms line up too.
+/// Item sizes are always the expanded ones (a folded UnitBox keeps its content in the layout, hidden), so a collapse
+/// changes neither the column spans nor, unless the whole row folds, the row height.
 struct GridFlow: Layout {
     var columns = 24
     var spacing: CGFloat = 12
@@ -802,10 +805,19 @@ struct GridFlow: Layout {
         }
     }
 
+    /// Height of a folded panel: its header, from a zero-height proposal.
+    private func foldedHeight(_ v: LayoutSubview) -> CGFloat { v.sizeThatFits(ProposedViewSize(width: nil, height: 0)).height }
+
+    /// While any panel in the row is open the row keeps every panel's expanded height; a fully folded row shrinks to its headers.
+    private func rowHeight(_ row: [Item], _ subviews: Subviews) -> CGFloat {
+        if row.contains(where: { !subviews[$0.index][FoldedKey.self] }) { return row.map(\.size.height).max() ?? 0 }
+        return row.map { foldedHeight(subviews[$0.index]) }.max() ?? 0
+    }
+
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let width = proposal.width ?? 1200
         let r = rows(width, subviews)
-        let h = r.reduce(0) { $0 + ($1.map(\.size.height).max() ?? 0) } + spacing * CGFloat(max(r.count - 1, 0))
+        let h = r.reduce(0) { $0 + rowHeight($1, subviews) } + spacing * CGFloat(max(r.count - 1, 0))
         return CGSize(width: width, height: h)
     }
 
@@ -814,10 +826,10 @@ struct GridFlow: Layout {
         for v in subviews where v[RowBreakKey.self] { v.place(at: bounds.origin, proposal: .zero) }
         var y = bounds.minY
         for row in rows(bounds.width, subviews) {
-            let rh = row.map(\.size.height).max() ?? 0
+            let rh = rowHeight(row, subviews)
             for it in row {
                 let w = CGFloat(it.span) * u + CGFloat(it.span - 1) * spacing
-                let h = subviews[it.index][FoldedKey.self] ? it.size.height : rh
+                let h = subviews[it.index][FoldedKey.self] ? foldedHeight(subviews[it.index]) : rh
                 subviews[it.index].place(at: CGPoint(x: bounds.minX + CGFloat(it.col) * (u + spacing), y: y),
                                          proposal: ProposedViewSize(width: w, height: h))
             }

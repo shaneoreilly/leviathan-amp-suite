@@ -1266,7 +1266,7 @@ struct UnitBox<Content: View>: View {
 
     var body: some View {
         let folded = m.collapsed.contains(title)
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 0) {
             HStack {
                 CollapseChevron(key: title)
                 if let panelID, panelID != "|" {
@@ -1286,6 +1286,12 @@ struct UnitBox<Content: View>: View {
             if !folded {
                 content.opacity(on?.wrappedValue == false ? 0.4 : 1).environment(\.midiScope, title)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)   // centred across, sitting on the bottom so knob rows line up
+                    .padding(.top, 10)
+            } else {
+                // Folded: the content stays in the layout, hidden and squeezable to zero height. GridFlow measures the
+                // expanded size (unspecified proposal) and the folded one (height 0), so a collapse never moves its neighbours.
+                content.padding(.top, 10).hidden()
+                    .frame(minHeight: 0, maxHeight: .infinity, alignment: .top).clipped().allowsHitTesting(false)
             }
         }
         .padding(12)
@@ -1919,6 +1925,10 @@ struct ContentView: View {
                 }
                 .labelsHidden().frame(width: 160 * W)
                 .explain("outputDevice", "Master · Output device")
+                if (m.input?.ins ?? 1) > 1 {
+                    // stands in for INPUT's channel picker, so the two device pickers sit level
+                    Picker("", selection: .constant(0)) { Text("").tag(0) }.labelsHidden().frame(width: 160 * W).hidden()
+                }
                 Knob(label: "Output", value: $m.s.masterVol, key: "masterVol", range: -40...12, def: -6, fmt: { String(format: "%+.1f dB", $0) }, color: ch)
             }
         }
