@@ -94,6 +94,7 @@ These are built and reasoned through, but nobody has tried them on real hardware
 | 0.4.4 | Stable Mac signing (microphone permission sticks); trim recordings |
 | 0.4.5 | Hidden-recordings fix (lenient session.json); seek while playing; no-input playback; no built-in mic fallback; Space plays on Recordings; Blade pedal (Longsword-inspired distortion, 9th pedal, maxChain 9) |
 | 0.4.6 | Saved presets load after updates (lenient decode; unreadable ones kept); 23 more NAM captures (34 total); Presets columns NAME / MODIFIED / LAST PLAYED (YYYY-MM-DD HH:MM, import date fallback); decluttered Amp and Cabinet panels; Master output picker; rows fill the width |
+| 0.4.7 | Low power chords stay clean in the pitch shifter (30 ms search, centred 10 ms window); collapsing a panel moves nothing else; INPUT/MASTER pickers level; gate Release to 2 s; CI on every push |
 
 Full detail is in the GitHub release notes for each version.
 
