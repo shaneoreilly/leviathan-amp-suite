@@ -22,6 +22,7 @@ void fillDefaults(juce::NamedValueSet& v) {
     put("delaySync", 0);
     put("delayOn", false); put("delayTime", 420.0); put("delayFeedback", 0.28); put("delayTone", 0.45); put("delayMix", 0.2);
     put("revOn", false); put("revSize", 0.45); put("revMix", 0.18);
+    put("doublerOn", true); put("doublerWidth", 0.6); put("doublerTime", 20.0);
     put("masterVol", -6.0);
     put("chain", arrI({ (int) PedalKind::od }));
     put("compOn", true); put("compSustain", 0.5); put("compAttack", 10.0); put("compLevel", 0.0); put("compBlend", 1.0);
@@ -146,6 +147,7 @@ void Settings::apply(Params& p) const {
     p.cabOn = b("cabOn"); p.cabLowCut = f("cabLowCut"); p.cabHighCut = f("cabHighCut"); p.cabLevel = f("cabLevel");
     p.delayOn = b("delayOn"); p.delayTime = f("delayTime"); p.delayFeedback = f("delayFeedback"); p.delayTone = f("delayTone"); p.delayMix = f("delayMix");
     p.revOn = b("revOn"); p.revSize = f("revSize"); p.revMix = f("revMix");
+    p.doublerOn = b("doublerOn"); p.doublerWidth = f("doublerWidth"); p.doublerTime = f("doublerTime");
     p.masterVol = f("masterVol");
     p.version.fetch_add(1, std::memory_order_release);
 }

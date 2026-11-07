@@ -8,7 +8,7 @@ namespace lev {
 
 const std::vector<double> Model::zoomSteps = { 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.25, 1.4, 1.6 };
 /// "|" starts a new row.
-static const juce::StringArray defaultPanels { "input", "master", "gate", "pitch", "eq", "|", "amp", "cab", "reverb", "delay" };
+static const juce::StringArray defaultPanels { "input", "master", "gate", "pitch", "eq", "|", "amp", "cab", "reverb", "delay", "doubler" };
 static const juce::Colour channelColours[3] = { juce::Colour::fromFloatRGBA(0.35f, 0.7f, 1, 1), juce::Colour::fromFloatRGBA(0.91f, 0.57f, 0.23f, 1),
                                                 juce::Colour::fromFloatRGBA(1, 0.3f, 0.3f, 1) };
 

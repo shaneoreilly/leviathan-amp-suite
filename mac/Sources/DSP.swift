@@ -64,6 +64,7 @@ final class Params: @unchecked Sendable {
     var cabOn = true, cabLowCut: Float = 80, cabHighCut: Float = 7500, cabLevel: Float = 0
     var delayOn = false, delayTime: Float = 420, delayFeedback: Float = 0.28, delayTone: Float = 0.45, delayMix: Float = 0.2
     var revOn = false, revSize: Float = 0.45, revMix: Float = 0.18
+    var doublerOn = false, doublerWidth: Float = 0.6, doublerTime: Float = 20
     var masterVol: Float = -6
 
     // pedal chain (pre-amp, user ordered). Entries are PedalKind raw values.
@@ -508,6 +509,11 @@ final class DSP {
     // reverb (Freeverb)
     private var combs: [Comb] = [], aps: [Allpass] = []
     private var rSend = Smooth(), rWet: Float = 0
+    // doubler: the side signal is the difference of two slowly drifting delayed copies (mid stays dry, mono-safe)
+    private static let dbSize = 16384, dbMask = 16383   // 40 ms + drift fits at 192 kHz
+    private let dbBuf: UnsafeMutablePointer<Float> = { let b = UnsafeMutablePointer<Float>.allocate(capacity: 16384); b.initialize(repeating: 0, count: 16384); return b }()
+    private var dbW = 0, dbPh1: Float = 0, dbPh2: Float = 0, dbInc1: Float = 0, dbInc2: Float = 0
+    private var dbWidth = Smooth(), dbTime = Smooth()
 
     // output limiter: stops a hot Master from hard-clipping (which sounds like crackle)
     private var limG: Float = 1, limRel: Float = 0
@@ -610,6 +616,10 @@ final class DSP {
         if force { dTime.v = dTime.target }
 
         rSend.target = p.revOn ? 1 : 0; rWet = p.revMix * 3
+        dbWidth.target = p.doublerOn ? p.doublerWidth : 0
+        dbTime.target = min(max(p.doublerTime, 5), 40) / 1000 * sr
+        dbInc1 = 0.11 / sr; dbInc2 = 0.17 / sr
+        if dbTime.v == 0 { dbTime.v = dbTime.target }
         let fb = 0.7 + p.revSize * 0.28, damp: Float = 0.3 - p.revSize * 0.1
         for c in combs { c.fb = fb; c.damp = damp }
     }
@@ -766,7 +776,22 @@ final class DSP {
             for (j, cb) in combs.enumerated() { if j % 2 == 0 { l += cb.run(rin) } else { r += cb.run(rin) } }
             for ap in aps { l = ap.run(l) }
             for ap in aps { r = ap.peekRun(r) }
-            var yl = (x + l * rWet) * vol, yr = (x + r * rWet) * vol
+            // doubler: two copies ~T and ~0.62 T behind, each drifting ±6-8 % at its own slow rate (about ±1.5 cents)
+            dbBuf[dbW] = x
+            dbPh1 += dbInc1; if dbPh1 >= 1 { dbPh1 -= 1 }
+            dbPh2 += dbInc2; if dbPh2 >= 1 { dbPh2 -= 1 }
+            let tb = dbTime.next(0.0005), w = dbWidth.next(c)
+            var side: Float = 0
+            if w > 1e-4 {
+                let t1 = tb * (1 + 0.06 * sinf(2 * .pi * dbPh1)), t2 = tb * 0.62 * (1 + 0.08 * sinf(2 * .pi * dbPh2))
+                let r1 = Float(dbW) - t1 + Float(DSP.dbSize), r2 = Float(dbW) - t2 + Float(DSP.dbSize)
+                let i1 = Int(r1), f1 = r1 - Float(i1), i2 = Int(r2), f2 = r2 - Float(i2)
+                let d1 = dbBuf[i1 & DSP.dbMask] + (dbBuf[(i1 + 1) & DSP.dbMask] - dbBuf[i1 & DSP.dbMask]) * f1
+                let d2 = dbBuf[i2 & DSP.dbMask] + (dbBuf[(i2 + 1) & DSP.dbMask] - dbBuf[i2 & DSP.dbMask]) * f2
+                side = (d1 - d2) * 0.5 * w
+            }
+            dbW = (dbW + 1) & DSP.dbMask
+            var yl = (x + side + l * rWet) * vol, yr = (x - side + r * rWet) * vol
             // peak limiter: gain drops at once to keep the peak at the ceiling, then recovers over ~80 ms
             let pk = max(abs(yl), abs(yr)), target = pk > DSP.limCeiling ? DSP.limCeiling / pk : 1
             limG = target < limG ? target : limG + (target - limG) * limRel

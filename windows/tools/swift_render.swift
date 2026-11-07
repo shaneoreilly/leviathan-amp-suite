@@ -38,6 +38,10 @@ let scenarios: [Scenario] = [
         p.pitchOn = true; p.pitchSemis = -2; p.pitchCents = 10; p.pitchMix = 1
         p.chainCount = 0; p.ampOn = true; p.ampChannel = 1; p.ampGain = 0.7; p.eqOn = false; p.cabOn = true; p.masterVol = -6
     }, ir: builtinCab),
+    Scenario(name: "doubler", setup: { p in
+        p.chainCount = 0; p.ampOn = true; p.ampChannel = 2; p.ampGain = 0.6; p.eqOn = false; p.cabOn = true; p.masterVol = -6
+        p.doublerOn = true; p.doublerWidth = 0.8; p.doublerTime = 24; p.revOn = true; p.revMix = 0.2
+    }, ir: builtinCab),
     Scenario(name: "amp_only", setup: { p in
         p.inGain = 9.65; p.gateOn = false; p.chainCount = 0
         p.ampOn = true; p.ampChannel = 2; p.ampGain = 0.65; p.eqOn = false; p.cabOn = false; p.masterVol = -3

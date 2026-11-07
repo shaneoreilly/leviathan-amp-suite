@@ -426,6 +426,10 @@ void DSP::update(bool force) {
     if (force) dTime.v = dTime.target;
 
     rSend.target = p.revOn ? 1.f : 0.f; rWet = p.revMix * 3;
+    dbWidth.target = p.doublerOn ? p.doublerWidth : 0.f;
+    dbTime.target = std::min(std::max((float) p.doublerTime, 5.f), 40.f) / 1000 * sr;
+    dbInc1 = 0.11f / sr; dbInc2 = 0.17f / sr;
+    if (dbTime.v == 0) dbTime.v = dbTime.target;
     const float fb = 0.7f + p.revSize * 0.28f, damp = 0.3f - p.revSize * 0.1f;
     for (auto& c : combs) { c.fb = fb; c.damp = damp; }
 }
@@ -589,7 +593,23 @@ void DSP::process(const float* input, float* outL, float* outR, int frames) {
         for (size_t j = 0; j < combs.size(); ++j) { if (j % 2 == 0) l += combs[j].run(rin); else r += combs[j].run(rin); }
         for (auto& ap : aps) l = ap.run(l);
         for (auto& ap : aps) r = ap.peekRun(r);
-        float yl = (x + l * rWet) * vol, yr = (x + r * rWet) * vol;
+        // doubler: two copies ~T and ~0.62 T behind, each drifting ±6-8 % at its own slow rate (about ±1.5 cents)
+        dbBuf[(size_t) dbW] = x;
+        dbPh1 += dbInc1; if (dbPh1 >= 1) dbPh1 -= 1;
+        dbPh2 += dbInc2; if (dbPh2 >= 1) dbPh2 -= 1;
+        const float tb = dbTime.next(0.0005f), w = dbWidth.next(c);
+        float side = 0;
+        if (w > 1e-4f) {
+            constexpr float twoPi = 6.283185307f;
+            const float t1 = tb * (1 + 0.06f * std::sin(twoPi * dbPh1)), t2 = tb * 0.62f * (1 + 0.08f * std::sin(twoPi * dbPh2));
+            const float r1 = (float) dbW - t1 + (float) dbSize, r2 = (float) dbW - t2 + (float) dbSize;
+            const int i1 = (int) r1, i2 = (int) r2; const float f1 = r1 - (float) i1, f2 = r2 - (float) i2;
+            const float d1 = dbBuf[(size_t) (i1 & dbMask)] + (dbBuf[(size_t) ((i1 + 1) & dbMask)] - dbBuf[(size_t) (i1 & dbMask)]) * f1;
+            const float d2 = dbBuf[(size_t) (i2 & dbMask)] + (dbBuf[(size_t) ((i2 + 1) & dbMask)] - dbBuf[(size_t) (i2 & dbMask)]) * f2;
+            side = (d1 - d2) * 0.5f * w;
+        }
+        dbW = (dbW + 1) & dbMask;
+        float yl = (x + side + l * rWet) * vol, yr = (x - side + r * rWet) * vol;
         // peak limiter: gain drops at once to keep the peak at the ceiling, then recovers over ~80 ms
         const float pk = std::max(std::abs(yl), std::abs(yr)), target = pk > limCeiling ? limCeiling / pk : 1.0f;
         limG = target < limG ? target : limG + (target - limG) * limRel;

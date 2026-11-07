@@ -74,6 +74,7 @@ struct Params {
     bool cabOn = true; float cabLowCut = 80, cabHighCut = 7500, cabLevel = 0;
     bool delayOn = false; float delayTime = 420, delayFeedback = 0.28f, delayTone = 0.45f, delayMix = 0.2f;
     bool revOn = false; float revSize = 0.45f, revMix = 0.18f;
+    bool doublerOn = false; float doublerWidth = 0.6f, doublerTime = 20;
     float masterVol = -6;
 
     static constexpr int maxChain = 9;
@@ -241,6 +242,10 @@ private:
     std::vector<float> dBuf; int dSize, dW = 0; Smooth dTime, dSend; float dFb = 0, dWet = 0; Biquad dLP;
 
     std::vector<Comb> combs; std::vector<Allpass> aps; Smooth rSend; float rWet = 0;
+    // doubler: the side signal is the difference of two slowly drifting delayed copies (mid stays dry, mono-safe)
+    static constexpr int dbSize = 16384, dbMask = 16383;   // 40 ms + drift fits at 192 kHz
+    std::vector<float> dbBuf = std::vector<float>(dbSize, 0.0f);
+    int dbW = 0; float dbPh1 = 0, dbPh2 = 0, dbInc1 = 0, dbInc2 = 0; Smooth dbWidth, dbTime;
 
     // output limiter: stops a hot Master from hard-clipping (which sounds like crackle)
     float limG = 1, limRel = 0;

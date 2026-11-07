@@ -405,6 +405,11 @@ std::unique_ptr<UnitBox> RigView::makePanel(const juce::String& id) {
         r->add(knob("Mix", "delayMix", 0, 1, 0.2, pct, "DELAY"));
         c->add(std::move(r));
         box = std::make_unique<UnitBox>(m, "DELAY", std::move(c), "delayOn", "panel:delay");
+    } else if (id == "doubler") {
+        auto r = row();
+        r->add(knob("Width", "doublerWidth", 0, 1, 0.6, pct, "DOUBLER"));
+        r->add(knob("Time", "doublerTime", 8, 40, 20, intUnit("ms"), "DOUBLER"));
+        box = std::make_unique<UnitBox>(m, "DOUBLER", std::move(r), "doublerOn", "panel:doubler");
     } else if (id == "reverb") {
         auto r = row();
         r->add(knob("Size", "revSize", 0, 1, 0.45, {}, "REVERB"));

@@ -21,6 +21,7 @@ struct Settings: Codable, Equatable {
     var delaySync = 0   // index into DELAY_DIVS; 0 = free time in ms
     var delayOn = false, delayTime = 420.0, delayFeedback = 0.28, delayTone = 0.45, delayMix = 0.2
     var revOn = false, revSize = 0.45, revMix = 0.18
+    var doublerOn = true, doublerWidth = 0.6, doublerTime = 20.0
     var masterVol = -6.0
 
     // pedal chain (pre-amp, in order) and the extra pedals
@@ -67,6 +68,7 @@ struct Settings: Codable, Equatable {
         p.cabOn = cabOn; p.cabLowCut = Float(cabLowCut); p.cabHighCut = Float(cabHighCut); p.cabLevel = Float(cabLevel)
         p.delayOn = delayOn; p.delayTime = Float(delayTime); p.delayFeedback = Float(delayFeedback); p.delayTone = Float(delayTone); p.delayMix = Float(delayMix)
         p.revOn = revOn; p.revSize = Float(revSize); p.revMix = Float(revMix)
+        p.doublerOn = doublerOn; p.doublerWidth = Float(doublerWidth); p.doublerTime = Float(doublerTime)
         p.masterVol = Float(masterVol)
         p.version &+= 1
     }
@@ -549,10 +551,10 @@ final class Model: ObservableObject {
 
     // Rig layout (not part of presets): panel order and collapsed sections.
     /// "|" starts a new row.
-    static let defaultPanels = ["input", "master", "gate", "pitch", "eq", "|", "amp", "cab", "reverb", "delay"]
+    static let defaultPanels = ["input", "master", "gate", "pitch", "eq", "|", "amp", "cab", "reverb", "delay", "doubler"]
     /// Each panel's UnitBox title (also its collapse key).
     static let panelTitles = ["input": "INPUT", "gate": "GATE", "pitch": "PITCH", "amp": "AMP", "master": "MASTER",
-                              "cab": "CABINET", "eq": "GRAPHIC EQ", "delay": "DELAY", "reverb": "REVERB"]
+                              "cab": "CABINET", "eq": "GRAPHIC EQ", "delay": "DELAY", "reverb": "REVERB", "doubler": "DOUBLER"]
     @Published var panelOrder: [String] = {
         let saved = (UserDefaults.standard.stringArray(forKey: "panelOrder2") ?? []).filter(Model.defaultPanels.contains)
         return saved + Model.defaultPanels.filter { !saved.contains($0) }
@@ -1483,6 +1485,7 @@ struct ContentView: View {
         case "eq": AnyView(eq)
         case "delay": AnyView(delay)
         case "reverb": AnyView(reverb)
+        case "doubler": AnyView(doubler)
         case "|": AnyView(Color.clear.frame(width: 0, height: 0))
         default: AnyView(EmptyView())
         }
@@ -1881,6 +1884,15 @@ struct ContentView: View {
                     .fixedSize().help("Amp presence when captured, and a Tube Screamer mid bump baked into the IR")
                 Button { rel.wrappedValue = lib.step(f.rel, by: -1) ?? f.rel } label: { Image(systemName: "chevron.left") }.buttonStyle(.borderless)
                 Button { rel.wrappedValue = lib.step(f.rel, by: 1) ?? f.rel } label: { Image(systemName: "chevron.right") }.buttonStyle(.borderless)
+            }
+        }
+    }
+
+    var doubler: some View {
+        UnitBox(title: "DOUBLER", on: $m.s.doublerOn, onKey: "doublerOn", color: ch) {
+            HStack(spacing: 2) {
+                Knob(label: "Width", value: $m.s.doublerWidth, key: "doublerWidth", range: 0...1, def: 0.6, fmt: pct, color: ch)
+                Knob(label: "Time", value: $m.s.doublerTime, key: "doublerTime", range: 8...40, def: 20, fmt: { "\(Int($0)) ms" }, color: ch)
             }
         }
     }
