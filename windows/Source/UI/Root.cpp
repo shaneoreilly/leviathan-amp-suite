@@ -138,13 +138,15 @@ struct LiveWave : juce::Component, private juce::Timer {
 
 struct TopBar : juce::Component {
     explicit TopBar(Model& m) : model(m),
-        power(""), rec(""), tuner("Tuner"), midi("MIDI"), save("Save"), saveAs("Save as..."), presetMenu(""),
+        power(""), rec(""), tuner("Tuner"), midi("MIDI"), save("Save"), saveAs("Save as..."), presetMenu(""), undoB(juce::String::fromUTF8("\xe2\x86\xb6")),
         metro(IconButton::metronome, [&m] { m.setMetro(!m.metroOn); }, 16),
-        prev(IconButton::chevronLeft, [&m] { m.stepPreset(-1); }, 13), next(IconButton::chevronRight, [&m] { m.stepPreset(1); }, 13),
+        prev(IconButton::chevronLeft, [&m] { m.confirmLoad([&m] { m.stepPreset(-1); }); }, 13), next(IconButton::chevronRight, [&m] { m.confirmLoad([&m] { m.stepPreset(1); }); }, 13),
         tap(m, "Tap", [&m] { m.tap(); }, MidiArmed::action("@tap", "Tap tempo")), bpm(""), meters(m),
         tunerLearn(m, MidiArmed::action("@tuner", "Tuner"), 6), metroLearn(m, MidiArmed::action("@metro", "Metronome"), 6),
         prevLearn(m, MidiArmed::action("@prev", "Previous preset"), 6), nextLearn(m, MidiArmed::action("@next", "Next preset"), 6) {
-        for (auto* c : std::initializer_list<juce::Component*> { &power, &rec, &tuner, &midi, &save, &saveAs, &presetMenu, &metro, &prev, &next, &tap, &bpm, &meters })
+        undoB.onClick = [&m] { m.undo(); }; undoB.setTooltip("Undo the last change to the rig (Ctrl+Z)");
+        hover.add(undoB, "top:undo", "Undo");
+        for (auto* c : std::initializer_list<juce::Component*> { &power, &rec, &tuner, &midi, &save, &saveAs, &presetMenu, &metro, &prev, &next, &tap, &bpm, &meters, &undoB })
             addAndMakeVisible(c);
         for (auto* o : { &tunerLearn, &metroLearn, &prevLearn, &nextLearn }) addAndMakeVisible(o);
         addChildComponent(wave);
@@ -179,7 +181,7 @@ struct TopBar : juce::Component {
         metro.setToggleState(m.metroOn, juce::dontSendNotification);
         bpm.setButtonText(std::fmod(m.bpm, 1.0) == 0 ? juce::String(juce::roundToInt(m.bpm)) : juce::String(m.bpm, 1));
         presetMenu.setButtonText((m.presetModified() ? juce::String::fromUTF8("\xe2\x97\x8f ") : juce::String()) + m.presetName);
-        save.setEnabled(m.presetModified());
+        save.setEnabled(m.presetModified()); undoB.setEnabled(m.canUndo());
         wave.setVisible(m.sessions->recording);
         for (auto* o : { &tunerLearn, &metroLearn, &prevLearn, &nextLearn }) o->sync();
         resized(); repaint();
@@ -194,6 +196,7 @@ struct TopBar : juce::Component {
         auto placeR = [&](juce::Component& c, int w, int h = 28) { r -= w; c.setBounds(r, (getHeight() - h) / 2, w, h); r -= 10; };
         placeR(saveAs, 80);
         placeR(save, 60);
+        placeR(undoB, 34);
         placeR(next, 26); nextLearn.setBounds(next.getBounds());
         placeR(presetMenu, juce::jlimit(140, 300, juce::GlyphArrangement::getStringWidthInt(theme::font(10), presetMenu.getButtonText()) + 40));
         placeR(prev, 26); prevLearn.setBounds(prev.getBounds());
@@ -220,18 +223,18 @@ struct TopBar : juce::Component {
         const auto recent = m.recentlyPlayed();
         if (!recent.isEmpty()) {
             menu.addSectionHeader("Recently played");
-            for (int i = 0; i < std::min(5, recent.size()); ++i) { const auto n = recent[i]; menu.addItem(n, [&m, n] { m.loadAny(n); }); }
+            for (int i = 0; i < std::min(5, recent.size()); ++i) { const auto n = recent[i]; menu.addItem(n, [&m, n] { m.confirmLoad([&m, n] { m.loadAny(n); }); }); }
         }
         if (!m.favorites.isEmpty()) {
             menu.addSectionHeader("Favorites");
             auto fav = m.favorites; fav.sort(true);
-            for (const auto& n : fav) menu.addItem(juce::String::fromUTF8("\xe2\x98\x85 ") + n, [&m, n] { m.loadAny(n); });
+            for (const auto& n : fav) menu.addItem(juce::String::fromUTF8("\xe2\x98\x85 ") + n, [&m, n] { m.confirmLoad([&m, n] { m.loadAny(n); }); });
         }
         menu.addSectionHeader("Factory");
-        for (const auto& f : FACTORY) { const juce::String n = f.name; menu.addItem(m.userPresets.count(n) ? n + " (edited)" : n, [&m, n] { m.loadFactory(n); }); }
+        for (const auto& f : FACTORY) { const juce::String n = f.name; menu.addItem(m.userPresets.count(n) ? n + " (edited)" : n, [&m, n] { m.confirmLoad([&m, n] { m.loadFactory(n); }); }); }
         juce::StringArray mine; for (auto& [k, v] : m.userPresets) if (!m.isFactory(k)) mine.add(k);
         mine.sort(false);
-        if (!mine.isEmpty()) { menu.addSectionHeader("Yours"); for (const auto& n : mine) menu.addItem(n, [&m, n] { m.loadUser(n); }); }
+        if (!mine.isEmpty()) { menu.addSectionHeader("Yours"); for (const auto& n : mine) menu.addItem(n, [&m, n] { m.confirmLoad([&m, n] { m.loadUser(n); }); }); }
         menu.addSeparator();
         menu.addItem("Save \"" + m.presetName + "\"", [&m] { m.saveCurrent(); });
         menu.addItem("Save as new" + ellipsis, [&m] { askText("Save preset", {}, "Save", [&m](juce::String n) { m.savePreset(n); }); });
@@ -270,7 +273,7 @@ struct TopBar : juce::Component {
         juce::CallOutBox::launchAsynchronously(std::make_unique<Tempo>(model), bpm.getScreenBounds(), nullptr);
     }
     Model& model;
-    juce::TextButton power, rec, tuner, midi, save, saveAs, presetMenu;
+    juce::TextButton power, rec, tuner, midi, save, saveAs, presetMenu, undoB;
     IconButton metro, prev, next;
     ActionButton tap;
     juce::TextButton bpm;
@@ -338,7 +341,7 @@ struct PresetsScreen : Screen_, juce::FileDragAndDropTarget {
             load("Load"), exportB("Export" + ellipsis), rename("Rename"), del("Delete"), restore("Restore factory") {
             star.colour = m.favorites.contains(name) ? juce::Colours::yellow : theme::secondary;
             addAndMakeVisible(star);
-            load.onClick = [this] { model.loadAny(name); model.setScreen(Screen::rig); };
+            load.onClick = [this] { model.confirmLoad([this] { model.loadAny(name); model.setScreen(Screen::rig); }); };
             exportB.onClick = [this] { model.exportPreset(name); };
             rename.onClick = [this] { askText("Rename preset", name, "Rename", [this](juce::String n) { model.renamePreset(name, n); }); };
             del.onClick = [this] { model.deletePreset(name); };
@@ -372,7 +375,7 @@ struct PresetsScreen : Screen_, juce::FileDragAndDropTarget {
             g.drawText(Model::stamp(mt.shownModified()), cols.modified, 0, cols.width, getHeight(), juce::Justification::centredLeft);
             g.drawText(Model::stamp(mt.played), cols.played, 0, cols.width, getHeight(), juce::Justification::centredLeft);
         }
-        void mouseDoubleClick(const juce::MouseEvent&) override { model.loadAny(name); model.setScreen(Screen::rig); }
+        void mouseDoubleClick(const juce::MouseEvent&) override { model.confirmLoad([this] { model.loadAny(name); model.setScreen(Screen::rig); }); }
         Model& model; juce::String name; IconButton star; juce::TextButton load, exportB, rename, del, restore; int statusX = 0;
     };
     /// Column positions shared by the header and the rows: dates right of the name, actions at the right edge.
@@ -1338,6 +1341,7 @@ bool Root::keyPressed(const juce::KeyPress& k) {
         return true;
     }
     if (cmd && k.getKeyCode() == 'S') { model.saveCurrent(); return true; }
+    if (cmd && k.getKeyCode() == 'Z') { model.undo(); return true; }
     if (cmd && (k.getKeyCode() == '=' || k.getKeyCode() == '+')) { model.zoomStep(1); return true; }
     if (cmd && k.getKeyCode() == '-') { model.zoomStep(-1); return true; }
     if (cmd && k.getKeyCode() == '0') { model.setZoom(1.0); return true; }

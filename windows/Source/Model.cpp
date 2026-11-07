@@ -130,7 +130,35 @@ void Model::set(const juce::Identifier& key, const juce::var& v) {
     setSettings(n);
 }
 
+void Model::confirmLoad(std::function<void()> load) {
+    if (!presetModified()) { load(); return; }
+    juce::AlertWindow::showAsync(juce::MessageBoxOptions().withIconType(juce::MessageBoxIconType::QuestionIcon)
+                                     .withTitle(juce::String::fromUTF8("Save changes to \u201c") + presetName + juce::String::fromUTF8("\u201d?"))
+                                     .withMessage(juce::String::fromUTF8("You\u2019ve changed this preset since it was last saved."))
+                                     .withButton("Save", 1).withButton(juce::String::fromUTF8("Don\u2019t save"), 2).withButton("Cancel", 0),
+                                 [this, load](int r) {   // 1 = Save, 2 = Don't save, 0 = Cancel
+                                     if (r == 0) return;
+                                     if (r == 1) saveCurrent();
+                                     load();
+                                 });
+}
+
+void Model::undo() {
+    if (undoStack.empty()) return;
+    auto [old, name] = undoStack.back(); undoStack.pop_back();
+    undoing = true; setSettings(old); presetName = name; undoing = false;
+    lastEditMs = 0; changed();
+}
+
 void Model::settingsChanged(const Settings& old) {
+    if (!undoing) {
+        const auto now = juce::Time::currentTimeMillis();
+        if (now - lastEditMs > 600 || undoStack.empty()) {
+            undoStack.push_back({ old, presetName });
+            if (undoStack.size() > 100) undoStack.erase(undoStack.begin());
+        }
+        lastEditMs = now;
+    }
     applyAll();
     if (settings.s("nam") != old.s("nam")) updateNam();
     if (settings.i("cabModel") != old.i("cabModel") || settings.d("cabMic") != old.d("cabMic") || settings.s("irA") != old.s("irA")
@@ -397,10 +425,10 @@ void Model::applyPreset(const Settings& p, const juce::String& name) {
     if (n.i("cabModel") == CAB_USER && !userIR) n.set("cabModel", irLib.isEmpty() ? 0 : CAB_LIB);
     if (n.i("cabModel") == CAB_LIB && irLib.isEmpty()) n.set("cabModel", 0);
     if (n.i("cabModel") == CAB_IRLIB && !cabIRs.contains(n.s("irFile"))) n.set("cabModel", irLib.isEmpty() ? 0 : CAB_LIB);
+    setSettings(n);   // first, so undo records the preset name from before
     presetName = name;
     presetMeta[name].played = juce::Time::currentTimeMillis();
     props().setValue("preset", name);
-    setSettings(n);
     saveState();
     changed();
 }

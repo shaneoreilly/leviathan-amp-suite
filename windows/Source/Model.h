@@ -33,6 +33,9 @@ public:
     const Settings& s() const { return settings; }
     void setSettings(const Settings& n);
     void set(const juce::Identifier& key, const juce::var& v);   // one field (knobs, switches, MIDI)
+    /// Back to the rig (and preset name) before the last change; changes less than 0.6 s apart are one step.
+    void undo();
+    bool canUndo() const { return !undoStack.empty(); }
     void changed() { sendChangeMessage(); }
 
     // MARK: engine
@@ -91,6 +94,8 @@ public:
     void deletePreset(const juce::String& n);
     bool presetModified() const;
     void stepPreset(int d);
+    /// Loading another preset from the screen asks first when this one has unsaved changes (MIDI never asks).
+    void confirmLoad(std::function<void()> load);
     void persistPresets();
 
     // preset files (.leviathan)
@@ -233,6 +238,8 @@ private:
 
     void applyAll();
     void settingsChanged(const Settings& old);
+    std::vector<std::pair<Settings, juce::String>> undoStack;
+    juce::int64 lastEditMs = 0; bool undoing = false;
     void applyPreset(const Settings& p, const juce::String& name);
     void syncMute() { params.muted.store(tunerOn && tunerMute); }
     void saveState();

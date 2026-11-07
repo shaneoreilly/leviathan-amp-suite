@@ -907,7 +907,27 @@ final class Model: ObservableObject {
         s = n
     }
 
+    // MARK: undo
+
+    /// Rig settings (and the preset name) before each change, newest last. Changes less than 0.6 s apart are one
+    /// step, so a knob drag undoes in one go.
+    private var undoStack: [(Settings, String)] = []
+    private var lastEdit = Date.distantPast, undoing = false
+    @Published private(set) var canUndo = false
+
+    func undo() {
+        guard let (old, name) = undoStack.popLast() else { return }
+        undoing = true; s = old; presetName = name; undoing = false
+        lastEdit = .distantPast; canUndo = !undoStack.isEmpty
+    }
+
     private func settingsChanged(_ old: Settings) {
+        if !undoing {
+            if Date().timeIntervalSince(lastEdit) > 0.6 || undoStack.isEmpty {
+                undoStack.append((old, presetName)); if undoStack.count > 100 { undoStack.removeFirst() }
+            }
+            lastEdit = Date(); canUndo = true
+        }
         applyAll()
         if s.cabModel != old.cabModel || s.cabMic != old.cabMic || s.irA != old.irA || s.irB != old.irB || s.irBlend != old.irBlend
             || s.capture != old.capture || s.irFile != old.irFile { updateIR() }
@@ -1083,6 +1103,21 @@ final class Model: ObservableObject {
     }
 
     func loadUser(_ name: String) { if let p = userPresets[name] { applyPreset(p, name) } }
+
+    /// Loading another preset from the screen asks first when this one has unsaved changes (MIDI never asks, so a
+    /// gig can't stall on a dialog).
+    @Published var askUnsaved = false
+    private var pendingLoad: (() -> Void)?
+    func confirmLoad(_ load: @escaping () -> Void) {
+        if presetModified { pendingLoad = load; askUnsaved = true } else { load() }
+    }
+    /// save: true = save first, false = don't save, nil = cancel.
+    func resolveUnsaved(save: Bool?) {
+        let load = pendingLoad; pendingLoad = nil
+        guard let save, let load else { return }
+        if save { saveCurrent() }
+        load()
+    }
 
     private func applyPreset(_ p: Settings, _ name: String) {
         var n = p
@@ -1262,7 +1297,7 @@ struct Footswitch: View {
                 .font(.system(size: 9 * UI, weight: .bold)).tracking(1)
             }
             .fixedSize()
-            .padding(.horizontal, 8).padding(.vertical, 3)
+            .padding(.horizontal, 6).padding(.vertical, 3)
             .overlay(Capsule().stroke(line))
         }
         .buttonStyle(.plain)
@@ -1299,7 +1334,7 @@ struct UnitBox<Content: View>: View {
                 leading
                 Text(title).font(.system(size: 10 * UI, weight: .bold)).tracking(2).foregroundStyle(.secondary)
                 trailing
-                Spacer(minLength: 12)
+                Spacer(minLength: 8)
                 if let on { Footswitch(on: on, color: color, key: onKey, name: title) }
             }
             .contentShape(Rectangle())
@@ -1598,7 +1633,7 @@ struct ContentView: View {
                 Menu("Guitar: \(m.tuning.name)") {
                     ForEach(TUNINGS.indices, id: \.self) { i in Button(TUNINGS[i].label) { m.tuningIndex = i } }
                 }
-                .frame(width: 155 * W)
+                .frame(width: 135 * W)
                 HStack(spacing: 4) {
                     Button { m.playAs(max(Int(m.s.pitchSemis.rounded()) - 1, -12)) } label: { Image(systemName: "minus") }
                         .help("Down a semitone")
@@ -1608,7 +1643,7 @@ struct ContentView: View {
                             Button(o.semis == 0 ? "\(o.name) \u{00B7} \(notes) (no shift)" : String(format: "%@ \u{00B7} %@  (%+d)", o.name, notes, o.semis)) { m.playAs(o.semis) }
                         }
                     }
-                    .frame(width: 155 * W)
+                    .frame(width: 135 * W)
                     Button { m.playAs(min(Int(m.s.pitchSemis.rounded()) + 1, 12)) } label: { Image(systemName: "plus") }
                         .help("Up a semitone")
                 }

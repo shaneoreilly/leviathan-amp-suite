@@ -90,6 +90,7 @@
   "top:prev": "Previous preset in the list.",
   "top:next": "Next preset in the list.",
   "top:preset": "The current preset. A dot means it has unsaved changes. Click to choose another preset.",
+  "top:undo": "Undo the last change to the rig: a knob, a switch, a pedal or loading a preset. Press again to go further back.",
   "top:save": "Saves your changes into this preset (Cmd/Ctrl+S).",
   "top:saveAs": "Saves the current sound as a new preset, leaving this one unchanged (Shift+Cmd/Ctrl+S).",
   "top:recWave": "The take being recorded so far.",

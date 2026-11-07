@@ -45,6 +45,11 @@ struct RootView: View {
         .sheet(isPresented: $updater.showNotes) {
             if let r = updater.available { WhatsNewSheet(updater: updater, release: r).tint(ch) }
         }
+        .alert("Save changes to \u{201C}\(m.presetName)\u{201D}?", isPresented: $m.askUnsaved) {
+            Button("Save") { m.resolveUnsaved(save: true) }
+            Button("Don\u{2019}t save", role: .destructive) { m.resolveUnsaved(save: false) }
+            Button("Cancel", role: .cancel) { m.resolveUnsaved(save: nil) }
+        } message: { Text("You\u{2019}ve changed this preset since it was last saved.") }
         .alert("Save preset", isPresented: $m.savingPreset) {
             TextField("Name", text: $m.newPresetName)
             Button("Save") { m.savePreset(m.newPresetName) }
@@ -150,14 +155,17 @@ struct TopBar: View {
                 .explain("top:tuner", "Tuner")
             MidiLearnButton().explain("top:midi", "MIDI learn")
             HStack(spacing: 2) {
-                Button { m.stepPreset(-1) } label: { Image(systemName: "chevron.left") }.help("Previous preset")
+                Button { m.confirmLoad { m.stepPreset(-1) } } label: { Image(systemName: "chevron.left") }.help("Previous preset")
                     .overlay { MidiLearnOverlay(armed: .action("@prev", "Previous preset"), cornerRadius: 6) }
                     .explain("top:prev", "Previous preset")
-                PresetMenu().frame(maxWidth: 300 * W).explain("top:preset", "Preset")
-                Button { m.stepPreset(1) } label: { Image(systemName: "chevron.right") }.help("Next preset")
+                PresetMenu().fixedSize().explain("top:preset", "Preset")   // as wide as its name, so ‹ › sit right beside it
+                Button { m.confirmLoad { m.stepPreset(1) } } label: { Image(systemName: "chevron.right") }.help("Next preset")
                     .overlay { MidiLearnOverlay(armed: .action("@next", "Next preset"), cornerRadius: 6) }
                     .explain("top:next", "Next preset")
             }
+            Button { m.undo() } label: { Image(systemName: "arrow.uturn.backward") }
+                .keyboardShortcut("z").disabled(!m.canUndo).help("Undo the last change to the rig (⌘Z)")
+                .explain("top:undo", "Undo")
             Button("Save") { m.saveCurrent() }.keyboardShortcut("s").disabled(!m.presetModified).help("Save changes to this preset (⌘S)")
                 .explain("top:save", "Save")
             Button("Save as…") { m.newPresetName = m.presetName.isEmpty ? "" : m.presetName + " copy"; m.savingPreset = true }
@@ -176,15 +184,15 @@ struct PresetMenu: View {
     var body: some View {
         Menu((m.presetModified ? "● " : "") + m.presetName) {
             let recent = Array(m.recentlyPlayed.prefix(5))
-            if !recent.isEmpty { Section("Recently played") { ForEach(recent, id: \.self) { n in Button(n) { m.loadAny(n) } } } }
+            if !recent.isEmpty { Section("Recently played") { ForEach(recent, id: \.self) { n in Button(n) { m.confirmLoad { m.loadAny(n) } } } } }
             if !m.favorites.isEmpty {
-                Section("Favorites") { ForEach(m.favorites.sorted(), id: \.self) { n in Button("★ \(n)") { m.loadAny(n) } } }
+                Section("Favorites") { ForEach(m.favorites.sorted(), id: \.self) { n in Button("★ \(n)") { m.confirmLoad { m.loadAny(n) } } } }
             }
             Section("Factory") {
-                ForEach(FACTORY.map(\.0), id: \.self) { n in Button(m.userPresets[n] != nil ? "\(n) (edited)" : n) { m.loadFactory(n) } }
+                ForEach(FACTORY.map(\.0), id: \.self) { n in Button(m.userPresets[n] != nil ? "\(n) (edited)" : n) { m.confirmLoad { m.loadFactory(n) } } }
             }
             let mine = m.userPresets.keys.filter { !m.isFactory($0) }.sorted()
-            if !mine.isEmpty { Section("Yours") { ForEach(mine, id: \.self) { n in Button(n) { m.loadUser(n) } } } }
+            if !mine.isEmpty { Section("Yours") { ForEach(mine, id: \.self) { n in Button(n) { m.confirmLoad { m.loadUser(n) } } } } }
             Divider()
             Button("Save “\(m.presetName)”") { m.saveCurrent() }
             Button("Save as new…") { m.newPresetName = ""; m.savingPreset = true }
@@ -291,7 +299,7 @@ struct PresetsView: View {
                 .lineLimit(1).fixedSize().frame(width: PresetsView.dateColumn * Z, alignment: .leading)
             HStack(spacing: 8) {
             if current { Text(m.presetModified ? "Loaded · unsaved" : "Loaded").font(.system(size: 10 * UI)).foregroundStyle(.secondary).lineLimit(1).fixedSize() }
-            Button("Load") { m.loadAny(n); m.screen = .rig }
+            Button("Load") { m.confirmLoad { m.loadAny(n); m.screen = .rig } }
             Button("Export…") { m.exportPreset(n) }
             if !factory {
                 Button("Rename") { ui.newName = n; ui.renaming = n }
@@ -304,7 +312,7 @@ struct PresetsView: View {
         }
         .padding(.vertical, 6)
         .contentShape(Rectangle())
-        .onTapGesture(count: 2) { m.loadAny(n); m.screen = .rig }
+        .onTapGesture(count: 2) { m.confirmLoad { m.loadAny(n); m.screen = .rig } }
     }
 }
 
