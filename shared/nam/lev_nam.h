@@ -29,6 +29,9 @@ double lev_nam_loudness(const LevNam* m);
 /// (then resetting it). Works for every capture, with or without loudness metadata, so captures can be level-matched.
 /// Call off the audio thread, before handing the model to it.
 double lev_nam_measure_level(LevNam* m, double sampleRate);
+/// +1, or -1 if the capture inverts the signal (some real amps do), measured like lev_nam_measure_level. Both apps
+/// multiply the capture's gain by it, so two captures blended as amp A and amp B don't cancel each other.
+int lev_nam_polarity(LevNam* m, double sampleRate);
 /// Calibrated input level (dBu that corresponds to 0 dBFS when the capture was made), if the file has it.
 int lev_nam_has_input_level(LevNam* m);
 double lev_nam_input_level(LevNam* m);

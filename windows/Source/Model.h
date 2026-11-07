@@ -15,8 +15,8 @@ enum class Screen { rig, presets, recordings, settings };
 
 /// A private copy of the rig (offline re-amping), independent of the live engine (with its own NAM instance).
 struct OfflineRig {
-    Params p; std::unique_ptr<DSP> dsp; LevNam* nam = nullptr;
-    ~OfflineRig() { dsp.reset(); lev_nam_free(nam); }
+    Params p; std::unique_ptr<DSP> dsp; LevNam* nam = nullptr; LevNam* namB = nullptr;
+    ~OfflineRig() { dsp.reset(); lev_nam_free(nam); lev_nam_free(namB); }
 };
 
 
@@ -172,6 +172,7 @@ public:
     void importCabIRsDialog();
     void useNam(const juce::String& name);
     void updateNam();
+    void updateNamB();   // Amp B's capture into the running engine
     double engineRate() const { return dspRate; }
 
     // MARK: appearance + layout (not part of presets)
@@ -219,6 +220,8 @@ private:
     std::unique_ptr<juce::PropertiesFile> propsFile;
     std::optional<std::pair<std::vector<float>, double>> userIR;
     LevNam* namModel = nullptr; double namRate = 0; float namGain = 1; int namGen = 0;
+    LevNam* namModelB = nullptr; double namRateB = 0; float namGainB = 1; int namGenB = 0; juce::String namLoadedB;
+    void setEngineNamB(LevNam* m, float gain);
     std::shared_ptr<std::atomic<bool>> alive = std::make_shared<std::atomic<bool>>(true);
     struct NamOpen { LevNam* m = nullptr; float gain = 1; double expected = 0; std::optional<double> loudness; };
     static NamOpen openNam(const juce::File& f, double rate);

@@ -20,7 +20,13 @@ final class NamHost {
     private(set) var expectedRate = 0.0, loudness: Double?
     private var generation = 0
 
-    init() { scan() }
+    /// 0 = amp A, 1 = amp B: which engine slot this host loads into.
+    let slot: Int
+    init(slot: Int = 0) { self.slot = slot; scan() }
+
+    private func install(_ m: OpaquePointer?, gain: Float, dsp: DSP?) {
+        if slot == 0 { dsp?.setNam(m, gain: gain) } else { dsp?.setNamB(m, gain: gain) }
+    }
 
     func scan() {
         try? FileManager.default.createDirectory(at: NamHost.dir, withIntermediateDirectories: true)
@@ -46,7 +52,8 @@ final class NamHost {
         lev_nam_reset(m, rate, Int32(DSP.maxN))
         let loud: Double? = lev_nam_has_loudness(m) != 0 ? lev_nam_loudness(m) : nil
         // level-match every capture by measuring it (many files have no loudness metadata)
-        let gain = Float(pow(10, (LEV_NAM_TARGET_LEVEL - lev_nam_measure_level(m, rate)) / 20))
+        // level-matched, and the right way up (some captures invert, which cancels when two are blended)
+        let gain = Float(pow(10, (LEV_NAM_TARGET_LEVEL - lev_nam_measure_level(m, rate)) / 20)) * Float(lev_nam_polarity(m, rate))
         return (m, gain, lev_nam_expected_rate(m), loud)
     }
 
@@ -55,7 +62,7 @@ final class NamHost {
         generation += 1
         let gen = generation
         if name.isEmpty { swap(nil, name: "", rate: 0, gain: 1, dsp: dsp); done(nil); return }
-        if name == loadedName && rate == loadedRate, model != nil { dsp?.setNam(model, gain: currentGain); done(nil); return }
+        if name == loadedName && rate == loadedRate, model != nil { install(model, gain: currentGain, dsp: dsp); done(nil); return }
         let url = url(name)
         guard FileManager.default.fileExists(atPath: url.path) else { swap(nil, name: "", rate: 0, gain: 1, dsp: dsp); done("NAM capture \u{201C}\(name)\u{201D} isn't in the NAM folder."); return }
         DispatchQueue.global(qos: .userInitiated).async {
@@ -80,7 +87,7 @@ final class NamHost {
     private func swap(_ m: OpaquePointer?, name: String, rate: Double, gain: Float, dsp: DSP?) {
         let old = model
         model = m; loadedName = name; loadedRate = rate; currentGain = gain
-        dsp?.setNam(m, gain: gain)
+        install(m, gain: gain, dsp: dsp)
         if let old, old != m {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { lev_nam_free(old) }
         }

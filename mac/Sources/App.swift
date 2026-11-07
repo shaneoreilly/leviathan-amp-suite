@@ -41,6 +41,7 @@ struct Settings: Codable, Equatable {
 
     // NAM capture: file name in Application Support/Leviathan/NAM ("" = none), input/output trims in dB
     var nam = "", namInput = 0.0, namOutput = 0.0
+    var ampBOn = false, ampBNam = "", ampBLevel = 0.0, ampBSpread = 1.0   // Amp B: a second capture, panned against amp A
 
     func apply(to p: Params) {
         p.chainCount = 0
@@ -58,6 +59,7 @@ struct Settings: Codable, Equatable {
         p.bladeLevel = Float(bladeLevel); p.bladeBoost = Float(bladeBoost); p.bladeBoostOn = bladeBoostOn; p.bladeShift = bladeShift; p.bladeDiode = bladeDiode
         p.capDrive = Float(capDrive); p.capLevel = Float(capLevel)
         p.namIn = Float(namInput); p.namOut = Float(namOutput)
+        p.ampBOn = ampBOn && !ampBNam.isEmpty; p.ampBLevel = Float(ampBLevel); p.ampBSpread = Float(ampBSpread)
         p.inGain = Float(inGain); p.inputChannel = inputChannel
         p.gateOn = gateOn; p.gateThresh = Float(gateThresh); p.gateRelease = Float(gateRelease); p.gateDepth = Float(gateDepth)
         p.pitchOn = pitchOn; p.pitchSemis = Float(pitchSemis); p.pitchCents = Float(pitchCents); p.pitchMix = Float(pitchMix)
@@ -528,6 +530,7 @@ final class Model: ObservableObject {
     @Published var userIRName: String?
     @Published var captures: [String: Capture] = Capture.loadAll()
     let namHost = NamHost()
+    let namHostB = NamHost(slot: 1)   // Amp B
     let cabIRs: CabIRLibrary = { let l = CabIRLibrary(); l.scan(); return l }()
 
     func importCabIRs() {
@@ -551,10 +554,10 @@ final class Model: ObservableObject {
 
     // Rig layout (not part of presets): panel order and collapsed sections.
     /// "|" starts a new row.
-    static let defaultPanels = ["input", "master", "gate", "pitch", "eq", "doubler", "|", "amp", "cab", "reverb", "delay"]
+    static let defaultPanels = ["input", "master", "gate", "pitch", "eq", "doubler", "|", "amp", "ampb", "cab", "reverb", "delay"]
     /// Each panel's UnitBox title (also its collapse key).
     static let panelTitles = ["input": "INPUT", "gate": "GATE", "pitch": "PITCH", "amp": "AMP", "master": "MASTER",
-                              "cab": "CABINET", "eq": "GRAPHIC EQ", "delay": "DELAY", "reverb": "REVERB", "doubler": "DOUBLER"]
+                              "cab": "CABINET", "eq": "GRAPHIC EQ", "delay": "DELAY", "reverb": "REVERB", "doubler": "DOUBLER", "ampb": "AMP B"]
     @Published var panelOrder: [String] = {
         var order = (UserDefaults.standard.stringArray(forKey: "panelOrder2") ?? []).filter(Model.defaultPanels.contains)
         // a panel added in a new version goes in after its neighbour in the default order (Doubler after the EQ), not at the end
@@ -718,7 +721,7 @@ final class Model: ObservableObject {
             adviseOverloads = true; recentOverloads = []; startedAt = Date()
             status = i.map { latencyAdvice($0, o) }
                 ?? (inputUID == Model.noInput ? "" : "Your input isn\u{2019}t connected, so Leviathan is running without one. Plug it in, or pick another in the Input panel.")
-            updateIR(); updateNam()
+            updateIR(); updateNam(); updateNamB()
         } catch {
             engine.stop(); running = false; info = nil
             status = startFailure(error, input: i, output: o)
@@ -878,6 +881,16 @@ final class Model: ObservableObject {
         }
     }
 
+    /// Amp B's capture into the running engine ("" unloads it).
+    func updateNamB() {
+        guard let dsp = engine.dsp else { return }
+        namHostB.select(s.ampBNam, rate: Double(dsp.sr), dsp: dsp) { [weak self] err in
+            guard let self else { return }
+            if let err { self.status = "Amp B: " + err }
+            self.objectWillChange.send()
+        }
+    }
+
     /// Use a NAM capture in place of the amp (the rest of the rig, cab included, stays as it is).
     func useNam(_ name: String) {
         var n = s
@@ -932,6 +945,7 @@ final class Model: ObservableObject {
         if s.cabModel != old.cabModel || s.cabMic != old.cabMic || s.irA != old.irA || s.irB != old.irB || s.irBlend != old.irBlend
             || s.capture != old.capture || s.irFile != old.irFile { updateIR() }
         if s.nam != old.nam { updateNam() }
+        if s.ampBNam != old.ampBNam { updateNamB() }
         saveWork?.cancel()
         let w = DispatchWorkItem { [s] in UserDefaults.standard.set(try? JSONEncoder().encode(s), forKey: "settings") }
         saveWork = w
@@ -981,6 +995,7 @@ final class Model: ObservableObject {
             p.namOn = true
             d.setNam(r.model, gain: r.gain, owned: true)
         }
+        if p.ampBOn, let r = NamHost.open(namHost.url(s.ampBNam), rate: sr) { d.setNamB(r.model, gain: r.gain, owned: true) }
         return d
     }
 
@@ -1543,6 +1558,7 @@ struct ContentView: View {
         case "delay": AnyView(delay)
         case "reverb": AnyView(reverb)
         case "doubler": AnyView(doubler)
+        case "ampb": AnyView(ampB)
         case "|": AnyView(Color.clear.frame(width: 0, height: 0))
         default: AnyView(EmptyView())
         }
@@ -1945,6 +1961,26 @@ struct ContentView: View {
                     .fixedSize().help("Amp presence when captured, and a Tube Screamer mid bump baked into the IR")
                 Button { rel.wrappedValue = lib.step(f.rel, by: -1) ?? f.rel } label: { Image(systemName: "chevron.left") }.buttonStyle(.borderless)
                 Button { rel.wrappedValue = lib.step(f.rel, by: 1) ?? f.rel } label: { Image(systemName: "chevron.right") }.buttonStyle(.borderless)
+            }
+        }
+    }
+
+    /// A second amp (any NAM capture) fed by the same pedals; Spread puts amp A left and amp B right.
+    var ampB: some View {
+        let pick = Binding(get: { m.s.ampBNam }, set: { v in var n = m.s; n.ampBNam = v; if !v.isEmpty { n.ampBOn = true }; m.s = n })
+        return UnitBox(title: "AMP B", on: $m.s.ampBOn, onKey: "ampBOn", color: ch) {
+            VStack(spacing: 8) {
+                Picker("", selection: pick) {
+                    Text("Choose a second amp\u{2026}").tag("")
+                    ForEach(m.namHost.files, id: \.self) { Text(namTitle($0)).tag($0) }
+                    if !m.s.ampBNam.isEmpty && !m.namHost.files.contains(m.s.ampBNam) { Text(namTitle(m.s.ampBNam) + " (missing)").tag(m.s.ampBNam) }
+                }
+                .labelsHidden().frame(width: 210 * W)
+                .explain("panel:ampb", "Amp B")
+                HStack(spacing: 2) {
+                    Knob(label: "Level", value: $m.s.ampBLevel, key: "ampBLevel", range: -12...12, def: 0, fmt: { String(format: "%+.1f dB", $0) }, color: ch)
+                    Knob(label: "Spread", value: $m.s.ampBSpread, key: "ampBSpread", range: 0...1, def: 1, fmt: pct, color: ch)
+                }
             }
         }
     }

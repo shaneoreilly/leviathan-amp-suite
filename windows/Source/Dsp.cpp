@@ -412,12 +412,16 @@ void DSP::update(bool force) {
     for (int i = 0; i < 8; ++i) {
         const auto kind = i == 0 ? Biquad::lowShelf : i == 7 ? Biquad::highShelf : Biquad::peak;
         eqB[i].set(kind, eqF[i], s, 1.4, p.eq[i]);
+        eqS[i].set(kind, eqF[i], s, 1.4, p.eq[i]);
     }
 
     cabMix.target = p.cabOn ? 1.f : 0.f; cabLvl.target = dbLin(p.cabLevel);
     // a capture's IR already is the cab: leave it unfiltered so it stays faithful
     const double lowCut = p.capOn ? 10 : (double) p.cabLowCut, highCut = p.capOn ? s * 0.47 : (double) p.cabHighCut;
     cLo.set(Biquad::hp, lowCut, s); cHi1.set(Biquad::lp, highCut, s, 0.54); cHi2.set(Biquad::lp, highCut, s, 1.31);
+    cLoS.set(Biquad::hp, lowCut, s); cHi1S.set(Biquad::lp, highCut, s, 0.54); cHi2S.set(Biquad::lp, highCut, s, 1.31);
+    bMix.target = p.ampBOn ? 1.f : 0.f; bLvl.target = dbLin(p.ampBLevel); bSpread.target = p.ampBSpread;
+    if (force) { bLvl.v = bLvl.target; bSpread.v = bSpread.target; }
 
     dSend.target = p.delayOn ? 1.f : 0.f; dTime.target = p.delayTime / 1000 * sr;
     dFb = p.delayFeedback; dWet = p.delayMix * 1.4f; dLP.set(Biquad::lp, (double) lerpf(p.delayTone, 1200, 9000), s);
@@ -494,6 +498,14 @@ void DSP::process(const float* input, float* outL, float* outR, int frames) {
     }
 
     // NAM capture in place of the amp (block-processed; same bridge as the Mac app)
+    // Amp B runs on the same pedal output: keep a copy before amp A changes it
+    LevNam* nb = namB.load(std::memory_order_acquire);
+    const bool sideOn = nb != nullptr && (bMix.target > 0 || bMix.v > 1e-4f);
+    if (sideOn) {
+        for (int i = 0; i < n; ++i) bBuf[(size_t) i] = a[(size_t) i];
+        if (!sideWasOn) std::fill(hist2.begin(), hist2.end(), 0.0f);
+    }
+
     LevNam* nm = p.namOn ? nam.load(std::memory_order_acquire) : nullptr;
     if (nm) {
         for (int i = 0; i < n; ++i) namBuf[(size_t) i] = a[(size_t) i] * namInG.next(c);
@@ -539,8 +551,22 @@ void DSP::process(const float* input, float* outL, float* outR, int frames) {
         float y = aTreb.run(aMid.run(aBass.run(aChar.run(o))));
         y = std::tanh(y * v.power);
         y = aDC.run(aPres.run(aDepth.run(y))) * vol;
-        a[(size_t) i] = x + (y - x) * m;
+        // its odd number of inverting stages flip the signal; turn it back so it lines up with NAM captures
+        // (blended as amp A and B they'd otherwise partly cancel) and with the dry signal while switching
+        a[(size_t) i] = x + (-y - x) * m;
     }
+
+    // Amp B: mid = blend of A and B, side = (A - B) / 2 x Spread; side goes through its own EQ and cab
+    if (sideOn) {
+        lev_nam_process(nb, bBuf.data(), bBuf.data(), n);
+        const float g = namBGain.load();
+        for (int i = 0; i < n; ++i) {
+            const float m = bMix.next(c), A = a[(size_t) i], B = bBuf[(size_t) i] * g * bLvl.next(c);
+            a[(size_t) i] = A + ((A + B) * 0.5f - A) * m;
+            sBuf[(size_t) i] = (A - B) * 0.5f * bSpread.next(c) * m;
+        }
+    }
+    sideWasOn = sideOn;
 
     // graphic eq
     for (int i = 0; i < n; ++i) {
@@ -549,6 +575,12 @@ void DSP::process(const float* input, float* outL, float* outR, int frames) {
         float y = x;
         for (auto& bq : eqB) y = bq.run(y);
         a[(size_t) i] = x + (y - x) * m;
+        if (sideOn) {
+            const float xs = sBuf[(size_t) i];
+            float ys = xs;
+            for (auto& bq : eqS) ys = bq.run(ys);
+            sBuf[(size_t) i] = xs + (ys - xs) * m;
+        }
     }
 
     // cabinet
@@ -562,14 +594,29 @@ void DSP::process(const float* input, float* outL, float* outR, int frames) {
         for (int k = 0; k < L; ++k) acc += xs[k] * h[k];
         b[(size_t) i] = acc;
     }
+    if (sideOn) {
+        std::memmove(hist2.data(), hist2.data() + n, (size_t) tail * sizeof(float));
+        std::memcpy(hist2.data() + tail, sBuf.data(), (size_t) n * sizeof(float));
+        for (int i = 0; i < n; ++i) {
+            const float* xs = hist2.data() + tail - (L - 1) + i;
+            float acc = 0;
+            for (int k = 0; k < L; ++k) acc += xs[k] * h[k];
+            sConv[(size_t) i] = acc;
+        }
+    }
     for (int i = 0; i < n; ++i) {
         const float m = cabMix.next(c), lvl = cabLvl.next(c);
         const float y = cHi2.run(cHi1.run(cLo.run(b[(size_t) i]))) * lvl;
         a[(size_t) i] += (y - a[(size_t) i]) * m;
+        if (sideOn) {
+            const float ys = cHi2S.run(cHi1S.run(cLoS.run(sConv[(size_t) i]))) * lvl;
+            sBuf[(size_t) i] += (ys - sBuf[(size_t) i]) * m;
+        }
     }
 
     // gate, second stage: the same fade after the amp and cab (delay and reverb tails still ring out)
     if (gateOn) for (int i = 0; i < n; ++i) a[(size_t) i] *= gBuf[(size_t) i];
+    if (gateOn && sideOn) for (int i = 0; i < n; ++i) sBuf[(size_t) i] *= gBuf[(size_t) i];
 
     // delay (send stays live so tails ring out when switched off)
     for (int i = 0; i < n; ++i) {
@@ -605,7 +652,8 @@ void DSP::process(const float* input, float* outL, float* outR, int frames) {
             side = (d1 - d2) * 0.5f * w;
         }
         dbW = (dbW + 1) & dbMask;
-        float yl = (x + side + l * rWet) * vol, yr = (x - side + r * rWet) * vol;
+        const float sb = sideOn ? sBuf[(size_t) i] : 0.0f;
+        float yl = (x + side + sb + l * rWet) * vol, yr = (x - side - sb + r * rWet) * vol;
         // peak limiter: gain drops at once to keep the peak at the ceiling, then recovers over ~80 ms
         const float pk = std::max(std::abs(yl), std::abs(yr)), target = pk > limCeiling ? limCeiling / pk : 1.0f;
         limG = target < limG ? target : limG + (target - limG) * limRel;

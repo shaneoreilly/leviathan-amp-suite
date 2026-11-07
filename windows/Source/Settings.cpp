@@ -36,6 +36,7 @@ void fillDefaults(juce::NamedValueSet& v) {
     put("bladeBoost", 0.5); put("bladeBoostOn", false); put("bladeShift", false); put("bladeDiode", 0);
     put("capture", ""); put("capDrive", 0.0); put("capLevel", 0.0);
     put("nam", ""); put("namInput", 0.0); put("namOutput", 0.0);
+    put("ampBOn", false); put("ampBNam", ""); put("ampBLevel", 0.0); put("ampBSpread", 1.0);   // Amp B: a second capture, panned against amp A
 }
 } // namespace
 
@@ -137,6 +138,7 @@ void Settings::apply(Params& p) const {
     p.bladeLevel = f("bladeLevel"); p.bladeBoost = f("bladeBoost"); p.bladeBoostOn = b("bladeBoostOn"); p.bladeShift = b("bladeShift"); p.bladeDiode = i("bladeDiode");
     p.capDrive = f("capDrive"); p.capLevel = f("capLevel");
     p.namIn = f("namInput"); p.namOut = f("namOutput");
+    p.ampBOn = b("ampBOn") && get("ampBNam").toString().isNotEmpty(); p.ampBLevel = f("ampBLevel"); p.ampBSpread = f("ampBSpread");
     p.inGain = f("inGain"); p.inputChannel = i("inputChannel");
     p.gateOn = b("gateOn"); p.gateThresh = f("gateThresh"); p.gateRelease = f("gateRelease"); p.gateDepth = f("gateDepth");
     p.pitchOn = b("pitchOn"); p.pitchSemis = f("pitchSemis"); p.pitchCents = f("pitchCents"); p.pitchMix = f("pitchMix");

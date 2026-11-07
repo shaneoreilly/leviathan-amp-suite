@@ -8,7 +8,7 @@ namespace lev {
 
 const std::vector<double> Model::zoomSteps = { 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.25, 1.4, 1.6 };
 /// "|" starts a new row.
-static const juce::StringArray defaultPanels { "input", "master", "gate", "pitch", "eq", "doubler", "|", "amp", "cab", "reverb", "delay" };
+static const juce::StringArray defaultPanels { "input", "master", "gate", "pitch", "eq", "doubler", "|", "amp", "ampb", "cab", "reverb", "delay" };
 static const juce::Colour channelColours[3] = { juce::Colour::fromFloatRGBA(0.35f, 0.7f, 1, 1), juce::Colour::fromFloatRGBA(0.91f, 0.57f, 0.23f, 1),
                                                 juce::Colour::fromFloatRGBA(1, 0.3f, 0.3f, 1) };
 
@@ -161,6 +161,7 @@ void Model::settingsChanged(const Settings& old) {
     }
     applyAll();
     if (settings.s("nam") != old.s("nam")) updateNam();
+    if (settings.s("ampBNam") != old.s("ampBNam")) updateNamB();
     if (settings.i("cabModel") != old.i("cabModel") || settings.d("cabMic") != old.d("cabMic") || settings.s("irA") != old.s("irA")
         || settings.s("irB") != old.s("irB") || settings.d("irBlend") != old.d("irBlend") || settings.s("capture") != old.s("capture")
         || settings.s("irFile") != old.s("irFile"))
@@ -281,7 +282,7 @@ void Model::audioDeviceAboutToStart(juce::AudioIODevice* d) {
         dsp = std::move(fresh);
         dspRate = sr;
     }
-    juce::MessageManager::callAsync([this] { irLib.scan(dspRate); updateIR(); updateNam(); refreshInfo(); changed(); });
+    juce::MessageManager::callAsync([this] { irLib.scan(dspRate); updateIR(); updateNam(); updateNamB(); refreshInfo(); changed(); });
 }
 
 void Model::audioDeviceStopped() {
@@ -754,6 +755,10 @@ std::unique_ptr<OfflineRig> Model::offlineRig(double sr) {
         auto o = openNam(namFile(settings.s("nam")), sr);
         if (o.m) { r->nam = o.m; r->p.namOn = true; r->dsp->setNam(o.m, o.gain); }
     }
+    if (r->p.ampBOn) {
+        auto o = openNam(namFile(settings.s("ampBNam")), sr);
+        if (o.m) { r->namB = o.m; r->dsp->setNamB(o.m, o.gain); }
+    }
     if (std::abs(sr - dspRate) > 0.5) irLib.scan(dspRate);
     return r;
 }
@@ -791,7 +796,8 @@ Model::NamOpen Model::openNam(const juce::File& f, double rate) {
     o.expected = lev_nam_expected_rate(o.m);
     if (lev_nam_has_loudness(o.m)) o.loudness = lev_nam_loudness(o.m);
     // level-match every capture by measuring it (many files have no loudness metadata)
-    o.gain = (float) std::pow(10.0, (LEV_NAM_TARGET_LEVEL - lev_nam_measure_level(o.m, rate)) / 20);
+    // ...and the right way up (some captures invert, which cancels when two are blended as amp A and B)
+    o.gain = (float) std::pow(10.0, (LEV_NAM_TARGET_LEVEL - lev_nam_measure_level(o.m, rate)) / 20) * (float) lev_nam_polarity(o.m, rate);
     return o;
 }
 
@@ -833,6 +839,41 @@ void Model::updateNam() {
                 status = "\"" + name + "\" was captured at " + juce::String(o.expected / 1000, 1) + " kHz but the engine runs at "
                          + juce::String(rate / 1000, 1) + " kHz, so it won't sound quite right.";
             applyAll(); changed();
+        });
+    });
+}
+
+void Model::setEngineNamB(LevNam* m, float gain) {
+    LevNam* old = namModelB;
+    namModelB = m; namGainB = gain;
+    {
+        const juce::SpinLock::ScopedLockType sl(dspLock);
+        if (dsp) dsp->setNamB(m, gain);
+    }
+    if (old && old != m) juce::Timer::callAfterDelay(1000, [old] { lev_nam_free(old); });
+}
+
+/// Amp B: same as updateNam, for the second capture.
+void Model::updateNamB() {
+    const auto name = settings.s("ampBNam");
+    const int gen = ++namGenB;
+    if (name.isEmpty() || dsp == nullptr) {
+        if (name.isEmpty()) { setEngineNamB(nullptr, 1); namLoadedB = {}; }
+        changed(); return;
+    }
+    if (name == namLoadedB && namRateB == dspRate && namModelB) { setEngineNamB(namModelB, namGainB); changed(); return; }
+    const auto file = namFile(name);
+    if (!file.existsAsFile()) { setEngineNamB(nullptr, 1); namLoadedB = {}; status = "Amp B: NAM capture \"" + name + "\" isn't in the NAM folder."; changed(); return; }
+    const double rate = dspRate;
+    auto aliveFlag = alive;
+    juce::Thread::launch([this, aliveFlag, file, name, rate, gen] {
+        auto o = openNam(file, rate);
+        juce::MessageManager::callAsync([this, aliveFlag, o, name, rate, gen] {
+            if (!aliveFlag->load() || gen != namGenB) { lev_nam_free(o.m); return; }   // superseded
+            if (!o.m) { setEngineNamB(nullptr, 1); namLoadedB = {}; status = "Amp B: couldn't load NAM capture \"" + name + "\"."; changed(); return; }
+            namLoadedB = name; namRateB = rate;
+            setEngineNamB(o.m, o.gain);
+            changed();
         });
     });
 }

@@ -96,6 +96,8 @@ struct Params {
 
     // NAM capture (replaces the amp when namOn and a model is loaded); input/output trims in dB
     bool namOn = false; float namIn = 0, namOut = 0;
+    // Amp B: a second NAM capture fed by the same pedals; Spread pans A left and B right (mid/side, mono-safe)
+    bool ampBOn = false; float ampBLevel = 0, ampBSpread = 1;
 
     // metronome (mixed after the master, never through the amp)
     std::atomic<bool> metroOn { false }; float bpm = 120; int beatsPerBar = 4; float metroVol = -12;
@@ -235,6 +237,7 @@ public:
     /// Swap in a NAM model (already reset for this rate and maxN), with its loudness-normalising gain.
     /// The caller keeps ownership and frees the previous model once the audio thread has moved on.
     void setNam(LevNam* m, float gain) { namGain.store(gain); nam.store(m, std::memory_order_release); }
+    void setNamB(LevNam* m, float gain) { namBGain.store(gain); namB.store(m, std::memory_order_release); }
     void process(const float* input, float* outL, float* outR, int frames);
 
 private:
@@ -256,6 +259,12 @@ private:
     Voicing v = VOICINGS[2]; float tb1 = 0, tb2 = 0;
 
     std::atomic<LevNam*> nam { nullptr }; std::atomic<float> namGain { 1 };
+    // Amp B: its capture, the pre-amp copy it runs on, and the side signal (A - B) with its own EQ, cab and filter state
+    std::atomic<LevNam*> namB { nullptr }; std::atomic<float> namBGain { 1 };
+    Smooth bMix, bLvl, bSpread; bool sideWasOn = false;
+    std::vector<float> bBuf = std::vector<float>(maxN, 0.0f), sBuf = std::vector<float>(maxN, 0.0f), sConv = std::vector<float>(maxN, 0.0f),
+                       hist2 = std::vector<float>(maxIR + maxN, 0.0f);
+    Biquad eqS[8], cLoS, cHi1S, cHi2S;
     Smooth namInG, namOutG; std::vector<float> namBuf;
 
     Biquad kHP, kLS, kPk, kHS, kMid;

@@ -406,6 +406,20 @@ std::unique_ptr<UnitBox> RigView::makePanel(const juce::String& id) {
         r->add(knob("Mix", "delayMix", 0, 1, 0.2, pct, "DELAY"));
         c->add(std::move(r));
         box = std::make_unique<UnitBox>(m, "DELAY", std::move(c), "delayOn", "panel:delay");
+    } else if (id == "ampb") {
+        // a second amp (any NAM capture) fed by the same pedals; Spread puts amp A left and amp B right
+        auto c = col(8);
+        auto pick = std::make_unique<Picker>((int) (210 * theme::W), [&m] { const int k = m.namFiles.indexOf(m.s().s("ampBNam")); return k >= 0 ? k + 2 : 1; },
+            [&m](int i) { Settings n = m.s(); n.set("ampBNam", i >= 2 ? m.namFiles[i - 2] : juce::String()); if (i >= 2) n.set("ampBOn", true); m.setSettings(n); });
+        pick->addItem(juce::String::fromUTF8("Choose a second amp\xe2\x80\xa6"), 1);
+        for (int i = 0; i < m.namFiles.size(); ++i) pick->addItem(namTitle(m.namFiles[i]), i + 2);
+        pick->setTooltip(Model::explain("panel:ampb"));
+        c->add(std::move(pick));
+        auto r = row();
+        r->add(knob("Level", "ampBLevel", -12, 12, 0, dbSigned, "AMP B"));
+        r->add(knob("Spread", "ampBSpread", 0, 1, 1, pct, "AMP B"));
+        c->add(std::move(r));
+        box = std::make_unique<UnitBox>(m, "AMP B", std::move(c), "ampBOn", "panel:ampb");
     } else if (id == "doubler") {
         auto r = row();
         r->add(knob("Width", "doublerWidth", 0, 1, 0.6, pct, "DOUBLER"));

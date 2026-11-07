@@ -88,6 +88,8 @@ final class Params: @unchecked Sendable {
 
     // NAM capture (replaces the amp when namOn and a model is loaded); input/output trims in dB
     var namOn = false, namIn: Float = 0, namOut: Float = 0
+    // Amp B: a second NAM capture fed by the same pedals; Spread pans A left and B right (mid/side, mono-safe)
+    var ampBOn = false, ampBLevel: Float = 0, ampBSpread: Float = 1
 
     // metronome (mixed after the master, never through the amp)
     var metroOn = false, bpm: Float = 120, beatsPerBar = 4, metroVol: Float = -12
@@ -498,6 +500,15 @@ final class DSP {
     private var irLen = [0, 0]
     private var irActive = 0
     private let hist = UnsafeMutablePointer<Float>.allocate(capacity: DSP.maxIR + DSP.maxN)
+    // Amp B: its capture, the pre-amp copy it runs on, and the side signal (A - B) with its own EQ, cab and filter state
+    private var namB: OpaquePointer?, namBGain: Float = 1, namBOwned = false
+    private var bMix = Smooth(), bLvl = Smooth(), bSpread = Smooth(), sideWasOn = false
+    private let bBuf: UnsafeMutablePointer<Float> = { let x = UnsafeMutablePointer<Float>.allocate(capacity: DSP.maxN); x.initialize(repeating: 0, count: DSP.maxN); return x }()
+    private let sBuf: UnsafeMutablePointer<Float> = { let x = UnsafeMutablePointer<Float>.allocate(capacity: DSP.maxN); x.initialize(repeating: 0, count: DSP.maxN); return x }()
+    private let sConv: UnsafeMutablePointer<Float> = { let x = UnsafeMutablePointer<Float>.allocate(capacity: DSP.maxN); x.initialize(repeating: 0, count: DSP.maxN); return x }()
+    private let hist2: UnsafeMutablePointer<Float> = { let x = UnsafeMutablePointer<Float>.allocate(capacity: DSP.maxIR + DSP.maxN); x.initialize(repeating: 0, count: DSP.maxIR + DSP.maxN); return x }()
+    private let eqS = (0..<8).map { _ in Biquad() }
+    private let cLoS = Biquad(), cHi1S = Biquad(), cHi2S = Biquad()
     private let cLo = Biquad(), cHi1 = Biquad(), cHi2 = Biquad()
     private var cabMix = Smooth(), cabLvl = Smooth()
 
@@ -542,8 +553,9 @@ final class DSP {
     /// Swap in a NAM model (already reset for this rate and maxN) and its loudness-normalising gain.
     /// The caller keeps ownership and frees the previous model once the audio thread has moved on.
     func setNam(_ m: OpaquePointer?, gain: Float, owned: Bool = false) { namGain = gain; namOwned = owned; OSMemoryBarrier(); nam = m }
+    func setNamB(_ m: OpaquePointer?, gain: Float, owned: Bool = false) { namBGain = gain; namBOwned = owned; OSMemoryBarrier(); namB = m }
     private var namOwned = false
-    deinit { if namOwned, let nam { lev_nam_free(nam) } }
+    deinit { if namOwned, let nam { lev_nam_free(nam) }; if namBOwned, let namB { lev_nam_free(namB) } }
 
     /// Swap in a new cabinet impulse response (called from the main thread).
     func setIR(_ h: [Float]) {
@@ -602,12 +614,16 @@ final class DSP {
         for i in 0..<8 {
             let kind: Biquad.Kind = i == 0 ? .lowShelf : i == 7 ? .highShelf : .peak
             eqB[i].set(kind, eqF[i], s, q: 1.4, db: Double(p.eq[i]))
+            eqS[i].set(kind, eqF[i], s, q: 1.4, db: Double(p.eq[i]))
         }
 
         cabMix.target = p.cabOn ? 1 : 0; cabLvl.target = dbLin(p.cabLevel)
         // a capture's IR already is the cab: leave it unfiltered so it stays faithful
         let lowCut = p.capOn ? 10 : Double(p.cabLowCut), highCut = p.capOn ? s * 0.47 : Double(p.cabHighCut)
         cLo.set(.hp, lowCut, s); cHi1.set(.lp, highCut, s, q: 0.54); cHi2.set(.lp, highCut, s, q: 1.31)
+        cLoS.set(.hp, lowCut, s); cHi1S.set(.lp, highCut, s, q: 0.54); cHi2S.set(.lp, highCut, s, q: 1.31)
+        bMix.target = p.ampBOn ? 1 : 0; bLvl.target = dbLin(p.ampBLevel); bSpread.target = p.ampBSpread
+        if force { bLvl.v = bLvl.target; bSpread.v = bSpread.target }
 
         dSend.target = p.delayOn ? 1 : 0; dTime.target = p.delayTime / 1000 * sr
         dFb = p.delayFeedback; dWet = p.delayMix * 1.4; dLP.set(.lp, Double(lerp(p.delayTone, 1200, 9000)), s)
@@ -681,6 +697,10 @@ final class DSP {
             if id >= 0 && id < pedals.count { pedals[id].process(a, n, c) }
         }
 
+        // Amp B runs on the same pedal output: keep a copy before amp A changes it
+        let nb = namB, sideOn = nb != nil && (bMix.target > 0 || bMix.v > 1e-4)
+        if sideOn { for i in 0..<n { bBuf[i] = a[i] }; if !sideWasOn { hist2.update(repeating: 0, count: DSP.maxIR + DSP.maxN) } }
+
         // NAM capture in place of the amp (block-processed; same bridge as the Windows app)
         let nm = p.namOn ? nam : nil
         if let nm {
@@ -727,8 +747,22 @@ final class DSP {
             var y = aTreb.run(aMid.run(aBass.run(aChar.run(o))))
             y = tanhf(y * v.power)
             y = aDC.run(aPres.run(aDepth.run(y))) * vol
-            a[i] = x + (y - x) * m
+            // its odd number of inverting stages flip the signal; turn it back so it lines up with NAM captures
+            // (blended as amp A and B they'd otherwise partly cancel) and with the dry signal while switching
+            a[i] = x + (-y - x) * m
         }
+
+        // Amp B: mid = blend of A and B, side = (A - B) / 2 x Spread; side goes through its own EQ and cab
+        if sideOn, let nb {
+            lev_nam_process(nb, bBuf, bBuf, Int32(n))
+            let g = namBGain
+            for i in 0..<n {
+                let m = bMix.next(c), A = a[i], B = bBuf[i] * g * bLvl.next(c)
+                a[i] = A + ((A + B) * 0.5 - A) * m
+                sBuf[i] = (A - B) * 0.5 * bSpread.next(c) * m
+            }
+        }
+        sideWasOn = sideOn
 
         // graphic eq
         for i in 0..<n {
@@ -737,6 +771,12 @@ final class DSP {
             var y = x
             for bq in eqB { y = bq.run(y) }
             a[i] = x + (y - x) * m
+            if sideOn {
+                let xs = sBuf[i]
+                var ys = xs
+                for bq in eqS { ys = bq.run(ys) }
+                sBuf[i] = xs + (ys - xs) * m
+            }
         }
 
         // cabinet
@@ -745,14 +785,24 @@ final class DSP {
         memmove(hist, hist + n, tail * MemoryLayout<Float>.size)   // shift history left by n
         (hist + tail).update(from: a, count: n)
         vDSP_conv(hist + tail - (L - 1), 1, irs[slot] + (L - 1), -1, b, 1, vDSP_Length(n), vDSP_Length(L))
+        if sideOn {
+            memmove(hist2, hist2 + n, tail * MemoryLayout<Float>.size)
+            (hist2 + tail).update(from: sBuf, count: n)
+            vDSP_conv(hist2 + tail - (L - 1), 1, irs[slot] + (L - 1), -1, sConv, 1, vDSP_Length(n), vDSP_Length(L))
+        }
         for i in 0..<n {
             let m = cabMix.next(c), lvl = cabLvl.next(c)
             let y = cHi2.run(cHi1.run(cLo.run(b[i]))) * lvl
             a[i] += (y - a[i]) * m
+            if sideOn {
+                let ys = cHi2S.run(cHi1S.run(cLoS.run(sConv[i]))) * lvl
+                sBuf[i] += (ys - sBuf[i]) * m
+            }
         }
 
         // gate, second stage: the same fade after the amp and cab (delay and reverb tails still ring out)
         if gateOn { for i in 0..<n { a[i] *= gBuf[i] } }
+        if gateOn && sideOn { for i in 0..<n { sBuf[i] *= gBuf[i] } }
 
         // delay (send stays live so tails ring out when switched off)
         for i in 0..<n {
@@ -787,7 +837,8 @@ final class DSP {
                 side = (d1 - d2) * 0.5 * w
             }
             dbW = (dbW + 1) & DSP.dbMask
-            var yl = (x + side + l * rWet) * vol, yr = (x - side + r * rWet) * vol
+            let sb: Float = sideOn ? sBuf[i] : 0
+            var yl = (x + side + sb + l * rWet) * vol, yr = (x - side - sb + r * rWet) * vol
             // peak limiter: gain drops at once to keep the peak at the ceiling, then recovers over ~80 ms
             let pk = max(abs(yl), abs(yr)), target = pk > DSP.limCeiling ? DSP.limCeiling / pk : 1
             limG = target < limG ? target : limG + (target - limG) * limRel
