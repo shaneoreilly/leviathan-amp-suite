@@ -171,25 +171,55 @@ private:
     int bestJump(int base, bool up, int maxJ, int minJ = 0, bool preferShort = true);
 };
 
-// MARK: - Reverb parts
+// MARK: - Reverb
 
-struct Comb {
-    explicit Comb(int n) : size(std::max(n, 1)), buf((size_t) size, 0.0f) {}
-    int size; std::vector<float> buf; int i = 0; float store = 0, fb = 0.84f, damp = 0.25f;
-    inline float run(float x) {
-        float y = buf[(size_t) i];
-        store = y * (1 - damp) + store * damp + 1e-20f;
-        buf[(size_t) i] = x + store * fb;
-        if (++i == size) i = 0;
-        return y;
+/// Stereo reverb (mac/Sources/DSP.swift FDNReverb, operation for operation): 12 ms pre-delay, four allpass
+/// diffusers, an 8-line feedback delay network mixed by a Householder matrix with damping in each line.
+struct FDNReverb {
+    static constexpr int lineLens[8] = { 1557, 1617, 1491, 1422, 1277, 1356, 1188, 1116 };   // at 44.1 kHz
+    static constexpr int diffLens[4] = { 142, 107, 379, 277 };
+    static constexpr float outScale = 3.8f;   // as loud as the Freeverb it replaces at the same Mix
+    explicit FDNReverb(double sr) {
+        const double scale = sr / 44100;
+        for (int i = 0; i < 8; ++i) { lens[i] = std::max((int) ((double) lineLens[i] * scale), 1); lines[i].assign((size_t) lens[i], 0.0f); }
+        for (int k = 0; k < 4; ++k) { dlens[k] = std::max((int) ((double) diffLens[k] * scale), 1); dif[k].assign((size_t) dlens[k], 0.0f); }
+        preLen = std::max((int) (sr * 0.012), 2); pre.assign((size_t) preLen, 0.0f);
     }
-};
-
-struct Allpass {
-    explicit Allpass(int n) : size(std::max(n, 1)), buf((size_t) size, 0.0f), buf2((size_t) size + 23, 0.0f) {}
-    int size; std::vector<float> buf, buf2; int i = 0, j = 0;
-    inline float run(float x) { float b = buf[(size_t) i]; buf[(size_t) i] = x + b * 0.5f; if (++i == size) i = 0; return b - x; }
-    inline float peekRun(float x) { float b = buf2[(size_t) j]; buf2[(size_t) j] = x + b * 0.5f; if (++j == size + 23) j = 0; return b - x; }
+    void set(float size, float sr) {
+        const float rt = 0.35f + size * size * 5;
+        for (int i = 0; i < 8; ++i) g[i] = std::pow(10.0f, -3 * (float) lens[i] / (rt * sr));
+        damp = 0.15f + 0.35f * size;
+    }
+    inline void process(float x, float& l, float& r) {
+        pre[(size_t) prePos] = x;
+        int pr = prePos + 1; if (pr == preLen) pr = 0;
+        prePos = pr;
+        float v = pre[(size_t) pr];
+        for (int k = 0; k < 4; ++k) {
+            const float b = dif[k][(size_t) dpos[k]], y = b - 0.6f * v;
+            dif[k][(size_t) dpos[k]] = v + 0.6f * y;
+            if (++dpos[k] == dlens[k]) dpos[k] = 0;
+            v = y;
+        }
+        float sum = 0;
+        for (int i = 0; i < 8; ++i) {
+            lp[i] += (lines[i][(size_t) pos[i]] - lp[i]) * (1 - damp);
+            o[i] = lp[i] * g[i];
+            sum += o[i];
+        }
+        const float h = sum * 0.25f;
+        float ll = 0, rr = 0;
+        for (int i = 0; i < 8; ++i) {
+            const float y = lines[i][(size_t) pos[i]];
+            switch (i % 4) { case 0: ll += y; break; case 1: rr += y; break; case 2: ll -= y; break; default: rr -= y; break; }
+            lines[i][(size_t) pos[i]] = o[i] - h + v + 1e-20f;   // same input to every line; the output signs decorrelate L and R
+            if (++pos[i] == lens[i]) pos[i] = 0;
+        }
+        l = ll * outScale; r = rr * outScale;
+    }
+    std::vector<float> lines[8], dif[4], pre;
+    int lens[8] {}, pos[8] {}, dlens[4] {}, dpos[4] {}, preLen = 2, prePos = 0;
+    float lp[8] {}, g[8] {}, o[8] {}, damp = 0.3f;
 };
 
 // MARK: - Engine
@@ -241,7 +271,7 @@ private:
 
     std::vector<float> dBuf; int dSize, dW = 0; Smooth dTime, dSend; float dFb = 0, dWet = 0; Biquad dLP;
 
-    std::vector<Comb> combs; std::vector<Allpass> aps; Smooth rSend; float rWet = 0;
+    FDNReverb reverb; Smooth rSend; float rWet = 0;
     // doubler: the side signal is the difference of two slowly drifting delayed copies (mid stays dry, mono-safe)
     static constexpr int dbSize = 16384, dbMask = 16383;   // 40 ms + drift fits at 192 kHz
     std::vector<float> dbBuf = std::vector<float>(dbSize, 0.0f);

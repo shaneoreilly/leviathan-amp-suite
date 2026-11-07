@@ -506,8 +506,8 @@ final class DSP {
     private var dW = 0, dTime = Smooth(), dSend = Smooth(), dFb: Float = 0, dWet: Float = 0
     private let dLP = Biquad()
 
-    // reverb (Freeverb)
-    private var combs: [Comb] = [], aps: [Allpass] = []
+    // reverb (feedback delay network)
+    private let reverb: FDNReverb
     private var rSend = Smooth(), rWet: Float = 0
     // doubler: the side signal is the difference of two slowly drifting delayed copies (mid stays dry, mono-safe)
     private static let dbSize = 16384, dbMask = 16383   // 40 ms + drift fits at 192 kHz
@@ -530,11 +530,7 @@ final class DSP {
         hist.initialize(repeating: 0, count: DSP.maxIR + DSP.maxN)
         irs[0].initialize(repeating: 0, count: DSP.maxIR); irs[1].initialize(repeating: 0, count: DSP.maxIR)
         irs[0][0] = 1; irLen[0] = 1
-        let scale = sampleRate / 44100
-        for (i, t) in [1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617].enumerated() {
-            combs.append(Comb(Int(Double(t + (i % 2) * 23) * scale)))
-        }
-        for t in [556, 441, 341, 225] { aps.append(Allpass(Int(Double(t) * scale))) }
+        reverb = FDNReverb(sr: sampleRate)
         let os = sampleRate * 4, aa = min(20000, sampleRate * 0.45)
         for (i, q) in [0.5098, 0.6013, 0.9000, 2.5629].enumerated() {
             up[i].set(.lp, aa, os, q: q); down[i].set(.lp, aa, os, q: q)
@@ -622,8 +618,7 @@ final class DSP {
         dbTime.target = min(max(p.doublerTime, 5), 40) / 1000 * sr
         dbInc1 = 0.11 / sr; dbInc2 = 0.17 / sr
         if dbTime.v == 0 { dbTime.v = dbTime.target }
-        let fb = 0.7 + p.revSize * 0.28, damp: Float = 0.3 - p.revSize * 0.1
-        for c in combs { c.fb = fb; c.damp = damp }
+        reverb.set(size: p.revSize, sr: sr)
     }
 
     func process(input: UnsafePointer<Float>, outL: UnsafeMutablePointer<Float>, outR: UnsafeMutablePointer<Float>, frames: Int) {
@@ -776,9 +771,7 @@ final class DSP {
         for i in 0..<n {
             let x = a[i], rin = x * rSend.next(c) * 0.015
             var l: Float = 0, r: Float = 0
-            for (j, cb) in combs.enumerated() { if j % 2 == 0 { l += cb.run(rin) } else { r += cb.run(rin) } }
-            for ap in aps { l = ap.run(l) }
-            for ap in aps { r = ap.peekRun(r) }
+            reverb.process(rin, &l, &r)
             // doubler: two copies ~T and ~0.62 T behind, each drifting ±6-8 % at its own slow rate (about ±1.5 cents)
             dbBuf[dbW] = x
             dbPh1 += dbInc1; if dbPh1 >= 1 { dbPh1 -= 1 }
@@ -840,36 +833,65 @@ final class DSP {
     }
 }
 
-final class Comb {
-    let buf: UnsafeMutablePointer<Float>, size: Int
-    var i = 0, store: Float = 0, fb: Float = 0.84, damp: Float = 0.25
-    init(_ n: Int) { size = max(n, 1); buf = .allocate(capacity: size); buf.initialize(repeating: 0, count: size) }
-    @inline(__always) func run(_ x: Float) -> Float {
-        let y = buf[i]
-        store = y * (1 - damp) + store * damp + 1e-20
-        buf[i] = x + store * fb
-        i += 1; if i == size { i = 0 }
-        return y
-    }
-}
+/// Stereo reverb: a 12 ms pre-delay, four allpass diffusers, then an 8-line feedback delay network mixed by a
+/// Householder matrix, with a one-pole damping filter in each line so highs die away first. Size sets the decay
+/// (RT60 from 0.35 s to 5.35 s) and darkens bigger rooms. Replaces Freeverb, which rang and sounded metallic.
+/// windows/Source/Dsp.h FDNReverb is the same, operation for operation.
+final class FDNReverb {
+    static let lineLens = [1557, 1617, 1491, 1422, 1277, 1356, 1188, 1116]   // at 44.1 kHz
+    static let diffLens = [142, 107, 379, 277]
+    static let outScale: Float = 3.8   // as loud as the Freeverb it replaces at the same Mix
+    private let lines: [UnsafeMutablePointer<Float>], lens: [Int]
+    private var pos = [Int](repeating: 0, count: 8), lp = [Float](repeating: 0, count: 8), g = [Float](repeating: 0, count: 8)
+    private let o = UnsafeMutablePointer<Float>.allocate(capacity: 8)
+    private let dif: [UnsafeMutablePointer<Float>], dlens: [Int]
+    private var dpos = [Int](repeating: 0, count: 4)
+    private let pre: UnsafeMutablePointer<Float>, preLen: Int
+    private var prePos = 0, damp: Float = 0.3
 
-final class Allpass {
-    let buf: UnsafeMutablePointer<Float>, size: Int
-    var i = 0, j = 0
-    let buf2: UnsafeMutablePointer<Float>
-    init(_ n: Int) {
-        size = max(n, 1)
-        buf = .allocate(capacity: size); buf.initialize(repeating: 0, count: size)
-        buf2 = .allocate(capacity: size + 23); buf2.initialize(repeating: 0, count: size + 23)
+    init(sr: Double) {
+        let scale = sr / 44100
+        lens = FDNReverb.lineLens.map { max(Int(Double($0) * scale), 1) }
+        lines = lens.map { n in let b = UnsafeMutablePointer<Float>.allocate(capacity: n); b.initialize(repeating: 0, count: n); return b }
+        dlens = FDNReverb.diffLens.map { max(Int(Double($0) * scale), 1) }
+        dif = dlens.map { n in let b = UnsafeMutablePointer<Float>.allocate(capacity: n); b.initialize(repeating: 0, count: n); return b }
+        preLen = max(Int(sr * 0.012), 2)
+        pre = .allocate(capacity: preLen); pre.initialize(repeating: 0, count: preLen)
+        o.initialize(repeating: 0, count: 8)
     }
-    @inline(__always) func run(_ x: Float) -> Float {
-        let b = buf[i]; buf[i] = x + b * 0.5; i += 1; if i == size { i = 0 }
-        return b - x
+
+    func set(size: Float, sr: Float) {
+        let rt = 0.35 + size * size * 5
+        for i in 0..<8 { g[i] = powf(10, -3 * Float(lens[i]) / (rt * sr)) }
+        damp = 0.15 + 0.35 * size
     }
-    /// Separate delay line (slightly longer) used to decorrelate the right channel.
-    @inline(__always) func peekRun(_ x: Float) -> Float {
-        let b = buf2[j]; buf2[j] = x + b * 0.5; j += 1; if j == size + 23 { j = 0 }
-        return b - x
+
+    @inline(__always) func process(_ x: Float, _ l: inout Float, _ r: inout Float) {
+        pre[prePos] = x
+        var pr = prePos + 1; if pr == preLen { pr = 0 }
+        prePos = pr
+        var v = pre[pr]
+        for k in 0..<4 {
+            let b = dif[k][dpos[k]], y = b - 0.6 * v
+            dif[k][dpos[k]] = v + 0.6 * y
+            dpos[k] += 1; if dpos[k] == dlens[k] { dpos[k] = 0 }
+            v = y
+        }
+        var sum: Float = 0
+        for i in 0..<8 {
+            lp[i] += (lines[i][pos[i]] - lp[i]) * (1 - damp)
+            o[i] = lp[i] * g[i]
+            sum += o[i]
+        }
+        let h = sum * 0.25
+        var ll: Float = 0, rr: Float = 0
+        for i in 0..<8 {
+            let y = lines[i][pos[i]]
+            switch i % 4 { case 0: ll += y; case 1: rr += y; case 2: ll -= y; default: rr -= y }
+            lines[i][pos[i]] = o[i] - h + v + 1e-20   // same input to every line; the output signs decorrelate L and R
+            pos[i] += 1; if pos[i] == lens[i] { pos[i] = 0 }
+        }
+        l = ll * FDNReverb.outScale; r = rr * FDNReverb.outScale
     }
 }
 

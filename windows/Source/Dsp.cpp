@@ -341,16 +341,12 @@ DSP::DSP(double sampleRate, Params& params)
       shifter(sampleRate),
       namBuf(maxN, 0.0f),
       hist(maxIR + maxN, 0.0f),
-      dSize((int) (sampleRate * 2.1)) {
+      dSize((int) (sampleRate * 2.1)), reverb(sampleRate) {
     for (int k = 0; k < kPedalCount; ++k) pedals.push_back(makePedal((PedalKind) k, (float) sampleRate));
     limRel = 1 - std::exp(-1 / (0.08f * (float) sampleRate));
     dBuf.assign((size_t) dSize, 0.0f);
     irs[0].assign(maxIR, 0.0f); irs[1].assign(maxIR, 0.0f);
     irs[0][0] = 1; irLen[0] = 1;
-    const double scale = sampleRate / 44100;
-    const int ct[8] = { 1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617 };
-    for (int i = 0; i < 8; ++i) combs.emplace_back((int) ((double) (ct[i] + (i % 2) * 23) * scale));
-    for (int t : { 556, 441, 341, 225 }) aps.emplace_back((int) ((double) t * scale));
     const double os = sampleRate * 4, aa = std::min(20000.0, sampleRate * 0.45);
     for (int i = 0; i < 4; ++i) { up[i].set(Biquad::lp, aa, os, kAAQ[i]); down[i].set(Biquad::lp, aa, os, kAAQ[i]); }
     aDC.set(Biquad::hp, 15, sampleRate);
@@ -432,8 +428,7 @@ void DSP::update(bool force) {
     dbTime.target = std::min(std::max((float) p.doublerTime, 5.f), 40.f) / 1000 * sr;
     dbInc1 = 0.11f / sr; dbInc2 = 0.17f / sr;
     if (dbTime.v == 0) dbTime.v = dbTime.target;
-    const float fb = 0.7f + p.revSize * 0.28f, damp = 0.3f - p.revSize * 0.1f;
-    for (auto& c : combs) { c.fb = fb; c.damp = damp; }
+    reverb.set(p.revSize, sr);
 }
 
 void DSP::process(const float* input, float* outL, float* outR, int frames) {
@@ -593,9 +588,7 @@ void DSP::process(const float* input, float* outL, float* outR, int frames) {
     for (int i = 0; i < n; ++i) {
         const float x = a[(size_t) i], rin = x * rSend.next(c) * 0.015f;
         float l = 0, r = 0;
-        for (size_t j = 0; j < combs.size(); ++j) { if (j % 2 == 0) l += combs[j].run(rin); else r += combs[j].run(rin); }
-        for (auto& ap : aps) l = ap.run(l);
-        for (auto& ap : aps) r = ap.peekRun(r);
+        reverb.process(rin, l, r);
         // doubler: two copies ~T and ~0.62 T behind, each drifting ±6-8 % at its own slow rate (about ±1.5 cents)
         dbBuf[(size_t) dbW] = x;
         dbPh1 += dbInc1; if (dbPh1 >= 1) dbPh1 -= 1;
