@@ -281,7 +281,7 @@ std::unique_ptr<UnitBox> RigView::makePanel(const juce::String& id) {
         auto c = col(10);
         auto r1 = row(6);
         // ids: 1 = built-in voicings, 2.. = fitted captures, 1000.. = NAM captures
-        auto cap = std::make_unique<Picker>((int) (250 * theme::W), [&m] {
+        auto cap = std::make_unique<Picker>((int) (175 * theme::W), [&m] {
             if (const auto nm = m.s().s("nam"); nm.isNotEmpty()) { const int k = m.namFiles.indexOf(nm); return k >= 0 ? 1000 + k : 1; }
             const auto cur = m.s().s("capture"); if (cur.isEmpty()) return 1;
             int i = 2; for (auto& [k, v] : m.captures) { if (k == cur) return i; i++; } return 1;
@@ -409,7 +409,7 @@ std::unique_ptr<UnitBox> RigView::makePanel(const juce::String& id) {
     } else if (id == "ampb") {
         // a second amp (any NAM capture) fed by the same pedals; Spread puts amp A left and amp B right
         auto c = col(8);
-        auto pick = std::make_unique<Picker>((int) (210 * theme::W), [&m] { const int k = m.namFiles.indexOf(m.s().s("ampBNam")); return k >= 0 ? k + 2 : 1; },
+        auto pick = std::make_unique<Picker>((int) (145 * theme::W), [&m] { const int k = m.namFiles.indexOf(m.s().s("ampBNam")); return k >= 0 ? k + 2 : 1; },
             [&m](int i) { Settings n = m.s(); n.set("ampBNam", i >= 2 ? m.namFiles[i - 2] : juce::String()); if (i >= 2) n.set("ampBOn", true); m.setSettings(n); });
         pick->addItem(juce::String::fromUTF8("Choose a second amp\xe2\x80\xa6"), 1);
         for (int i = 0; i < m.namFiles.size(); ++i) pick->addItem(namTitle(m.namFiles[i]), i + 2);
@@ -521,7 +521,7 @@ std::unique_ptr<juce::Component> RigView::irLibraryRow() {
     b->onClick = [&m, bp] {
         juce::CallOutBox::launchAsynchronously(std::make_unique<IRBrowser>(m), bp->getScreenBounds(), nullptr);
     };
-    setPref(*b, (int) (240 * theme::W), 26);
+    setPref(*b, (int) (185 * theme::W), 26);
     b->setTooltip(rel);
     r->add(std::move(b));
     r->add(std::make_unique<IconButton>(IconButton::chevronLeft, [&m] { m.set("irFile", m.cabIRs.step(m.s().s("irFile"), -1)); }, 12))->setTooltip("Previous IR");

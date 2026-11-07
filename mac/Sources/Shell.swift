@@ -1068,7 +1068,7 @@ struct IRLibraryRow: View {
                     Image(systemName: "magnifyingglass")
                     Text(m.s.irFile.isEmpty ? "Choose an IR…" : CabIRLibrary.title(m.s.irFile)).lineLimit(1)
                     Spacer(minLength: 4)
-                }.frame(width: 240 * W)
+                }.frame(width: 185 * W)
             }
             .popover(isPresented: $ui.open, arrowEdge: .bottom) { IRBrowser(open: $ui.open).environmentObject(m) }
             Button { m.s.irFile = m.cabIRs.step(m.s.irFile, by: -1) ?? m.s.irFile } label: { Image(systemName: "chevron.left") }.help("Previous IR")

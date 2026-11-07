@@ -1810,7 +1810,7 @@ struct ContentView: View {
                         if !m.captures.isEmpty {
                             Section("Your captures") { ForEach(m.captures.keys.sorted(), id: \.self) { n in Text(n).tag("cap:" + n) } }
                         }
-                    }.labelsHidden().frame(width: 250 * W)
+                    }.labelsHidden().frame(width: 175 * W)
                     Menu {
                         Button("Add NAM captures (.nam)…") { m.importNam() }
                         Button("Open NAM folder") { NSWorkspace.shared.open(NamHost.dir) }
@@ -1975,7 +1975,7 @@ struct ContentView: View {
                     ForEach(m.namHost.files, id: \.self) { Text(namTitle($0)).tag($0) }
                     if !m.s.ampBNam.isEmpty && !m.namHost.files.contains(m.s.ampBNam) { Text(namTitle(m.s.ampBNam) + " (missing)").tag(m.s.ampBNam) }
                 }
-                .labelsHidden().frame(width: 210 * W)
+                .labelsHidden().frame(width: 145 * W)
                 .explain("panel:ampb", "Amp B")
                 HStack(spacing: 2) {
                     Knob(label: "Level", value: $m.s.ampBLevel, key: "ampBLevel", range: -12...12, def: 0, fmt: { String(format: "%+.1f dB", $0) }, color: ch)
