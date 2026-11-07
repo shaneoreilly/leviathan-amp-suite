@@ -252,13 +252,13 @@ std::unique_ptr<UnitBox> RigView::makePanel(const juce::String& id) {
         auto c = col(8);
         auto r1 = row(8);
         r1->add(std::make_unique<LiveLabel>([] { return juce::String("Guitar"); }, 12, theme::secondary));
-        auto tune = std::make_unique<Picker>((int) (215 * theme::W), [&m] { return m.tuningIndex + 1; }, [&m](int i) { m.setTuningIndex(i - 1); });
+        auto tune = std::make_unique<Picker>((int) (140 * theme::W), [&m] { return m.tuningIndex + 1; }, [&m](int i) { m.setTuningIndex(i - 1); });
         for (size_t i = 0; i < TUNINGS.size(); ++i) tune->addItem(tuningLabel(TUNINGS[i]), (int) i + 1);
         r1->add(std::move(tune));
         c->add(std::move(r1));
         auto r2 = row(4);
         r2->add(std::make_unique<IconButton>(IconButton::minus, [&m] { m.playAs(std::max((int) std::round(m.s().d("pitchSemis")) - 1, -12)); }, 12))->setTooltip("Down a semitone");
-        auto playAs = std::make_unique<Picker>((int) (235 * theme::W), [&m] { return 13 - (int) std::round(m.s().d("pitchSemis")); }, [&m](int i) { m.playAs(13 - i); });
+        auto playAs = std::make_unique<Picker>((int) (155 * theme::W), [&m] { return 13 - (int) std::round(m.s().d("pitchSemis")); }, [&m](int i) { m.playAs(13 - i); });
         for (auto& [name, semis] : m.playAsOptions()) {
             auto st = m.tuning().strings; for (auto& n : st) n += semis;
             const auto label = name + juce::String::fromUTF8(" \xc2\xb7 ") + tuningNotes(st, m.tuning().flats);
@@ -327,7 +327,7 @@ std::unique_ptr<UnitBox> RigView::makePanel(const juce::String& id) {
     } else if (id == "master") {
         auto c = col(8);
         const auto outs = m.outputDeviceNames();
-        auto dev = std::make_unique<Picker>((int) (160 * theme::W), [&m, outs] { return outs.indexOf(m.outputDeviceName()) + 1; },
+        auto dev = std::make_unique<Picker>((int) (120 * theme::W), [&m, outs] { return outs.indexOf(m.outputDeviceName()) + 1; },
                                             [&m, outs](int i) { if (juce::isPositiveAndBelow(i - 1, outs.size())) m.setOutputDevice(outs[i - 1]); });
         for (int i = 0; i < outs.size(); ++i) dev->addItem(outs[i], i + 1);
         dev->setTextWhenNothingSelected(outs.isEmpty() ? "No output device" : "Choose an output");
@@ -338,7 +338,7 @@ std::unique_ptr<UnitBox> RigView::makePanel(const juce::String& id) {
         pk->add(std::move(dev));
         if (std::min(m.inputChannelCount(), 8) > 1) {
             auto gap = std::make_unique<juce::Component>();
-            setPref(*gap, (int) (160 * theme::W), ph);
+            setPref(*gap, (int) (120 * theme::W), ph);
             pk->add(std::move(gap));
         }
         c->add(std::move(pk));
@@ -477,7 +477,7 @@ std::unique_ptr<juce::Component> RigView::inputPickers() {
     auto c = col(6);
     const auto names = m.inputDeviceNames();
     // id 1 = no input (play recordings without an interface); devices from 2
-    auto dev = std::make_unique<Picker>((int) (160 * theme::W),
+    auto dev = std::make_unique<Picker>((int) (120 * theme::W),
         [&m, names] { const auto n = m.inputDeviceName(); return n.isEmpty() ? 1 : names.indexOf(n) + 2; },
         [&m, names](int i) { if (i == 1) m.setInputDevice({}); else if (juce::isPositiveAndBelow(i - 2, names.size())) m.setInputDevice(names[i - 2]); });
     dev->addItem("No input (playback only)", 1);
@@ -487,7 +487,7 @@ std::unique_ptr<juce::Component> RigView::inputPickers() {
     c->add(std::move(dev));
     const int n = std::min(m.inputChannelCount(), 8);
     if (n > 1) {
-        auto ch = std::make_unique<Picker>((int) (160 * theme::W), [&m] { return m.s().i("inputChannel") + 1; }, [&m](int i) { m.set("inputChannel", i - 1); });
+        auto ch = std::make_unique<Picker>((int) (120 * theme::W), [&m] { return m.s().i("inputChannel") + 1; }, [&m](int i) { m.set("inputChannel", i - 1); });
         for (int i = 0; i < n; ++i) ch->addItem("Channel " + juce::String(i + 1), i + 1);
         ch->setTooltip(Model::explain("inputChannel"));
         c->add(std::move(ch));

@@ -551,13 +551,18 @@ final class Model: ObservableObject {
 
     // Rig layout (not part of presets): panel order and collapsed sections.
     /// "|" starts a new row.
-    static let defaultPanels = ["input", "master", "gate", "pitch", "eq", "|", "amp", "cab", "reverb", "delay", "doubler"]
+    static let defaultPanels = ["input", "master", "gate", "pitch", "eq", "doubler", "|", "amp", "cab", "reverb", "delay"]
     /// Each panel's UnitBox title (also its collapse key).
     static let panelTitles = ["input": "INPUT", "gate": "GATE", "pitch": "PITCH", "amp": "AMP", "master": "MASTER",
                               "cab": "CABINET", "eq": "GRAPHIC EQ", "delay": "DELAY", "reverb": "REVERB", "doubler": "DOUBLER"]
     @Published var panelOrder: [String] = {
-        let saved = (UserDefaults.standard.stringArray(forKey: "panelOrder2") ?? []).filter(Model.defaultPanels.contains)
-        return saved + Model.defaultPanels.filter { !saved.contains($0) }
+        var order = (UserDefaults.standard.stringArray(forKey: "panelOrder2") ?? []).filter(Model.defaultPanels.contains)
+        // a panel added in a new version goes in after its neighbour in the default order (Doubler after the EQ), not at the end
+        for (k, id) in Model.defaultPanels.enumerated() where !order.contains(id) {
+            let after = Model.defaultPanels[..<k].last(where: order.contains).flatMap { order.firstIndex(of: $0) }
+            order.insert(id, at: after.map { $0 + 1 } ?? order.count)
+        }
+        return order
     }() { didSet { UserDefaults.standard.set(panelOrder, forKey: "panelOrder2") } }
     /// Show an explanation of the control under the pointer, in a strip at the bottom of the rig.
     @Published var explainOnHover = UserDefaults.standard.object(forKey: "explainOnHover") as? Bool ?? true {
@@ -1540,7 +1545,7 @@ struct ContentView: View {
                     ForEach(m.inputs) { Text($0.name).tag($0.uid) }
                     if m.input == nil && m.inputUID != Model.noInput { Text("Not connected").tag(m.inputUID) }
                 }
-                    .labelsHidden().frame(width: 160 * W)
+                    .labelsHidden().frame(width: 120 * W)
                     .onHover { inside in
                         if inside { HoverHelp.shared.show(id: "inputDevice", title: "Input · Interface", text: EXPLAIN["inputDevice"]) } else { HoverHelp.shared.clear(id: "inputDevice") }
                     }
@@ -1548,7 +1553,7 @@ struct ContentView: View {
                     Picker("", selection: $m.s.inputChannel) {
                         ForEach(0..<min(m.input?.ins ?? 1, 8), id: \.self) { Text("Channel \($0 + 1)").tag($0) }
                     }
-                    .labelsHidden().frame(width: 160 * W)
+                    .labelsHidden().frame(width: 120 * W)
                     .onHover { inside in
                         if inside { HoverHelp.shared.show(id: "inputChannel", title: "Input · Channel", text: EXPLAIN["inputChannel"]) } else { HoverHelp.shared.clear(id: "inputChannel") }
                     }
@@ -1571,8 +1576,11 @@ struct ContentView: View {
     var pitch: some View {
         UnitBox(title: "PITCH", on: $m.s.pitchOn, onKey: "pitchOn", color: ch, trailing: AnyView(PitchLatency(mt: m.meters))) {
             VStack(alignment: .center, spacing: 8) {
-                Picker("Guitar", selection: $m.tuningIndex) { ForEach(TUNINGS.indices, id: \.self) { Text(TUNINGS[$0].label).tag($0) } }
-                    .frame(width: 260 * W)
+                // the button shows just the tuning's name, the menu shows the notes too (keeps the panel narrow)
+                Menu("Guitar: \(m.tuning.name)") {
+                    ForEach(TUNINGS.indices, id: \.self) { i in Button(TUNINGS[i].label) { m.tuningIndex = i } }
+                }
+                .frame(width: 155 * W)
                 HStack(spacing: 4) {
                     Button { m.playAs(max(Int(m.s.pitchSemis.rounded()) - 1, -12)) } label: { Image(systemName: "minus") }
                         .help("Down a semitone")
@@ -1582,7 +1590,7 @@ struct ContentView: View {
                             Button(o.semis == 0 ? "\(o.name) \u{00B7} \(notes) (no shift)" : String(format: "%@ \u{00B7} %@  (%+d)", o.name, notes, o.semis)) { m.playAs(o.semis) }
                         }
                     }
-                    .frame(width: 250 * W)
+                    .frame(width: 155 * W)
                     Button { m.playAs(min(Int(m.s.pitchSemis.rounded()) + 1, 12)) } label: { Image(systemName: "plus") }
                         .help("Up a semitone")
                 }
@@ -1935,11 +1943,11 @@ struct ContentView: View {
                 Picker("", selection: $m.outputUID) {
                     ForEach(m.outputs) { d in Text(d.outputWarning != nil ? "\(d.name) ⚠︎" : d.name).tag(d.uid) }
                 }
-                .labelsHidden().frame(width: 160 * W)
+                .labelsHidden().frame(width: 120 * W)
                 .explain("outputDevice", "Master · Output device")
                 if (m.input?.ins ?? 1) > 1 {
                     // stands in for INPUT's channel picker, so the two device pickers sit level
-                    Picker("", selection: .constant(0)) { Text("").tag(0) }.labelsHidden().frame(width: 160 * W).hidden()
+                    Picker("", selection: .constant(0)) { Text("").tag(0) }.labelsHidden().frame(width: 120 * W).hidden()
                 }
                 Knob(label: "Output", value: $m.s.masterVol, key: "masterVol", range: -40...12, def: -6, fmt: { String(format: "%+.1f dB", $0) }, color: ch)
             }

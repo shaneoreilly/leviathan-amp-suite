@@ -8,7 +8,7 @@ namespace lev {
 
 const std::vector<double> Model::zoomSteps = { 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.25, 1.4, 1.6 };
 /// "|" starts a new row.
-static const juce::StringArray defaultPanels { "input", "master", "gate", "pitch", "eq", "|", "amp", "cab", "reverb", "delay", "doubler" };
+static const juce::StringArray defaultPanels { "input", "master", "gate", "pitch", "eq", "doubler", "|", "amp", "cab", "reverb", "delay" };
 static const juce::Colour channelColours[3] = { juce::Colour::fromFloatRGBA(0.35f, 0.7f, 1, 1), juce::Colour::fromFloatRGBA(0.91f, 0.57f, 0.23f, 1),
                                                 juce::Colour::fromFloatRGBA(1, 0.3f, 0.3f, 1) };
 
@@ -49,7 +49,14 @@ Model::Model() {
     {
         auto saved = juce::StringArray::fromTokens(p.getValue("panelOrder2"), ",", "");
         for (const auto& id : saved) if (defaultPanels.contains(id)) panelOrder.addIfNotAlreadyThere(id);
-        for (const auto& id : defaultPanels) panelOrder.addIfNotAlreadyThere(id);
+        // a panel added in a new version goes in after its neighbour in the default order (Doubler after the EQ), not at the end
+        for (int k = 0; k < defaultPanels.size(); ++k) {
+            const auto& id = defaultPanels[k];
+            if (panelOrder.contains(id)) continue;
+            int at = panelOrder.size();
+            for (int j = k - 1; j >= 0; --j) if (panelOrder.contains(defaultPanels[j])) { at = panelOrder.indexOf(defaultPanels[j]) + 1; break; }
+            panelOrder.insert(at, id);
+        }
     }
     collapsed = juce::StringArray::fromLines(p.getValue("collapsed")); collapsed.removeEmptyStrings();
 
