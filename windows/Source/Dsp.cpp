@@ -336,7 +336,7 @@ const Voicing VOICINGS[3] = {
 
 DSP::DSP(double sampleRate, Params& params)
     : sr((float) sampleRate), p(params),
-      a(maxN), b(maxN), wl(maxN), wr(maxN),
+      a(maxN), b(maxN), wl(maxN), wr(maxN), gBuf(maxN, 1.0f),
       fade(1 - std::exp(-1 / (0.006f * (float) sampleRate))),
       shifter(sampleRate),
       namBuf(maxN, 0.0f),
@@ -374,8 +374,11 @@ void DSP::update(bool force) {
     inG.target = dbLin(p.inGain);
     gThr = dbLin(p.gateThresh);
     // Release = time to fall 60 dB (closed), not one time constant: after a high-gain amp a gate that is only
-    // ~9 dB down still sounds open, so a one-time-constant release leaves a long audible tail.
-    gRelC = std::exp(std::log(0.001f) / (p.gateRelease / 1000 * sr));
+    // ~9 dB down still sounds open, so a one-time-constant release leaves a long audible tail. The gain is applied twice,
+    // before the pedals and again after the cab, so each stage falls 30 dB over Release: a clean tone fades exactly as
+    // before, and a high-gain rig (which holds a fading input at full level until it is ~40 dB down) still fades evenly
+    // instead of hanging at full level and then dropping all at once.
+    gRelC = std::exp(std::log(0.001f) / 2 / (p.gateRelease / 1000 * sr));
     gEnvR = std::exp(-1 / (0.015f * sr)); gAttC = std::exp(-1 / (0.0003f * sr));
 
     shifter.setRatio(std::pow(2.0, (double) (std::round(p.pitchSemis) + p.pitchCents / 100) / 12));
@@ -463,6 +466,7 @@ void DSP::process(const float* input, float* outL, float* outR, int frames) {
         if (env > gThr) { gTarget = 1; gHold = holdN; }
         else if (env < close) { if (gHold > 0) gHold--; else gTarget = 0; }
         gGain = gTarget + (gGain - gTarget) * (gTarget > gGain ? gAttC : gRelC);
+        gBuf[(size_t) i] = gGain;
         a[(size_t) i] = gateOn ? x * gGain : x;
     }
     p.tunerWrite.store(w, std::memory_order_release);
@@ -561,6 +565,9 @@ void DSP::process(const float* input, float* outL, float* outR, int frames) {
         const float y = cHi2.run(cHi1.run(cLo.run(b[(size_t) i]))) * lvl;
         a[(size_t) i] += (y - a[(size_t) i]) * m;
     }
+
+    // gate, second stage: the same fade after the amp and cab (delay and reverb tails still ring out)
+    if (gateOn) for (int i = 0; i < n; ++i) a[(size_t) i] *= gBuf[(size_t) i];
 
     // delay (send stays live so tails ring out when switched off)
     for (int i = 0; i < n; ++i) {

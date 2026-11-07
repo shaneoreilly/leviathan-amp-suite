@@ -450,6 +450,7 @@ final class DSP {
     private let b = UnsafeMutablePointer<Float>.allocate(capacity: DSP.maxN)
     private let wl = UnsafeMutablePointer<Float>.allocate(capacity: DSP.maxN)
     private let wr = UnsafeMutablePointer<Float>.allocate(capacity: DSP.maxN)
+    private let gBuf: UnsafeMutablePointer<Float> = { let g = UnsafeMutablePointer<Float>.allocate(capacity: DSP.maxN); g.initialize(repeating: 1, count: DSP.maxN); return g }()   // gate gain per sample, for the post-cab stage
     private let fade: Float
 
     // input + gate
@@ -557,8 +558,11 @@ final class DSP {
         inG.target = dbLin(p.inGain)
         gThr = dbLin(p.gateThresh)
         // Release = time to fall 60 dB (closed), not one time constant: after a high-gain amp a gate that is only
-        // ~9 dB down still sounds open, so the old curve left a long audible tail.
-        gRelC = expf(logf(0.001) / (p.gateRelease / 1000 * sr))
+        // ~9 dB down still sounds open, so the old curve left a long audible tail. The gain is applied twice, before the
+        // pedals and again after the cab, so each stage falls 30 dB over Release: a clean tone fades exactly as before,
+        // and a high-gain rig (which holds a fading input at full level until it is ~40 dB down) still fades evenly
+        // instead of hanging at full level and then dropping all at once.
+        gRelC = expf(logf(0.001) / 2 / (p.gateRelease / 1000 * sr))
         gEnvR = expf(-1 / (0.015 * sr)); gAttC = expf(-1 / (0.0003 * sr))
 
         shifter.setRatio(pow(2, Double(p.pitchSemis.rounded() + p.pitchCents / 100) / 12))
@@ -646,6 +650,7 @@ final class DSP {
             env = ax > env ? ax : env * gEnvR + ax * (1 - gEnvR)
             if env > gThr { gTarget = 1; gHold = holdN } else if env < close { if gHold > 0 { gHold -= 1 } else { gTarget = 0 } }
             gGain = gTarget + (gGain - gTarget) * (gTarget > gGain ? gAttC : gRelC)
+            gBuf[i] = gGain
             a[i] = gateOn ? x * gGain : x
         }
         p.tunerWrite = w; p.inPeak = max(inPk, p.inPeak * 0.9); p.gateOpen = gTarget > 0 || !gateOn
@@ -737,6 +742,9 @@ final class DSP {
             let y = cHi2.run(cHi1.run(cLo.run(b[i]))) * lvl
             a[i] += (y - a[i]) * m
         }
+
+        // gate, second stage: the same fade after the amp and cab (delay and reverb tails still ring out)
+        if gateOn { for i in 0..<n { a[i] *= gBuf[i] } }
 
         // delay (send stays live so tails ring out when switched off)
         for i in 0..<n {

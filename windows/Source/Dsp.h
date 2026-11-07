@@ -209,7 +209,7 @@ public:
 private:
     Params& p;
     int lastVersion = -1;
-    std::vector<float> a, b, wl, wr;
+    std::vector<float> a, b, wl, wr, gBuf;   // gBuf: gate gain per sample, for the post-cab stage
     const float fade;
 
     Smooth inG; float env = 0, gGain = 1, gTarget = 1; int gHold = 0;
