@@ -73,7 +73,7 @@ final class Updater: ObservableObject {
             guard Updater.newer(v, than: current) else { phase = .upToDate; return }
             guard let dmg = r.assets.first(where: { $0.name.hasSuffix(".dmg") }) else { throw Fail("Release \(v) has no DMG") }
             let sha = r.assets.first { $0.name == dmg.name + ".sha256" }
-            let notes = await Updater.notesSince(current, upTo: v) ?? Updater.playerNotes(r.body ?? "")
+            let notes = await Updater.notesSince(current, upTo: v) ?? Updater.released(r.published_at) + Updater.playerNotes(r.body ?? "")
             phase = .available(Release(version: v, notes: notes, dmg: dmg.browser_download_url, sha: sha?.browser_download_url,
                                        page: r.html_url))
         } catch {
@@ -177,7 +177,7 @@ final class Updater: ObservableObject {
 
     private struct GHRelease: Decodable {
         let tag_name: String, body: String?, html_url: URL, assets: [Asset]
-        let draft: Bool?, prerelease: Bool?
+        let draft: Bool?, prerelease: Bool?, published_at: String?
         struct Asset: Decodable { let name: String, browser_download_url: URL }
         var version: String { tag_name.hasPrefix("v") ? String(tag_name.dropFirst()) : tag_name }
     }
@@ -193,7 +193,15 @@ final class Updater: ObservableObject {
         let new = all.filter { $0.draft != true && $0.prerelease != true && newer($0.version, than: current) && !newer($0.version, than: latest) }
             .sorted { newer($0.version, than: $1.version) }
         guard new.count > 1 else { return nil }
-        return new.map { "# Leviathan \($0.version)\n\n" + playerNotes($0.body ?? "") }.joined(separator: "\n\n")
+        return new.map { "# Leviathan \($0.version)\n\n" + released($0.published_at) + playerNotes($0.body ?? "") }.joined(separator: "\n\n")
+    }
+
+    /// "> Released on 2026-11-06 06:36 PM NYC" and a blank line (a grey note in the popup); empty without a date.
+    nonisolated static func released(_ iso: String?) -> String {
+        guard let iso, let d = ISO8601DateFormatter().date(from: iso), let ny = TimeZone(identifier: "America/New_York") else { return "" }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX"); f.timeZone = ny; f.dateFormat = "yyyy-MM-dd hh:mm a"
+        return "> Released on \(f.string(from: d)) NYC\n\n"
     }
 
     /// Release notes as players see them in the app: without the Downloads section, the "click Update" hint
@@ -311,7 +319,7 @@ struct WhatsNewSheet: View {
                 if release.notes.isEmpty {
                     Text("No notes for this release.").foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
                 } else {
-                    MarkdownView(release.notes)
+                    MarkdownView(release.notes, paragraphsAsBullets: true)
                 }
             }
             .padding(.horizontal, 20 * Z).padding(.vertical, 14 * Z)

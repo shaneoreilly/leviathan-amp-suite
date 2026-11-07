@@ -1063,7 +1063,7 @@ struct WhatsNew : juce::Component {
         title = juce::String::fromUTF8("What\xe2\x80\x99s new in Leviathan ") + r.version;
         sub = "You have " + Updater::current() + ". Updating replaces this copy and reopens Leviathan.";
         notes.accent = m.accent();
-        notes.setMarkdown(r.notes.isNotEmpty() ? r.notes : juce::String("No notes for this release."));
+        notes.setMarkdown(r.notes.isNotEmpty() ? r.notes : juce::String("No notes for this release."), true);
         view.setViewedComponent(&notes, false); view.setScrollBarsShown(true, false);
         addAndMakeVisible(view); addAndMakeVisible(close);
         ignore.setButtonText("Ignore"); ignore.setTooltip("Hide this update until the next version (Settings, Updates still has it)");

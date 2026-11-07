@@ -3,7 +3,7 @@ import SwiftUI
 // MARK: - Minimal Markdown, for release notes shown in the app
 //
 // Blocks: headings (#, ##, ###), paragraphs, bullet and numbered lists (nested by indent), tables (one row per line),
-// fenced code and rules. Inline: bold, italic, code and links (Foundation's inline Markdown).
+// fenced code, rules and > notes (small, grey). Paragraphs can be shown as bullets (release notes do). Inline: bold, italic, code and links (Foundation's inline Markdown).
 // windows/Source/UI/Markdown.cpp parses the same subset the same way.
 
 enum MDBlock: Hashable {
@@ -13,10 +13,11 @@ enum MDBlock: Hashable {
     case row([String], Bool)              // cells, header row
     case code(String)
     case rule
+    case quote(String)                    // > line: a small grey note
 }
 
 enum Markdown {
-    static func blocks(_ src: String) -> [MDBlock] {
+    static func blocks(_ src: String, paragraphsAsBullets: Bool = false) -> [MDBlock] {
         var out: [MDBlock] = [], para: [String] = [], code: [String] = [], inCode = false
         func flush() { if !para.isEmpty { out.append(.para(para.joined(separator: " "))); para = [] } }
         for raw in src.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n") {
@@ -36,6 +37,12 @@ enum Markdown {
                 }
             }
             if t == "---" || t == "***" || t == "___" { flush(); out.append(.rule); continue }
+            if t.hasPrefix(">") {
+                flush()
+                let q = String(t.dropFirst()).trimmingCharacters(in: .whitespaces)
+                if case .quote(let prev)? = out.last { out[out.count - 1] = .quote(prev + " " + q) } else { out.append(.quote(q)) }
+                continue
+            }
             if t.hasPrefix("|") {
                 flush()
                 var cells = t.split(separator: "|", omittingEmptySubsequences: false).map { $0.trimmingCharacters(in: .whitespaces) }
@@ -62,7 +69,8 @@ enum Markdown {
         }
         flush()
         if inCode { out.append(.code(code.joined(separator: "\n"))) }
-        return out
+        guard paragraphsAsBullets else { return out }
+        return out.map { if case .para(let s) = $0 { return .item(0, "•", s) }; return $0 }
     }
 
     static func inline(_ s: String) -> AttributedString {
@@ -72,7 +80,7 @@ enum Markdown {
 
 struct MarkdownView: View {
     let blocks: [MDBlock]
-    init(_ text: String) { blocks = Markdown.blocks(text) }
+    init(_ text: String, paragraphsAsBullets: Bool = false) { blocks = Markdown.blocks(text, paragraphsAsBullets: paragraphsAsBullets) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8 * Z) {
@@ -112,6 +120,8 @@ struct MarkdownView: View {
                 .background(RoundedRectangle(cornerRadius: 6).fill(panel2))
         case .rule:
             Rectangle().fill(line).frame(height: 1).padding(.vertical, 4 * Z)
+        case .quote(let s):
+            Text(Markdown.inline(s)).font(.system(size: 11 * UI)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }
 }

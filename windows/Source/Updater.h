@@ -28,6 +28,8 @@ public:
     /// Release notes as players see them in the app: without the Downloads section, the "click Update" hint and the
     /// GitHub changelog link, which only make sense on the release page.
     static juce::String playerNotes(const juce::String& body);
+    /// "> Released on 2026-11-06 06:36 PM NYC" and a blank line, from GitHub's published_at (UTC); empty without one.
+    static juce::String released(const juce::String& isoUtc);
     bool busy() const { return phase == Phase::checking || phase == Phase::downloading || phase == Phase::installing; }
 
     void checkOnLaunch();

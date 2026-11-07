@@ -33,6 +33,38 @@ juce::String Updater::playerNotes(const juce::String& body) {
     return out.joinIntoString("\n").trim();
 }
 
+juce::String Updater::released(const juce::String& iso) {
+    // "2026-11-06T22:36:27Z"; JUCE has no time zones, so New York time comes from the US rules: daylight time (UTC-4)
+    // from 2:00 local on the second Sunday of March to 2:00 local on the first Sunday of November, else UTC-5.
+    if (iso.length() < 16 || iso[4] != '-' || iso[10] != 'T') return {};
+    const int Y = iso.substring(0, 4).getIntValue(), M = iso.substring(5, 7).getIntValue(), D = iso.substring(8, 10).getIntValue();
+    const int h = iso.substring(11, 13).getIntValue(), mi = iso.substring(14, 16).getIntValue();
+    if (Y < 2000 || M < 1 || M > 12 || D < 1 || D > 31) return {};
+    // days since 1970-01-01 for a civil date (Howard Hinnant's algorithm)
+    auto days = [](int y, int m, int d) {
+        y -= m <= 2; const int era = (y >= 0 ? y : y - 399) / 400; const int yoe = y - era * 400;
+        const int doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1; const int doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+        return (juce::int64) era * 146097 + doe - 719468;
+    };
+    auto sunday = [&](int y, int m, int nth) {   // day number of the nth Sunday of a month
+        const auto first = days(y, m, 1); const int wd = (int) ((first + 4) % 7);   // 0 = Sunday (1970-01-01 was a Thursday)
+        return first + (7 - wd) % 7 + 7 * (nth - 1);
+    };
+    const juce::int64 utcMin = days(Y, M, D) * 1440 + h * 60 + mi;
+    const juce::int64 dstStart = sunday(Y, 3, 2) * 1440 + 7 * 60, dstEnd = sunday(Y, 11, 1) * 1440 + 6 * 60;   // 2:00 local in UTC
+    const juce::int64 local = utcMin + (utcMin >= dstStart && utcMin < dstEnd ? -4 : -5) * 60;
+    // back to a civil date
+    const juce::int64 z = (local >= 0 ? local : local - 1439) / 1440 + 719468;
+    const juce::int64 era = (z >= 0 ? z : z - 146096) / 146097; const int doe = (int) (z - era * 146097);
+    const int yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365; const int doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    const int mp = (5 * doy + 2) / 153, d = doy - (153 * mp + 2) / 5 + 1, m = mp < 10 ? mp + 3 : mp - 9;
+    const int y = (int) (yoe + era * 400) + (m <= 2);
+    const int minOfDay = (int) (local - ((local >= 0 ? local : local - 1439) / 1440) * 1440);
+    const int hh = minOfDay / 60, mm = minOfDay % 60, h12 = hh % 12 == 0 ? 12 : hh % 12;
+    return "> Released on " + juce::String(y) + "-" + juce::String(m).paddedLeft('0', 2) + "-" + juce::String(d).paddedLeft('0', 2) + " "
+         + juce::String(h12).paddedLeft('0', 2) + ":" + juce::String(mm).paddedLeft('0', 2) + (hh < 12 ? " AM" : " PM") + " NYC\n\n";
+}
+
 /// Notes for every release after `current` up to `latest`, newest first, each under its version; empty when GitHub
 /// can't be reached or only one release is new (then the latest release's own notes are used). Runs off the message thread.
 static juce::String notesSince(const juce::String& current, const juce::String& latest) {
@@ -48,12 +80,13 @@ static juce::String notesSince(const juce::String& current, const juce::String& 
     for (auto& r : *arr) {
         if ((bool) r["draft"] || (bool) r["prerelease"]) continue;
         auto tag = r["tag_name"].toString(); if (tag.startsWith("v")) tag = tag.substring(1);
-        if (Updater::newer(tag, current) && !Updater::newer(tag, latest)) found.push_back({ tag, r["body"].toString() });
+        if (Updater::newer(tag, current) && !Updater::newer(tag, latest))
+            found.push_back({ tag, Updater::released(r["published_at"].toString()) + Updater::playerNotes(r["body"].toString()) });
     }
     if (found.size() < 2) return {};
     std::sort(found.begin(), found.end(), [](auto& a, auto& b) { return Updater::newer(a.first, b.first); });
     juce::StringArray parts;
-    for (auto& [tag, body] : found) parts.add("# Leviathan " + tag + "\n\n" + Updater::playerNotes(body));
+    for (auto& [tag, notes] : found) parts.add("# Leviathan " + tag + "\n\n" + notes);
     return parts.joinIntoString("\n\n");
 }
 
@@ -105,7 +138,7 @@ void Updater::check(bool quiet) {
             auto tag = v["tag_name"].toString();
             if (tag.startsWith("v")) tag = tag.substring(1);
             if (!newer(tag, current())) { phase = Phase::upToDate; m.changed(); return; }
-            Release r; r.version = tag; r.notes = since.isNotEmpty() ? since : playerNotes(v["body"].toString()); r.page = juce::URL(v["html_url"].toString());
+            Release r; r.version = tag; r.notes = since.isNotEmpty() ? since : released(v["published_at"].toString()) + playerNotes(v["body"].toString()); r.page = juce::URL(v["html_url"].toString());
             juce::String installerName;
             if (auto* assets = v["assets"].getArray()) {
                 for (const auto& a : *assets) {

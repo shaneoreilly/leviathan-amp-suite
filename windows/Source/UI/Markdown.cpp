@@ -3,7 +3,7 @@
 
 namespace lev {
 
-std::vector<MDBlock> parseMarkdown(const juce::String& src) {
+std::vector<MDBlock> parseMarkdown(const juce::String& src, bool paragraphsAsBullets) {
     std::vector<MDBlock> out;
     juce::StringArray para, code;
     bool inCode = false;
@@ -30,6 +30,13 @@ std::vector<MDBlock> parseMarkdown(const juce::String& src) {
             }
         }
         if (t == "---" || t == "***" || t == "___") { flush(); MDBlock b; b.kind = MDBlock::rule; out.push_back(b); continue; }
+        if (t.startsWithChar('>')) {
+            flush();
+            const auto q = t.substring(1).trim();
+            if (!out.empty() && out.back().kind == MDBlock::quote) out.back().text << " " << q;
+            else { MDBlock b; b.kind = MDBlock::quote; b.text = q; out.push_back(b); }
+            continue;
+        }
         if (t.startsWithChar('|')) {
             flush();
             auto cells = juce::StringArray::fromTokens(t, "|", "");
@@ -58,6 +65,9 @@ std::vector<MDBlock> parseMarkdown(const juce::String& src) {
     }
     flush();
     if (inCode) { MDBlock b; b.kind = MDBlock::code; b.text = code.joinIntoString("\n"); out.push_back(b); }
+    if (paragraphsAsBullets)
+        for (auto& b : out)
+            if (b.kind == MDBlock::para) { b.kind = MDBlock::item; b.level = 0; b.marker = juce::String::fromUTF8("\xe2\x80\xa2"); }
     return out;
 }
 
@@ -132,6 +142,7 @@ int MarkdownView::layout(int width) {
             break;
         }
         case MDBlock::para: y += addText(b.text, 0, W, 13, false, body); break;
+        case MDBlock::quote: y += addText(b.text, 0, W, 11, false, theme::secondary); break;
         case MDBlock::item: {
             const float indent = (float) b.level * 18 * z * 1.5f, markW = 18 * z * 1.5f;
             const float top = y;
