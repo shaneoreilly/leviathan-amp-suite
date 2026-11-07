@@ -65,7 +65,7 @@ const char* pedalOnKey(PedalKind k);   // "compOn", "wahOn", ... (the Settings f
 struct Params {
     std::atomic<int> version { 0 };
     float inGain = 0; int inputChannel = 0; std::atomic<bool> muted { false };
-    bool gateOn = true; float gateThresh = -60, gateRelease = 60;
+    bool gateOn = true; float gateThresh = -60, gateRelease = 60, gateDepth = -60;
     bool pitchOn = false; float pitchSemis = 0, pitchCents = 0, pitchMix = 1;
     bool odOn = true; float odDrive = 0, odTone = 0.6f, odLevel = 0.75f;
     bool ampOn = true; int ampChannel = 2; float ampGain = 0.55f;
@@ -214,7 +214,7 @@ private:
     const float fade;
 
     Smooth inG; float env = 0, gGain = 1, gTarget = 1; int gHold = 0;
-    float gThr = 0, gRelC = 0, gEnvR = 0, gAttC = 0;
+    float gThr = 0, gRelC = 0, gEnvR = 0, gAttC = 0, gFloor = 0;
 
     PitchShifter shifter; Smooth pMix;
     std::vector<std::unique_ptr<Pedal>> pedals;

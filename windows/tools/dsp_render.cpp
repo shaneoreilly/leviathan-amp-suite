@@ -82,6 +82,10 @@ static const Scenario scenarios[] = {
     { "cab_only", [](Params& p) {
         p.gateOn = false; p.chainCount = 0; p.ampOn = false; p.eqOn = false; p.cabOn = true; p.masterVol = 0;
     }, builtinCab },
+    { "gate_soft", [](Params& p) {
+        p.inGain = 9.65f; p.gateOn = true; p.gateThresh = -48; p.gateRelease = 300; p.gateDepth = -20;
+        p.chainCount = 0; p.ampOn = true; p.ampChannel = 2; p.ampGain = 0.6f; p.eqOn = false; p.cabOn = false; p.masterVol = -6;
+    }, nullptr },
     { "gate_only", [](Params& p) {
         p.inGain = 9.65f; p.gateOn = true; p.gateThresh = -48; p.gateRelease = 90;
         p.chainCount = 0; p.ampOn = false; p.eqOn = false; p.cabOn = false; p.masterVol = 0;

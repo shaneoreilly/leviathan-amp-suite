@@ -164,11 +164,11 @@ struct HelpStrip : juce::Component {
     Model& model; juce::String idle;
 };
 
-/// Panels snap to a 24-column grid; expanded panels in a row share the row's height. Folded panels keep their expanded
+/// Panels snap to a 48-column grid; expanded panels in a row share the row's height. Folded panels keep their expanded
 /// width and, while the row has an open panel, their expanded height, so a collapse never moves anything else.
 /// A nullptr item starts a new row.
 /// fill: spread each row's spare columns over its panels so every row ends at the same right edge.
-void layoutGrid(std::vector<UnitBox*> items, juce::Rectangle<int> area, int& usedHeight, int columns = 24, int spacing = 12, bool fill = false);
+void layoutGrid(std::vector<UnitBox*> items, juce::Rectangle<int> area, int& usedHeight, int columns = 48, int spacing = 12, bool fill = false);
 
 /// Draws the Leviathan logo (white whale over the sea), strokes scaled to the size.
 void drawLogo(juce::Graphics& g, juce::Rectangle<float> r, juce::Colour c);

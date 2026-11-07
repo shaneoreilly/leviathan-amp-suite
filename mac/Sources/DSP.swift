@@ -54,7 +54,7 @@ struct Smooth {
 final class Params: @unchecked Sendable {
     var version = 0
     var inGain: Float = 0, inputChannel = 0, muted = false
-    var gateOn = true, gateThresh: Float = -60, gateRelease: Float = 60
+    var gateOn = true, gateThresh: Float = -60, gateRelease: Float = 60, gateDepth: Float = -60
     var pitchOn = false, pitchSemis: Float = 0, pitchCents: Float = 0, pitchMix: Float = 1
     var odOn = true, odDrive: Float = 0, odTone: Float = 0.6, odLevel: Float = 0.75
     var ampOn = true, ampChannel = 2, ampGain: Float = 0.55
@@ -457,7 +457,7 @@ final class DSP {
     // input + gate
     private var inG = Smooth()
     private var env: Float = 0, gGain: Float = 1, gTarget: Float = 1, gHold = 0
-    private var gThr: Float = 0, gRelC: Float = 0, gEnvR: Float = 0, gAttC: Float = 0
+    private var gThr: Float = 0, gRelC: Float = 0, gEnvR: Float = 0, gAttC: Float = 0, gFloor: Float = 0
 
     // pitch
     private let shifter: PitchShifter
@@ -563,6 +563,8 @@ final class DSP {
         let s = Double(sr), os = s * 4
         inG.target = dbLin(p.inGain)
         gThr = dbLin(p.gateThresh)
+        // Depth: how far a closed gate turns things down; -60 dB means fully closed. Half of it at each of the two stages.
+        gFloor = p.gateDepth <= -60 ? 0 : dbLin(p.gateDepth / 2)
         // Release = time to fall 60 dB (closed), not one time constant: after a high-gain amp a gate that is only
         // ~9 dB down still sounds open, so the old curve left a long audible tail. The gain is applied twice, before the
         // pedals and again after the cab, so each stage falls 30 dB over Release: a clean tone fades exactly as before,
@@ -660,8 +662,9 @@ final class DSP {
             env = ax > env ? ax : env * gEnvR + ax * (1 - gEnvR)
             if env > gThr { gTarget = 1; gHold = holdN } else if env < close { if gHold > 0 { gHold -= 1 } else { gTarget = 0 } }
             gGain = gTarget + (gGain - gTarget) * (gTarget > gGain ? gAttC : gRelC)
-            gBuf[i] = gGain
-            a[i] = gateOn ? x * gGain : x
+            let g = gFloor + (1 - gFloor) * gGain
+            gBuf[i] = g
+            a[i] = gateOn ? x * g : x
         }
         p.tunerWrite = w; p.inPeak = max(inPk, p.inPeak * 0.9); p.gateOpen = gTarget > 0 || !gateOn
 

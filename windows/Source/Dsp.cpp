@@ -373,6 +373,8 @@ void DSP::update(bool force) {
     const double s = sr, os = s * 4;
     inG.target = dbLin(p.inGain);
     gThr = dbLin(p.gateThresh);
+    // Depth: how far a closed gate turns things down; -60 dB means fully closed. Half of it at each of the two stages.
+    gFloor = p.gateDepth <= -60 ? 0.f : dbLin(p.gateDepth / 2);
     // Release = time to fall 60 dB (closed), not one time constant: after a high-gain amp a gate that is only
     // ~9 dB down still sounds open, so a one-time-constant release leaves a long audible tail. The gain is applied twice,
     // before the pedals and again after the cab, so each stage falls 30 dB over Release: a clean tone fades exactly as
@@ -470,8 +472,9 @@ void DSP::process(const float* input, float* outL, float* outR, int frames) {
         if (env > gThr) { gTarget = 1; gHold = holdN; }
         else if (env < close) { if (gHold > 0) gHold--; else gTarget = 0; }
         gGain = gTarget + (gGain - gTarget) * (gTarget > gGain ? gAttC : gRelC);
-        gBuf[(size_t) i] = gGain;
-        a[(size_t) i] = gateOn ? x * gGain : x;
+        const float g = gFloor + (1 - gFloor) * gGain;
+        gBuf[(size_t) i] = g;
+        a[(size_t) i] = gateOn ? x * g : x;
     }
     p.tunerWrite.store(w, std::memory_order_release);
     p.inPeak.store(std::max(inPk, p.inPeak.load() * 0.9f));

@@ -809,7 +809,7 @@ struct SettingsCount: View {
     var body: some View { Text(text).foregroundStyle(.secondary).monospacedDigit().padding(.leading, 4 * Z) }
 }
 
-// MARK: - Grid layout: panels snap to a 24-column grid so edges line up across rows
+// MARK: - Grid layout: panels snap to a 48-column grid so edges line up across rows
 
 /// Collapsed panels show only their header, but keep their expanded width and (while the row has an open panel)
 /// their expanded height in the grid, so collapsing never moves anything else.
@@ -822,7 +822,7 @@ struct RowBreakKey: LayoutValueKey { static let defaultValue = false }
 /// Item sizes are always the expanded ones (a folded UnitBox keeps its content in the layout, hidden), so a collapse
 /// changes neither the column spans nor, unless the whole row folds, the row height.
 struct GridFlow: Layout {
-    var columns = 24
+    var columns = 48   // fine enough that rounding each panel up to whole columns wastes little width
     var spacing: CGFloat = 12
     /// Spread each row's spare columns over its panels so every row ends at the same right edge.
     var fill = false

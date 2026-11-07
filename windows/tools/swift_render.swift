@@ -71,6 +71,10 @@ let scenarios: [Scenario] = [
     Scenario(name: "cab_only", setup: { p in
         p.gateOn = false; p.chainCount = 0; p.ampOn = false; p.eqOn = false; p.cabOn = true; p.masterVol = 0
     }, ir: builtinCab),
+    Scenario(name: "gate_soft", setup: { p in
+        p.inGain = 9.65; p.gateOn = true; p.gateThresh = -48; p.gateRelease = 300; p.gateDepth = -20
+        p.chainCount = 0; p.ampOn = true; p.ampChannel = 2; p.ampGain = 0.6; p.eqOn = false; p.cabOn = false; p.masterVol = -6
+    }, ir: nil),
     Scenario(name: "gate_only", setup: { p in
         p.inGain = 9.65; p.gateOn = true; p.gateThresh = -48; p.gateRelease = 90
         p.chainCount = 0; p.ampOn = false; p.eqOn = false; p.cabOn = false; p.masterVol = 0

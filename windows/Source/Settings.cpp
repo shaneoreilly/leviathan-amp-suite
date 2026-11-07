@@ -10,7 +10,7 @@ juce::var arrI(std::initializer_list<int> xs) { juce::Array<juce::var> a; for (i
 void fillDefaults(juce::NamedValueSet& v) {
     auto put = [&](const char* k, juce::var x) { v.set(k, x); };
     put("inGain", 0.0); put("inputChannel", 0);
-    put("gateOn", true); put("gateThresh", -60.0); put("gateRelease", 60.0);
+    put("gateOn", true); put("gateThresh", -60.0); put("gateRelease", 60.0); put("gateDepth", -60.0);
     put("pitchOn", false); put("pitchSemis", 0.0); put("pitchCents", 0.0); put("pitchMix", 1.0);
     put("odOn", true); put("odDrive", 0.05); put("odTone", 0.55); put("odLevel", 0.8);
     put("ampOn", true); put("ampChannel", 2); put("ampGain", 0.55);
@@ -138,7 +138,7 @@ void Settings::apply(Params& p) const {
     p.capDrive = f("capDrive"); p.capLevel = f("capLevel");
     p.namIn = f("namInput"); p.namOut = f("namOutput");
     p.inGain = f("inGain"); p.inputChannel = i("inputChannel");
-    p.gateOn = b("gateOn"); p.gateThresh = f("gateThresh"); p.gateRelease = f("gateRelease");
+    p.gateOn = b("gateOn"); p.gateThresh = f("gateThresh"); p.gateRelease = f("gateRelease"); p.gateDepth = f("gateDepth");
     p.pitchOn = b("pitchOn"); p.pitchSemis = f("pitchSemis"); p.pitchCents = f("pitchCents"); p.pitchMix = f("pitchMix");
     p.odOn = b("odOn"); p.odDrive = f("odDrive"); p.odTone = f("odTone"); p.odLevel = f("odLevel");
     p.ampOn = b("ampOn"); p.ampChannel = i("ampChannel"); p.ampGain = f("ampGain");

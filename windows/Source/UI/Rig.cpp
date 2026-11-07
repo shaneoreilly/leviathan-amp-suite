@@ -214,7 +214,7 @@ void RigView::layout() {
         else if (auto it = panels.find(id); it != panels.end()) items.push_back(it->second.get());
     }
     int used = 0;
-    layoutGrid(items, { full.getX(), y, full.getWidth(), 0 }, used, 24, 12, true);
+    layoutGrid(items, { full.getX(), y, full.getWidth(), 0 }, used, 48, 12, true);
     y += used + 12;
     if (pedalHeader) { pedalHeader->setBounds(full.getX(), y, full.getWidth(), 26); y += 32; }
     if (emptyPedals) { emptyPedals->setBounds(full.getX(), y, full.getWidth(), 40); y += 52; }
@@ -246,6 +246,7 @@ std::unique_ptr<UnitBox> RigView::makePanel(const juce::String& id) {
         auto r = row();
         r->add(knob("Thresh", "gateThresh", -90, -20, -60, intUnit("dB"), "GATE"));
         r->add(knob("Release", "gateRelease", 10, 2000, 60, intUnit("ms"), "GATE"));
+        r->add(knob("Depth", "gateDepth", -60, 0, -60, [](double v) { return v <= -60 ? juce::String("Full") : juce::String(juce::roundToInt(v)) + " dB"; }, "GATE"));
         box = std::make_unique<UnitBox>(m, "GATE", std::move(r), "gateOn", "panel:gate");
         auto dotC = std::make_unique<GateDot>(m); liveReg(dotC.get()); box->addTrailing(std::move(dotC));
     } else if (id == "pitch") {

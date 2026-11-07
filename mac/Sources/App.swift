@@ -9,7 +9,7 @@ let CAB_USER = CABS.count, CAB_LIB = CABS.count + 1, CAB_IRLIB = CABS.count + 2
 
 struct Settings: Codable, Equatable {
     var inGain = 0.0, inputChannel = 0
-    var gateOn = true, gateThresh = -60.0, gateRelease = 60.0
+    var gateOn = true, gateThresh = -60.0, gateRelease = 60.0, gateDepth = -60.0
     var pitchOn = false, pitchSemis = 0.0, pitchCents = 0.0, pitchMix = 1.0
     var odOn = true, odDrive = 0.05, odTone = 0.55, odLevel = 0.8
     var ampOn = true, ampChannel = 2, ampGain = 0.55
@@ -59,7 +59,7 @@ struct Settings: Codable, Equatable {
         p.capDrive = Float(capDrive); p.capLevel = Float(capLevel)
         p.namIn = Float(namInput); p.namOut = Float(namOutput)
         p.inGain = Float(inGain); p.inputChannel = inputChannel
-        p.gateOn = gateOn; p.gateThresh = Float(gateThresh); p.gateRelease = Float(gateRelease)
+        p.gateOn = gateOn; p.gateThresh = Float(gateThresh); p.gateRelease = Float(gateRelease); p.gateDepth = Float(gateDepth)
         p.pitchOn = pitchOn; p.pitchSemis = Float(pitchSemis); p.pitchCents = Float(pitchCents); p.pitchMix = Float(pitchMix)
         p.odOn = odOn; p.odDrive = Float(odDrive); p.odTone = Float(odTone); p.odLevel = Float(odLevel)
         p.ampOn = ampOn; p.ampChannel = ampChannel; p.ampGain = Float(ampGain)
@@ -1569,6 +1569,7 @@ struct ContentView: View {
             HStack {
                 Knob(label: "Thresh", value: $m.s.gateThresh, key: "gateThresh", range: -90...(-20), def: -60, fmt: { "\(Int($0)) dB" }, color: ch)
                 Knob(label: "Release", value: $m.s.gateRelease, key: "gateRelease", range: 10...2000, def: 60, fmt: { "\(Int($0)) ms" }, color: ch)
+                Knob(label: "Depth", value: $m.s.gateDepth, key: "gateDepth", range: -60...0, def: -60, fmt: { $0 <= -60 ? "Full" : "\(Int($0)) dB" }, color: ch)
             }
         }
     }
