@@ -721,8 +721,20 @@ final class Model: ObservableObject {
             updateIR(); updateNam()
         } catch {
             engine.stop(); running = false; info = nil
-            status = error.localizedDescription
+            status = startFailure(error, input: i, output: o)
         }
+    }
+
+    /// Says which device refused to start: if the output alone starts, the input is the problem. A USB interface
+    /// that stops responding (CoreAudio's 'what' / 'nope') usually comes back after unplugging it.
+    private func startFailure(_ error: Error, input i: AudioDevice?, output o: AudioDevice) -> String {
+        let detail = " (\(error.localizedDescription))"
+        guard let i else { return "Leviathan couldn\u{2019}t start \(o.name). Pick another output, or unplug it and plug it back in." + detail }
+        let outputWorks = (try? engine.start(input: nil, output: o, buffer: bufferSize)) != nil
+        engine.stop()
+        return outputWorks
+            ? "\(i.name) isn\u{2019}t responding. Unplug it, plug it back in, then press Start." + detail
+            : "Leviathan couldn\u{2019}t start \(o.name). Pick another output, or unplug it and plug it back in." + detail
     }
 
     func stop() { engine.stop(); running = false; info = nil }
