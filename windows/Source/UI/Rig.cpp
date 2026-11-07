@@ -409,12 +409,18 @@ std::unique_ptr<UnitBox> RigView::makePanel(const juce::String& id) {
     } else if (id == "ampb") {
         // a second amp (any NAM capture) fed by the same pedals; Spread puts amp A left and amp B right
         auto c = col(8);
-        auto pick = std::make_unique<Picker>((int) (145 * theme::W), [&m] { const int k = m.namFiles.indexOf(m.s().s("ampBNam")); return k >= 0 ? k + 2 : 1; },
+        auto pick = std::make_unique<Picker>((int) (175 * theme::W), [&m] { const int k = m.namFiles.indexOf(m.s().s("ampBNam")); return k >= 0 ? k + 2 : 1; },
             [&m](int i) { Settings n = m.s(); n.set("ampBNam", i >= 2 ? m.namFiles[i - 2] : juce::String()); if (i >= 2) n.set("ampBOn", true); m.setSettings(n); });
         pick->addItem(juce::String::fromUTF8("Choose a second amp\xe2\x80\xa6"), 1);
         for (int i = 0; i < m.namFiles.size(); ++i) pick->addItem(namTitle(m.namFiles[i]), i + 2);
         pick->setTooltip(Model::explain("panel:ampb"));
-        c->add(std::move(pick));
+        // same picker width and ⋯ menu as the AMP panel, so the two panels are the same width
+        auto r1 = row(6);
+        r1->add(std::move(pick));
+        r1->add(moreButton({ { juce::String::fromUTF8("Add NAM captures (.nam)\xe2\x80\xa6"), [&m] { m.importNamDialog(); } },
+                             { "Open NAM folder", [] { Model::namDir().createDirectory(); Model::namDir().startAsProcess(); } },
+                             { "Rescan", [&m] { m.reloadCaptures(); m.rescanNam(); } } }, "Add or rescan amp captures"));
+        c->add(std::move(r1));
         auto r = row();
         r->add(knob("Level", "ampBLevel", -12, 12, 0, dbSigned, "AMP B"));
         r->add(knob("Spread", "ampBSpread", 0, 1, 1, pct, "AMP B"));

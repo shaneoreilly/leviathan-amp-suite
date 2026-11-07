@@ -1970,13 +1970,22 @@ struct ContentView: View {
         let pick = Binding(get: { m.s.ampBNam }, set: { v in var n = m.s; n.ampBNam = v; if !v.isEmpty { n.ampBOn = true }; m.s = n })
         return UnitBox(title: "AMP B", on: $m.s.ampBOn, onKey: "ampBOn", color: ch) {
             VStack(spacing: 8) {
-                Picker("", selection: pick) {
-                    Text("Choose a second amp\u{2026}").tag("")
-                    ForEach(m.namHost.files, id: \.self) { Text(namTitle($0)).tag($0) }
-                    if !m.s.ampBNam.isEmpty && !m.namHost.files.contains(m.s.ampBNam) { Text(namTitle(m.s.ampBNam) + " (missing)").tag(m.s.ampBNam) }
+                // same picker width and ⋯ menu as the AMP panel, so the two panels are the same width
+                HStack(spacing: 6) {
+                    Picker("", selection: pick) {
+                        Text("Choose a second amp\u{2026}").tag("")
+                        ForEach(m.namHost.files, id: \.self) { Text(namTitle($0)).tag($0) }
+                        if !m.s.ampBNam.isEmpty && !m.namHost.files.contains(m.s.ampBNam) { Text(namTitle(m.s.ampBNam) + " (missing)").tag(m.s.ampBNam) }
+                    }
+                    .labelsHidden().frame(width: 175 * W)
+                    .explain("panel:ampb", "Amp B")
+                    Menu {
+                        Button("Add NAM captures (.nam)\u{2026}") { m.importNam() }
+                        Button("Open NAM folder") { NSWorkspace.shared.open(NamHost.dir) }
+                        Button("Rescan") { m.reloadCaptures(); m.rescanNam() }
+                    } label: { Image(systemName: "ellipsis.circle") }
+                        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Add or rescan amp captures")
                 }
-                .labelsHidden().frame(width: 145 * W)
-                .explain("panel:ampb", "Amp B")
                 HStack(spacing: 2) {
                     Knob(label: "Level", value: $m.s.ampBLevel, key: "ampBLevel", range: -12...12, def: 0, fmt: { String(format: "%+.1f dB", $0) }, color: ch)
                     Knob(label: "Spread", value: $m.s.ampBSpread, key: "ampBSpread", range: 0...1, def: 1, fmt: pct, color: ch)
