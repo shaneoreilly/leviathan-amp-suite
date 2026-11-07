@@ -364,20 +364,28 @@ struct RecordingsView: View {
 
     func detail(_ s: Session) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            WaveformView(samples: rec.waveform, duration: s.meta.duration, position: rec.playing ? rec.playPos : nil) { rec.seek($0) }
-                .overlay { if ui.trimming { TrimOverlay(duration: s.meta.duration, start: $ui.trimStart, end: $ui.trimEnd) } }
+            WaveformView(samples: rec.waveform, duration: s.meta.duration, position: rec.playing ? rec.playPos : nil,
+                         seek: { rec.seek($0) }, select: { a, b in rec.selection = .init(start: a, end: b) }, clear: { rec.selection = nil })
+                .overlay {
+                    if let sel = rec.selection {
+                        TrimOverlay(duration: s.meta.duration,
+                                    start: Binding(get: { sel.start }, set: { rec.selection?.start = $0 }),
+                                    end: Binding(get: { sel.end }, set: { rec.selection?.end = $0 }))
+                    }
+                }
                 .frame(height: 220 * Z)
-            if ui.trimming {
+            if let sel = rec.selection {
                 HStack(spacing: 10) {
-                    Image(systemName: "scissors").foregroundStyle(.secondary)
-                    Text("Drag the handles to choose what to keep: \(mmssTenths(ui.trimStart)) – \(mmssTenths(ui.trimEnd)) (\(mmssTenths(ui.trimEnd - ui.trimStart)))")
-                        .monospacedDigit()
+                    Image(systemName: "selection.pin.in.out").foregroundStyle(.secondary)
+                    Text("Selected \(mmssTenths(sel.start)) – \(mmssTenths(sel.end)) (\(mmssTenths(sel.end - sel.start)))").monospacedDigit()
+                    Text("Drag on the waveform to select, or drag the yellow handles.").foregroundStyle(.secondary).lineLimit(1)
                     Spacer()
-                    Button("Play from start") { rec.play(from: ui.trimStart) }
-                    Button("Cancel") { ui.trimming = false }
-                    Button("Apply trim") { rec.trim(ui.trimStart, ui.trimEnd); ui.trimming = false }
+                    Button("Play selection") { rec.play(from: sel.start, to: sel.end) }
+                    Button("Clear") { rec.selection = nil }
+                    Button("Trim to selection") { rec.trim(sel.start, sel.end); rec.selection = nil }
                         .buttonStyle(.borderedProminent)
-                        .disabled(ui.trimEnd - ui.trimStart < 0.05 || (ui.trimStart <= 0.001 && ui.trimEnd >= s.meta.duration - 0.001))
+                        .help("Keep only the selected part of this take (the original is kept, so you can restore it)")
+                        .disabled(sel.end - sel.start < 0.05 || (sel.start <= 0.001 && sel.end >= s.meta.duration - 0.001))
                 }
                 .padding(.horizontal, 14).padding(.vertical, 8)
                 .background(Color(white: 0.11))
@@ -400,9 +408,9 @@ struct RecordingsView: View {
                         TextField("Name", text: $ui.name, onCommit: { rec.rename(ui.name) })
                             .textFieldStyle(.plain).font(.system(size: 22 * UI, weight: .semibold))
                         Spacer()
-                        Button { ui.trimStart = 0; ui.trimEnd = s.meta.duration; ui.trimming = true } label: { Label("Trim", systemImage: "scissors") }
-                            .help("Cut silence or mistakes from the start and end of this take")
-                            .disabled(ui.trimming || s.meta.duration <= 0)
+                        Button { rec.selection = .init(start: 0, end: s.meta.duration) } label: { Label("Trim", systemImage: "scissors") }
+                            .help("Select the whole take, then drag the handles in to cut silence or mistakes (or drag on the waveform)")
+                            .disabled(rec.selection != nil || s.meta.duration <= 0)
                         if rec.canRestoreUntrimmed {
                             Button("Restore untrimmed") { rec.restoreUntrimmed() }.help("Put back the take as it was before trimming")
                         }
@@ -436,7 +444,7 @@ struct RecordingsView: View {
             }
         }
         .onAppear { ui.name = s.meta.name }
-        .onChange(of: s.id) { _ in ui.name = s.meta.name; ui.trimming = false }
+        .onChange(of: s.id) { _ in ui.name = s.meta.name }
     }
 
     func box<C: View>(_ title: String, _ desc: String, @ViewBuilder _ action: () -> C) -> some View {
@@ -501,12 +509,18 @@ struct TrimOverlay: View {
     }
 }
 
-/// Min/max waveform with a seconds ruler; click to play from that point.
+/// Whether the press on the waveform has turned into a drag (a selection) rather than a click.
+final class DragFlag: ObservableObject { var on = false }
+
+/// Min/max waveform with a seconds ruler. Click to play from that point; drag across it to select a part.
 struct WaveformView: View {
     let samples: [Float]
     let duration: Double
     let position: Double?
     let seek: (Double) -> Void
+    var select: (Double, Double) -> Void = { _, _ in }
+    var clear: () -> Void = {}
+    @StateObject private var drag = DragFlag()
 
     var body: some View {
         GeometryReader { g in
@@ -545,9 +559,17 @@ struct WaveformView: View {
                 }
             }
             .contentShape(Rectangle())
-            .gesture(DragGesture(minimumDistance: 0).onChanged { v in   // jump on press, scrub while dragging
-                seek(max(0, min(Double(v.location.x / w), 1)) * duration)
-            })
+            .gesture(DragGesture(minimumDistance: 0)
+                .onChanged { v in   // a drag of more than a few points selects from where it started
+                    guard duration > 0, drag.on || abs(v.translation.width) > 4 else { return }
+                    drag.on = true
+                    let a = max(0, min(Double(v.startLocation.x / w), 1)) * duration, b = max(0, min(Double(v.location.x / w), 1)) * duration
+                    select(min(a, b), max(min(a, b) + 0.05, max(a, b)))
+                }
+                .onEnded { v in     // a plain click clears the selection and plays from there
+                    if !drag.on { clear(); seek(max(0, min(Double(v.location.x / w), 1)) * duration) }
+                    drag.on = false
+                })
         }
     }
 }
@@ -953,9 +975,6 @@ final class PresetsUI: ObservableObject { @Published var favOnly = false; @Publi
 final class RecordingsUI: ObservableObject {
     @Published var name = ""
     /// Trim mode: the kept range in seconds.
-    @Published var trimming = false
-    @Published var trimStart = 0.0
-    @Published var trimEnd = 0.0
 }
 
 

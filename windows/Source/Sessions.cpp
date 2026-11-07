@@ -28,6 +28,7 @@ const Session* Sessions::current() const {
 void Sessions::select(const juce::File& dir) {
     if (dir == selected) return;
     stopPlayback(); stopLiveReamp();
+    selection.reset();
     selected = dir;
     loadWaveform();
     m.changed();
@@ -208,12 +209,12 @@ const float* Sessions::hand(std::vector<float> x) {
 
 // MARK: - playback (through the engine's backing slot, so it plays on your chosen output)
 
-void Sessions::play(double from) {
+void Sessions::play(double from, double to) {
     auto* s = current();
     if (!s) return;
     if (!m.running || m.engineRate() <= 0) {
         // audio is off: start it, then play from the same point once the engine is up
-        if (!m.running) { m.start(); juce::Timer::callAfterDelay(600, [this, from] { if (m.running) play(from); }); }
+        if (!m.running) { m.start(); juce::Timer::callAfterDelay(600, [this, from, to] { if (m.running) play(from, to); }); }
         return;
     }
     stopLiveReamp();
@@ -228,7 +229,8 @@ void Sessions::play(double from) {
     p.bkPlaying.store(false);
     for (auto& b : live) retired.push_back(std::move(b));
     live.clear(); retireCountdown = 30;
-    const int len = (int) w.channels[0].size();
+    const int full = (int) w.channels[0].size();
+    const int len = to >= 0 ? juce::jlimit(1, full, (int) (to * sr)) : full;   // the engine stops at bkLen
     const float* l = hand(w.channels[0]);
     const float* r = w.channels.size() > 1 ? hand(w.channels[1]) : l;
     p.bkL.store(l); p.bkR.store(r); p.bkLen.store(len); p.bkLoop.store(false); p.bkVol = 0;

@@ -42,8 +42,11 @@ public:
     void stopRecording();
     void tick();                          // ~30 Hz from the model's timer
 
-    void togglePlay() { playing ? stopPlayback() : play(); }
-    void play(double from = 0);
+    /// The part of the take selected on the waveform (seconds): Play plays only this, and it's what a trim keeps.
+    std::optional<std::pair<double, double>> selection;
+    void togglePlay() { if (playing) stopPlayback(); else if (selection) play(selection->first, selection->second); else play(); }
+    /// Plays from `from`; with `to` >= 0, stops there (playing a selection).
+    void play(double from = 0, double to = -1);
     void seek(double t);
     void stopPlayback();
 

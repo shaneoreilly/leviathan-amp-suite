@@ -50,7 +50,10 @@ final class Sessions: ObservableObject {
 
     unowned let m: Model
     @Published var list: [Session] = []
-    @Published var selected: URL? { didSet { if selected != oldValue { stopPlayback(); stopLiveReamp(); loadWaveform() } } }
+    @Published var selected: URL? { didSet { if selected != oldValue { stopPlayback(); stopLiveReamp(); selection = nil; loadWaveform() } } }
+    /// The part of the take selected on the waveform (seconds): Play plays only this, and it's what a trim keeps.
+    struct Selection: Equatable { var start: Double, end: Double }
+    @Published var selection: Selection?
     @Published var recording = false
     @Published var recSeconds = 0.0
     @Published var playing = false
@@ -228,13 +231,16 @@ final class Sessions: ObservableObject {
 
     // MARK: playback (through the engine's backing slot, so it plays on your chosen output)
 
-    func togglePlay() { playing ? stopPlayback() : play() }
+    func togglePlay() {
+        if playing { stopPlayback() } else if let sel = selection { play(from: sel.start, to: sel.end) } else { play() }
+    }
 
-    func play(from t: Double = 0) {
+    /// Plays from `t`; with `to`, stops there (playing a selection).
+    func play(from t: Double = 0, to end: Double? = nil) {
         guard let s = current else { return }
         guard m.running, let dsp = m.engine.dsp else {
             // audio is off: start it, then play from the same point once the engine is up
-            if !m.running { m.start(); DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in if self?.m.running == true { self?.play(from: t) } } }
+            if !m.running { m.start(); DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in if self?.m.running == true { self?.play(from: t, to: end) } } }
             return
         }
         stopLiveReamp()
@@ -249,12 +255,13 @@ final class Sessions: ObservableObject {
         let p = m.params
         p.bkPlaying = false
         let oldL = p.bkL, oldR = p.bkR
-        p.bkL = copyOut(l); p.bkR = copyOut(r); p.bkLen = l.count; p.bkLoop = false; p.bkVol = 0
-        p.bkPos = min(Int(t * sr), max(l.count - 1, 0))
+        let len = end.map { min(max(Int($0 * sr), 1), l.count) } ?? l.count   // the engine stops at bkLen
+        p.bkL = copyOut(l); p.bkR = copyOut(r); p.bkLen = len; p.bkLoop = false; p.bkVol = 0
+        p.bkPos = min(Int(t * sr), max(len - 1, 0))
         OSMemoryBarrier()
         p.bkPlaying = true
         retire(oldL, oldR)
-        playLen = l.count; playRate = sr; playing = true
+        playLen = len; playRate = sr; playing = true
     }
 
     func seek(_ t: Double) {
