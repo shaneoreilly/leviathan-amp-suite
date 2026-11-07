@@ -1254,7 +1254,12 @@ struct Footswitch: View {
         Button { on.toggle() } label: {
             HStack(spacing: 5) {
                 Circle().fill(on ? color : Color(white: 0.2)).frame(width: 8, height: 8).shadow(color: on ? color : .clear, radius: 4)
-                Text(on ? "ON" : "OFF").font(.system(size: 9 * UI, weight: .bold)).tracking(1)
+                // always as wide as "OFF", so switching never changes the panel's width (and reflows the rig)
+                ZStack(alignment: .leading) {
+                    Text("OFF").hidden()
+                    Text(on ? "ON" : "OFF")
+                }
+                .font(.system(size: 9 * UI, weight: .bold)).tracking(1)
             }
             .fixedSize()
             .padding(.horizontal, 8).padding(.vertical, 3)
