@@ -14,7 +14,7 @@
   "inputChannel": "Which input on the interface your guitar is plugged into.",
   "masterVol": "Overall output level of the rig.",
   "gateThresh": "How quiet the signal must get before the gate closes. Raise it (toward -20 dB) if hiss gets through; lower it if note tails get cut off.",
-  "gateRelease": "How quickly the gate closes once you stop playing. Short (under 100 ms) is tight for chugs; long (up to 2 s) lets held notes and feedback fade out naturally. Hold Shift while dragging for fine steps.",
+  "gateRelease": "How quickly the gate closes once you stop playing. Short (under 100 ms) is tight for chugs; long (up to 2 s) lets held notes and feedback fade out naturally. At the very end of the dial (∞) it never closes once you've started playing, so feedback can ring forever. Hold Shift while dragging for fine steps.",
   "gateDepth": "How far the gate turns things down when it closes. Full silences the gaps; less (toward 0 dB) only softens them, which sounds more natural on clean and crunch tones.",
   "pitchSemis": "Shift in semitones: -2 turns E standard into D standard, -5 into B standard.",
   "pitchCents": "Fine tuning in cents (1/100 of a semitone), to match a recording that's slightly off concert pitch.",

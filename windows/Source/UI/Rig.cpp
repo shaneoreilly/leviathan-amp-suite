@@ -245,7 +245,7 @@ std::unique_ptr<UnitBox> RigView::makePanel(const juce::String& id) {
     } else if (id == "gate") {
         auto r = row();
         r->add(knob("Thresh", "gateThresh", -90, -20, -60, intUnit("dB"), "GATE"));
-        r->add(knob("Release", "gateRelease", 10, 2000, 60, intUnit("ms"), "GATE"));
+        r->add(knob("Release", "gateRelease", 10, 2100, 60, [](double v) { return v >= 2050 ? juce::String::fromUTF8("\xe2\x88\x9e") : juce::String(juce::roundToInt(std::min(v, 2000.0))) + " ms"; }, "GATE"));
         r->add(knob("Depth", "gateDepth", -60, 0, -60, [](double v) { return v <= -60 ? juce::String("Full") : juce::String(juce::roundToInt(v)) + " dB"; }, "GATE"));
         box = std::make_unique<UnitBox>(m, "GATE", std::move(r), "gateOn", "panel:gate");
         auto dotC = std::make_unique<GateDot>(m); liveReg(dotC.get()); box->addTrailing(std::move(dotC));

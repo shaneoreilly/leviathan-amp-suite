@@ -376,7 +376,8 @@ void DSP::update(bool force) {
     // before the pedals and again after the cab, so each stage falls 30 dB over Release: a clean tone fades exactly as
     // before, and a high-gain rig (which holds a fading input at full level until it is ~40 dB down) still fades evenly
     // instead of hanging at full level and then dropping all at once.
-    gRelC = std::exp(std::log(0.001f) / 2 / (p.gateRelease / 1000 * sr));
+    // the last stretch of the dial (2050 ms and up) is infinite: once open the gate never fades
+    gRelC = p.gateRelease >= 2050 ? 1.f : std::exp(std::log(0.001f) / 2 / (p.gateRelease / 1000 * sr));
     gEnvR = std::exp(-1 / (0.015f * sr)); gAttC = std::exp(-1 / (0.0003f * sr));
 
     shifter.setRatio(std::pow(2.0, (double) (std::round(p.pitchSemis) + p.pitchCents / 100) / 12));

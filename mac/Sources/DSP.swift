@@ -578,7 +578,8 @@ final class DSP {
         // pedals and again after the cab, so each stage falls 30 dB over Release: a clean tone fades exactly as before,
         // and a high-gain rig (which holds a fading input at full level until it is ~40 dB down) still fades evenly
         // instead of hanging at full level and then dropping all at once.
-        gRelC = expf(logf(0.001) / 2 / (p.gateRelease / 1000 * sr))
+        // the last stretch of the dial (2050 ms and up) is infinite: once open the gate never fades
+        gRelC = p.gateRelease >= 2050 ? 1 : expf(logf(0.001) / 2 / (p.gateRelease / 1000 * sr))
         gEnvR = expf(-1 / (0.015 * sr)); gAttC = expf(-1 / (0.0003 * sr))
 
         shifter.setRatio(pow(2, Double(p.pitchSemis.rounded() + p.pitchCents / 100) / 12))

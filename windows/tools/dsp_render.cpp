@@ -86,6 +86,10 @@ static const Scenario scenarios[] = {
         p.inGain = 9.65f; p.gateOn = true; p.gateThresh = -48; p.gateRelease = 300; p.gateDepth = -20;
         p.chainCount = 0; p.ampOn = true; p.ampChannel = 2; p.ampGain = 0.6f; p.eqOn = false; p.cabOn = false; p.masterVol = -6;
     }, nullptr },
+    { "gate_infinite", [](Params& p) {
+        p.inGain = 9.65f; p.gateOn = true; p.gateThresh = -48; p.gateRelease = 2100;
+        p.chainCount = 0; p.ampOn = false; p.eqOn = false; p.cabOn = false; p.masterVol = 0;
+    }, nullptr },
     { "gate_only", [](Params& p) {
         p.inGain = 9.65f; p.gateOn = true; p.gateThresh = -48; p.gateRelease = 90;
         p.chainCount = 0; p.ampOn = false; p.eqOn = false; p.cabOn = false; p.masterVol = 0;
