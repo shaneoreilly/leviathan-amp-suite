@@ -649,19 +649,79 @@ struct RecordingsScreen : Screen_ {
 };
 
 // MARK: - settings screen
+//
+// Same sections and grid as the Mac app (mac/Sources/Shell.swift SettingsView): one card per section, sub-headings, a
+// fixed label column and every control starting at the same x. Hovering a row explains it in the strip at the bottom.
 
+namespace settingsLayout {
+constexpr int labelX = 20, labelW = 170, ctrlX = 200, rowH = 30, rowGap = 8, top = 60;
+}
+
+/// One settings section: title, sub-headings with rules, row labels; rows explain themselves on hover.
 struct Group : juce::Component {
-    Group(juce::String t) : title(std::move(t)) {}
+    struct Row { int y, h; juce::String label, key; };
+    Group(Model& m, juce::String t) : model(m), title(std::move(t)) { addMouseListener(&hover, true); hover.owner = this; }
+    void clearLayout() { rows.clear(); heads.clear(); rules.clear(); }
     void paint(juce::Graphics& g) override {
+        using namespace settingsLayout;
         boxBackground(g, getLocalBounds().toFloat());
-        g.setColour(theme::text); g.setFont(theme::font(14, true)); g.drawText(title, 16, 12, 400, 24, juce::Justification::centredLeft);
-        g.setColour(theme::secondary); g.setFont(theme::font(10));
-        for (auto& [y, l] : labels) g.drawText(l, 16, y, 170, 28, juce::Justification::centredLeft);
+        g.setColour(theme::text); g.setFont(theme::font(16, true)); g.drawText(title, labelX, 16, 400, 30, juce::Justification::centredLeft);
+        g.setColour(theme::line); for (int y : rules) g.fillRect(labelX, y, getWidth() - 2 * labelX, 1);
+        g.setColour(theme::secondary); g.setFont(theme::font(9, true, 1.2f));
+        for (auto& [y, t] : heads) g.drawText(t.toUpperCase(), labelX, y, 400, 18, juce::Justification::centredLeft);
+        g.setFont(theme::font(11));
+        for (auto& r : rows) if (r.label.isNotEmpty()) g.drawText(r.label, labelX, r.y, labelW, std::min(r.h, rowH), juce::Justification::centredLeft);
         if (extra) extra(g);
     }
+    /// Lays rows out top to bottom: heading("Devices"), then row("Input", "inputDevice") returns the row's y.
+    struct Lay {
+        Group& g; int y = settingsLayout::top;
+        void heading(const juce::String& t) {
+            if (!g.heads.empty() || !g.rows.empty()) { g.rules.push_back(y + 4); y += 18; }
+            g.heads.push_back({ y, t }); y += 26;
+        }
+        int row(const juce::String& label, const juce::String& key, int h = settingsLayout::rowH) {
+            g.rows.push_back({ y, h, label, key }); const int r = y; y += h + settingsLayout::rowGap; return r;
+        }
+        int end() const { return y + 12; }
+    };
+    /// Places controls left to right from the control column, vertically centred in a row; returns the x after them.
+    static int place(int y, std::initializer_list<std::pair<juce::Component*, int>> items, int x = settingsLayout::ctrlX) {
+        for (auto& [c, w] : items) { c->setBounds(x, y + (settingsLayout::rowH - 28) / 2, w, 28); x += w + 8; }
+        return x;
+    }
+    struct Hover : juce::MouseListener {
+        Group* owner = nullptr; juce::String shown;
+        void mouseMove(const juce::MouseEvent& e) override {
+            const auto p = e.getEventRelativeTo(owner).getPosition();
+            juce::String key, label;
+            for (auto& r : owner->rows) if (p.y >= r.y - 4 && p.y < r.y + r.h + 4 && r.key.isNotEmpty()) { key = r.key; label = r.label.isNotEmpty() ? r.label : owner->title; }
+            if (key == shown) return;
+            if (shown.isNotEmpty()) owner->model.clearHover("settings:" + shown);
+            shown = key;
+            if (key.isNotEmpty()) owner->model.showHover("settings:" + key, label, Model::explain(key));
+            if (owner->onHover) owner->onHover();
+        }
+        void mouseExit(const juce::MouseEvent& e) override {
+            if (owner->getLocalBounds().contains(e.getEventRelativeTo(owner).getPosition())) return;   // moved onto a child
+            if (shown.isNotEmpty()) owner->model.clearHover("settings:" + shown);
+            shown.clear();
+            if (owner->onHover) owner->onHover();
+        }
+    } hover;
+    Model& model;
     juce::String title;
-    std::vector<std::pair<int, juce::String>> labels;   // row labels, left column
-    std::function<void(juce::Graphics&)> extra;         // values painted next to the controls
+    std::vector<Row> rows;
+    std::vector<std::pair<int, juce::String>> heads;
+    std::vector<int> rules;
+    std::function<void(juce::Graphics&)> extra;   // values painted next to the controls
+    std::function<void()> onHover;
+};
+
+/// JUCE's device panel draws its own labels right-aligned beside each control; this hides them so the section paints
+/// them in its label column like every other row.
+struct SelectorLookAndFeel : LookAndFeel {
+    void drawLabel(juce::Graphics& g, juce::Label& l) override { if (l.getAttachedComponent() == nullptr) LookAndFeel::drawLabel(g, l); }
 };
 
 /// A colour dot; ringed when it's the picked accent.
@@ -690,24 +750,48 @@ void openFeedback(Model& m, const juce::String& templ) {
 struct SettingsScreen : Screen_ {
     explicit SettingsScreen(Model& m) : model(m),
         audioSel(m.devices, 0, 8, 2, 2, false, false, false, false),
-        audio("Audio"), look("Appearance"), tun("Tuner"), upd("Updates"), mid("MIDI"), lib("Library"), fb("Help & feedback"), about("About") {
+        audio(m, "Audio"), mid(m, "MIDI"), lib(m, "Library"), look(m, "Appearance"), about(m, "About"),
+        strip(m, "Hover over a setting for an explanation.") {
         addAndMakeVisible(viewport); viewport.setViewedComponent(&inner, false); viewport.setScrollBarsShown(true, false);
-        addAndMakeVisible(nav);
-        section = m.props().getValue("settingsSection", "Audio");
-        for (auto* g : { &audio, &look, &tun, &upd, &mid, &lib, &fb, &about }) inner.addAndMakeVisible(g);
+        addAndMakeVisible(nav); addChildComponent(strip);
+        section = current(m.props().getValue("settingsSection", "Audio"));
+        for (auto* g : groups()) { inner.addAndMakeVisible(g); g->onHover = [this] { strip.repaint(); }; }
         const juce::String site = juce::String("https://github.com/") + Updater::repo;
-        licB.setButtonText("License"); licB.onClick = [site] { juce::URL(site + "/blob/main/LICENSE").launchInDefaultBrowser(); };
-        noticeB.setButtonText("Notice & credits"); noticeB.onClick = [site] { juce::URL(site + "/blob/main/NOTICE.md").launchInDefaultBrowser(); };
-        srcB.setButtonText("Source code"); srcB.onClick = [site] { juce::URL(site).launchInDefaultBrowser(); };
-        for (auto* b : { &licB, &noticeB, &srcB }) about.addAndMakeVisible(b);
-        bugB.setButtonText("Report a bug" + ellipsis); bugB.onClick = [this] { openFeedback(model, "bug_report.yml"); };
-        featB.setButtonText("Request a feature" + ellipsis); featB.onClick = [this] { openFeedback(model, "feature_request.yml"); };
-        fb.addAndMakeVisible(bugB); fb.addAndMakeVisible(featB);
+
+        // audio
+        audioSel.setLookAndFeel(&selLnf);
         audio.addAndMakeVisible(audioSel);
         audio.addAndMakeVisible(inputCh); audio.addAndMakeVisible(audioInfo);
         inputCh.onChange = [this] { if (inputCh.getSelectedId() > 0) model.set("inputChannel", inputCh.getSelectedId() - 1); };
         m.devices.addChangeListener(&audioWatch);
         audioWatch.fn = [this] { model.restartAudio(); signature.clear(); refresh(); };
+        a4.setSliderStyle(juce::Slider::IncDecButtons); a4.setRange(430, 450, 1); a4.setTextValueSuffix(" Hz");
+        a4.onValueChange = [this] { model.setA4(a4.getValue()); };
+        for (size_t i = 0; i < TUNINGS.size(); ++i) tuning.addItem(tuningLabel(TUNINGS[i]), (int) i + 1);
+        tuning.onChange = [this] { model.setTuningIndex(tuning.getSelectedId() - 1); };
+        audio.addAndMakeVisible(a4); audio.addAndMakeVisible(tuning);
+
+        // midi
+        pcT.setButtonText("Program changes load presets");
+        pcT.onClick = [this] { model.midi->setProgramChange(pcT.getToggleState()); };
+        learnB.setButtonText("Learn on the rig" + ellipsis); learnB.onClick = [this] { model.setScreen(Screen::rig); model.midi->setLearning(true); };
+        clearB.setButtonText("Clear all"); clearB.onClick = [this] { model.midi->clear(); };
+        for (auto* c : std::initializer_list<juce::Component*> { &pcT, &learnB, &clearB }) mid.addAndMakeVisible(c);
+
+        // library
+        importRec.setButtonText("Import WAV" + ellipsis); importRec.onClick = [this] { model.sessions->importRecordings(); };
+        openRec.setButtonText("Open folder"); openRec.onClick = [] { Sessions::root().createDirectory(); Sessions::root().startAsProcess(); };
+        addNam.setButtonText("Add" + ellipsis); addNam.onClick = [this] { model.importNamDialog(); };
+        openNam.setButtonText("Open folder"); openNam.onClick = [] { Model::namDir().createDirectory(); Model::namDir().startAsProcess(); };
+        rescanNam.setButtonText("Rescan"); rescanNam.onClick = [this] { model.rescanNam(); };
+        addIRs.setButtonText("Add" + ellipsis); addIRs.onClick = [this] { model.importCabIRsDialog(); };
+        openIRs.setButtonText("Open folder"); openIRs.onClick = [] { CabIRLibrary::root().createDirectory(); CabIRLibrary::root().startAsProcess(); };
+        rescanIRs.setButtonText("Rescan"); rescanIRs.onClick = [this] { model.cabIRs.scan(); model.changed(); };
+        openCap.setButtonText("Open folder"); openCap.onClick = [] { Capture::dir().createDirectory(); Capture::dir().startAsProcess(); };
+        rescan.setButtonText("Rescan"); rescan.onClick = [this] { model.reloadCaptures(); };
+        openIR.setButtonText("Open folder"); openIR.onClick = [] { IRLibrary::root().createDirectory(); IRLibrary::root().startAsProcess(); };
+        for (auto* c : std::initializer_list<juce::Component*> { &importRec, &openRec, &addNam, &openNam, &rescanNam, &addIRs, &openIRs, &rescanIRs, &openCap, &rescan, &openIR })
+            lib.addAndMakeVisible(c);
 
         // appearance
         static const juce::Colour swatches[] = { juce::Colour::fromFloatRGBA(1, 0.3f, 0.3f, 1), juce::Colour::fromFloatRGBA(0.91f, 0.57f, 0.23f, 1),
@@ -717,54 +801,41 @@ struct SettingsScreen : Screen_ {
         followAmp.setButtonText("Follow amp channel"); followAmp.onClick = [this] { model.setAccent(std::nullopt); };
         zoomMinus.setButtonText(juce::String::fromUTF8("\xe2\x88\x92")); zoomMinus.onClick = [this] { model.zoomStep(-1); };
         zoomPlus.setButtonText("+"); zoomPlus.onClick = [this] { model.zoomStep(1); };
-        explain.setButtonText("Explain controls on hover (a strip at the bottom of the rig shows what the dial or section under the pointer does)");
+        explain.setButtonText("Explain controls on hover");
         explain.onClick = [this] { model.setExplainOnHover(explain.getToggleState()); };
         for (auto* c : std::initializer_list<juce::Component*> { &followAmp, &zoomMinus, &zoomPlus, &explain }) look.addAndMakeVisible(c);
 
-        // tuner
-        a4.setSliderStyle(juce::Slider::IncDecButtons); a4.setRange(430, 450, 1); a4.setTextValueSuffix(" Hz");
-        a4.onValueChange = [this] { model.setA4(a4.getValue()); };
-        for (size_t i = 0; i < TUNINGS.size(); ++i) tuning.addItem(tuningLabel(TUNINGS[i]), (int) i + 1);
-        tuning.onChange = [this] { model.setTuningIndex(tuning.getSelectedId() - 1); };
-        tun.addAndMakeVisible(a4); tun.addAndMakeVisible(tuning);
-
-        // updates
+        // about: updates, feedback, license
         checkNow.setButtonText("Check now"); checkNow.onClick = [this] { model.updater->check(); };
         autoUpd.setButtonText("Check for updates when Leviathan opens"); autoUpd.onClick = [this] { model.updater->setAutoCheck(autoUpd.getToggleState()); };
-        installB.setButtonText("Update and relaunch"); installB.setToggleState(true, juce::dontSendNotification); installB.onClick = [this] { model.updater->install(); };
-        pageB.setButtonText("View on GitHub"); pageB.onClick = [this] { if (model.updater->release) model.updater->release->page.launchInDefaultBrowser(); };
         newsB.setButtonText(juce::String::fromUTF8("What\xe2\x80\x99s new")); newsB.onClick = [this] { model.updater->showNotes = true; model.changed(); };
-        for (auto* c : std::initializer_list<juce::Component*> { &checkNow, &autoUpd, &installB, &newsB, &pageB, &updProgress }) upd.addAndMakeVisible(c);
-
-        // midi
-        pcT.setButtonText(juce::String::fromUTF8("Program 1, 2, 3\xe2\x80\xa6 loads the 1st, 2nd, 3rd\xe2\x80\xa6 preset in the Presets list"));
-        pcT.onClick = [this] { model.midi->setProgramChange(pcT.getToggleState()); };
-        learnB.setButtonText(juce::String::fromUTF8("Learn on the rig\xe2\x80\xa6")); learnB.onClick = [this] { model.setScreen(Screen::rig); model.midi->setLearning(true); };
-        clearB.setButtonText("Clear all"); clearB.onClick = [this] { model.midi->clear(); };
-        for (auto* c : std::initializer_list<juce::Component*> { &pcT, &learnB, &clearB }) mid.addAndMakeVisible(c);
-
-        // library
-        importRec.setButtonText("Import recordings (WAV)" + ellipsis); importRec.onClick = [this] { model.sessions->importRecordings(); };
-        openRec.setButtonText("Open folder"); openRec.onClick = [] { Sessions::root().createDirectory(); Sessions::root().startAsProcess(); };
-        openCap.setButtonText("Open folder"); openCap.onClick = [] { Capture::dir().createDirectory(); Capture::dir().startAsProcess(); };
-        rescan.setButtonText("Rescan"); rescan.onClick = [this] { model.reloadCaptures(); };
-        openIR.setButtonText("Open IR folder"); openIR.onClick = [] { IRLibrary::root().createDirectory(); IRLibrary::root().startAsProcess(); };
-        addNam.setButtonText("Add .nam" + ellipsis); addNam.onClick = [this] { model.importNamDialog(); };
-        openNam.setButtonText("Open folder"); openNam.onClick = [] { Model::namDir().createDirectory(); Model::namDir().startAsProcess(); };
-        rescanNam.setButtonText("Rescan"); rescanNam.onClick = [this] { model.rescanNam(); };
-        addIRs.setButtonText("Add IRs" + ellipsis); addIRs.onClick = [this] { model.importCabIRsDialog(); };
-        openIRs.setButtonText("Open folder"); openIRs.onClick = [] { CabIRLibrary::root().createDirectory(); CabIRLibrary::root().startAsProcess(); };
-        rescanIRs.setButtonText("Rescan"); rescanIRs.onClick = [this] { model.cabIRs.scan(); model.changed(); };
-        for (auto* c : std::initializer_list<juce::Component*> { &importRec, &openRec, &openCap, &rescan, &openIR, &addNam, &openNam, &rescanNam, &addIRs, &openIRs, &rescanIRs }) lib.addAndMakeVisible(c);
+        installB.setButtonText("Update now"); installB.setToggleState(true, juce::dontSendNotification); installB.onClick = [this] { model.updater->install(); };
+        pageB.setButtonText("View on GitHub"); pageB.onClick = [this] { if (model.updater->release) model.updater->release->page.launchInDefaultBrowser(); };
+        bugB.setButtonText("Report a bug" + ellipsis); bugB.onClick = [this] { openFeedback(model, "bug_report.yml"); };
+        featB.setButtonText("Request a feature" + ellipsis); featB.onClick = [this] { openFeedback(model, "feature_request.yml"); };
+        licB.setButtonText("License"); licB.onClick = [site] { juce::URL(site + "/blob/main/LICENSE").launchInDefaultBrowser(); };
+        noticeB.setButtonText("Notice & credits"); noticeB.onClick = [site] { juce::URL(site + "/blob/main/NOTICE.md").launchInDefaultBrowser(); };
+        srcB.setButtonText("Source code"); srcB.onClick = [site] { juce::URL(site).launchInDefaultBrowser(); };
+        for (auto* c : std::initializer_list<juce::Component*> { &checkNow, &updProgress, &autoUpd, &newsB, &installB, &pageB, &bugB, &featB, &licB, &noticeB, &srcB })
+            about.addAndMakeVisible(c);
         refresh();
     }
-    ~SettingsScreen() override { model.devices.removeChangeListener(&audioWatch); }
+    ~SettingsScreen() override { model.devices.removeChangeListener(&audioWatch); audioSel.setLookAndFeel(nullptr); }
+
+    std::array<Group*, 5> groups() { return { &audio, &mid, &lib, &look, &about }; }   // an array: an initializer_list would dangle
+
+    /// Sections from before 0.4.9 and where they live now.
+    static juce::String current(const juce::String& saved) {
+        if (saved == "Tuner") return "Audio";
+        if (saved == "Updates" || saved == "Help & feedback") return "About";
+        for (auto* n : Nav::items) if (saved == n) return saved;
+        return "Audio";
+    }
 
     struct Watch : juce::ChangeListener { std::function<void()> fn; void changeListenerCallback(juce::ChangeBroadcaster*) override { if (fn) fn(); } } audioWatch;
 
     void refresh() override {
         auto& m = model;
-        // input channels
         juce::StringArray sig;
         if (auto* d = m.devices.getCurrentAudioDevice()) sig.add(d->getName() + juce::String(d->getInputChannelNames().size()));
         sig.add(juce::String((int) m.midi->maps.size())); for (auto& mp : m.midi->maps) sig.add(mp.id + (mp.momentary ? "m" : ""));
@@ -777,10 +848,9 @@ struct SettingsScreen : Screen_ {
                 for (int i = 0; i < std::min(8, names.size()); ++i) inputCh.addItem("Channel " + juce::String(i + 1) + (names[i].isNotEmpty() ? " (" + names[i] + ")" : juce::String()), i + 1);
             }
             mapRows.clear();
-            for (auto& mp : m.midi->maps) {
-                auto r = std::make_unique<MapRow>(m, mp); mid.addAndMakeVisible(*r); mapRows.push_back(std::move(r));
-            }
+            for (auto& mp : m.midi->maps) { auto r = std::make_unique<MapRow>(m, mp); mid.addAndMakeVisible(*r); mapRows.push_back(std::move(r)); }
         }
+        selLnf.setAccent(m.accent());
         inputCh.setSelectedId(m.s().i("inputChannel") + 1, juce::dontSendNotification);
         a4.setValue(m.a4, juce::dontSendNotification);
         tuning.setSelectedId(m.tuningIndex + 1, juce::dontSendNotification);
@@ -788,124 +858,165 @@ struct SettingsScreen : Screen_ {
         autoUpd.setToggleState(m.updater->autoCheck, juce::dontSendNotification);
         explain.setToggleState(m.explainOnHover, juce::dontSendNotification);
         checkNow.setEnabled(!m.updater->busy());
-        const bool avail = m.updater->phase == Updater::Phase::available;
-        installB.setVisible(avail); newsB.setVisible(avail); pageB.setVisible(m.updater->release.has_value());
-        updProgress.setVisible(m.updater->phase == Updater::Phase::downloading); progressValue = m.updater->progressValue;
+        progressValue = m.updater->progressValue;
         pcT.setToggleState(m.midi->programChange, juce::dontSendNotification);
         clearB.setEnabled(!m.midi->maps.empty());
         resized(); repaint();
-        for (auto* g : { &audio, &look, &tun, &upd, &mid, &lib, &fb, &about }) g->repaint();
+        for (auto* g : groups()) g->repaint();
     }
     /// Nav and content as one block, centred on wide windows instead of hugging the sidebar.
     juce::Rectangle<int> block() const {
         const int bw = std::min(getWidth() - 48, 1240);
-        return { (getWidth() - bw) / 2, 18, bw, getHeight() - 36 };
+        return { (getWidth() - bw) / 2, 18, bw, getHeight() - 36 - (strip.isVisible() ? 44 : 0) };
     }
     void resized() override {
+        using namespace settingsLayout;
+        strip.setVisible(model.explainOnHover);
+        if (strip.isVisible()) strip.setBounds(getLocalBounds().removeFromBottom(44));
         const auto b = block();
         nav.setBounds(b.getX(), b.getY(), navW, b.getHeight());
-        viewport.setBounds(b.getX() + navW + 12, 0, b.getWidth() - navW - 12, getHeight());
+        viewport.setBounds(b.getX() + navW + 12, 0, b.getWidth() - navW - 12, b.getBottom() + 18);
         const int w = std::min(viewport.getMaximumVisibleWidth() - 48, 1000), x = 24;
-        int y = 24, shownBottom = 0;
-        // every group is laid out as before; only the selected section is shown, at the top
-        auto group = [&](Group& g, int h) {
-            const bool on = g.title == section;
-            g.setVisible(on);
-            if (on) { g.setBounds(x, 24, w, h); shownBottom = 24 + h; }
-            y += h + 18;
-        };
-        // audio
-        audioSel.setBounds(16, 44, std::min(w - 32, 700), 800);   // it shrinks itself to fit its controls
-        const int selH = audioSel.getHeight();
-        inputCh.setBounds(16 + 176, 44 + selH + 8, 360, 28);
-        audioInfo.setBounds(16, 44 + selH + 44, w - 32, 84);
-        audio.labels = { { 44 + selH + 8, "Input channel" } };
-        group(audio, 44 + selH + 44 + 96);
-        // appearance
-        { int sx = 192; for (auto& b : swatchButtons) { b->setBounds(sx, 48, 24, 24); sx += 30; } followAmp.setBounds(sx + 10, 46, 170, 28); }
-        zoomMinus.setBounds(192, 86, 30, 28); zoomPlus.setBounds(290, 86, 30, 28);
-        explain.setBounds(192, 126, 760, 28);
-        look.labels = { { 46, "Accent colour" }, { 86, "Zoom" }, { 126, "Explanations" } };
-        look.extra = [this](juce::Graphics& g) { g.setColour(theme::text); g.drawText(juce::String(juce::roundToInt(model.zoom * 100)) + "%", 222, 86, 68, 28, juce::Justification::centred); };
-        group(look, 170);
-        a4.setBounds(192, 44, 160, 28); tuning.setBounds(192, 80, 320, 28);
-        tun.labels = { { 44, "Reference (A4)" }, { 80, "Guitar tuning" } };
-        group(tun, 124);
-        checkNow.setBounds(260, 44, 110, 28); autoUpd.setBounds(192, 80, 400, 26);
-        int uy = 116;
-        installB.setBounds(16, uy, 180, 30); newsB.setBounds(206, uy, 130, 30); pageB.setBounds(installB.isVisible() ? 346 : 16, uy, 140, 30); updProgress.setBounds(380, 44, 200, 24);
-        upd.labels = { { 44, "Version" }, { 80, "Automatic" } };
-        upd.extra = [this](juce::Graphics& g) {
+        for (auto* g : groups()) { g->clearLayout(); g->setVisible(g->title == section); }
+        auto fit = [&](Group& g, const Group::Lay& lay) { g.setBounds(x, 24, w, lay.end()); };
+
+        // AUDIO: JUCE's device panel puts its controls at 35% of its width, so this width lines them up with ctrlX
+        {
+            Group::Lay lay { audio };
+            lay.heading("Devices");
+            const int selW = (int) std::round((ctrlX - labelX) / 0.35);
+            audioSel.setBounds(labelX, lay.y - 15, selW, 800);   // it shrinks itself to fit its controls; JUCE starts them 15 px down
+            lay.y += audioSel.getHeight() - 15 - 24 + rowGap;   // JUCE ends its panel with an empty row
+            const bool channels = inputCh.getNumItems() > 1;
+            inputCh.setVisible(channels);
+            if (channels) Group::place(lay.row("Input channel", "inputChannel"), { { &inputCh, 320 } });
+            lay.heading("Speed");
+            const int ly = lay.row("Latency", "settings:latency", 46);
+            const int ey = lay.row("Engine", "settings:engine");
+            audioInfo.setBounds(ctrlX, ly, w - ctrlX - labelX, ey + rowH - ly);
+            audioInfo.engineY = ey - ly;
+            lay.heading("Tuner");
+            Group::place(lay.row("Reference", "settings:a4"), { { &a4, 160 } });
+            Group::place(lay.row("Guitar tuning", "settings:tuning"), { { &tuning, 320 } });
+            audio.extra = [this](juce::Graphics& g) {   // JUCE's own labels for its device panel, in our label column
+                std::function<void(juce::Component&)> scan = [&](juce::Component& c) {
+                    for (auto* ch : c.getChildren()) {
+                        if (auto* l = dynamic_cast<juce::Label*>(ch); l && l->getAttachedComponent() && l->getAttachedComponent()->isVisible()) {
+                            auto* at = l->getAttachedComponent();
+                            const auto r = audio.getLocalArea(at->getParentComponent(), at->getBounds());
+                            g.drawText(l->getText().trimCharactersAtEnd(":"), labelX, r.getY(), labelW, std::min(r.getHeight(), rowH), juce::Justification::centredLeft);
+                        }
+                        scan(*ch);
+                    }
+                };
+                g.setColour(theme::secondary); g.setFont(theme::font(11));
+                scan(audioSel);
+            };
+            fit(audio, lay);
+        }
+        // MIDI
+        {
+            Group::Lay lay { mid };
+            lay.heading("Connection");
+            const int dy = lay.row("Devices", "settings:midiDevices");
+            const int my = lay.row("Last message", "settings:midiLast");
+            lay.heading("Presets");
+            Group::place(lay.row("Program change", "settings:programChange"), { { &pcT, 420 } });
+            lay.heading("Assignments");
+            const int ay = lay.row("Assign", "settings:midiAssign");
+            const int after = Group::place(ay, { { &learnB, 160 }, { &clearB, 100 } });
+            for (auto& r : mapRows) r->setBounds(labelX, lay.row("", "settings:midiAssign"), w - 2 * labelX, rowH);
+            mid.extra = [this, dy, my, ay, after](juce::Graphics& g) {
+                auto& md = *model.midi;
+                g.setFont(theme::font(11));
+                g.setColour(md.sources.isEmpty() ? theme::secondary : theme::text);
+                g.drawFittedText(md.sources.isEmpty() ? juce::String("None connected") : md.sources.joinIntoString(", "), ctrlX, dy, 700, rowH, juce::Justification::centredLeft, 1);
+                g.setColour(theme::secondary);
+                g.drawText(md.last.isEmpty() ? juce::String::fromUTF8("\xe2\x80\x94") : md.last, ctrlX, my, 400, rowH, juce::Justification::centredLeft);
+                if (md.maps.empty()) g.drawText("Nothing assigned yet", after + 4, ay, 300, rowH, juce::Justification::centredLeft);
+            };
+            fit(mid, lay);
+        }
+        // LIBRARY
+        {
+            Group::Lay lay { lib };
+            Group::place(lay.row("Recordings", "settings:recordings"), { { &importRec, 140 }, { &openRec, 110 } });
+            const int ny = lay.row("NAM captures", "settings:nam"), nx = Group::place(ny, { { &addNam, 80 }, { &openNam, 110 }, { &rescanNam, 80 } });
+            const int iy = lay.row("Cab IRs", "settings:cabIRs"), ix = Group::place(iy, { { &addIRs, 80 }, { &openIRs, 110 }, { &rescanIRs, 80 } });
+            const int cy = lay.row("Your captures", "settings:captures"), cx = Group::place(cy, { { &openCap, 110 }, { &rescan, 80 } });
+            const int gy = lay.row("God's Cab", "settings:godsCab"), gx = Group::place(gy, { { &openIR, 110 } });
+            lib.extra = [this, ny, nx, iy, ix, cy, cx, gy, gx](juce::Graphics& g) {
+                g.setColour(theme::secondary); g.setFont(theme::font(11));
+                g.drawText(juce::String(model.namFiles.size()) + " loaded", nx + 4, ny, 300, rowH, juce::Justification::centredLeft);
+                g.drawText(juce::String(model.cabIRs.all().size()) + " in the library", ix + 4, iy, 300, rowH, juce::Justification::centredLeft);
+                g.drawText(juce::String((int) model.captures.size()) + " loaded", cx + 4, cy, 300, rowH, juce::Justification::centredLeft);
+                g.drawText(model.irLib.isEmpty() ? juce::String("Not found") : juce::String("Found"), gx + 4, gy, 300, rowH, juce::Justification::centredLeft);
+            };
+            fit(lib, lay);
+        }
+        // APPEARANCE
+        {
+            Group::Lay lay { look };
+            const int ay = lay.row("Accent colour", "settings:accent");
+            { int sx = ctrlX; for (auto& s : swatchButtons) { s->setBounds(sx, ay + 3, 24, 24); sx += 30; } Group::place(ay, { { &followAmp, 170 } }, sx + 6); }
+            const int zy = lay.row("Zoom", "settings:zoom");
+            Group::place(zy, { { &zoomMinus, 30 } }); Group::place(zy, { { &zoomPlus, 30 } }, ctrlX + 30 + 68);
+            Group::place(lay.row("Explanations", "settings:explain"), { { &explain, 320 } });
+            look.extra = [this, zy](juce::Graphics& g) {
+                g.setColour(theme::text); g.setFont(theme::font(11));
+                g.drawText(juce::String(juce::roundToInt(model.zoom * 100)) + "%", ctrlX + 30, zy, 68, rowH, juce::Justification::centred);
+            };
+            fit(look, lay);
+        }
+        // ABOUT
+        {
             auto& u = *model.updater;
-            g.setColour(theme::text); g.drawText(Updater::current(), 192, 44, 60, 28, juce::Justification::centredLeft);
-            juce::String st; juce::Colour c = theme::secondary;
-            switch (u.phase) {
-            case Updater::Phase::checking: st = "Checking" + ellipsis; break;
-            case Updater::Phase::upToDate: st = "Up to date"; break;
-            case Updater::Phase::available: st = "Leviathan " + u.release->version + " is available"; c = theme::text; break;
-            case Updater::Phase::downloading: st = "Downloading" + ellipsis; break;
-            case Updater::Phase::installing: st = "Installing" + ellipsis; break;
-            case Updater::Phase::failed: st = u.error; c = juce::Colours::orange; break;
-            default: break;
-            }
-            g.setColour(c); g.drawFittedText(st, u.phase == Updater::Phase::downloading ? 590 : 380, 44, 560, 28, juce::Justification::centredLeft, 1);
-        };
-        group(upd, uy + (installB.isVisible() || pageB.isVisible() ? 46 : 0));
-        int my = 120; pcT.setBounds(192, 80 + 36, w - 210, 26); my += 36;
-        learnB.setBounds(192, my, 150, 28); clearB.setBounds(350, my, 90, 28); my += 44;
-        if (mapRows.empty()) my += 40;
-        for (auto& r : mapRows) { r->setBounds(16, my, w - 32, 30); my += 32; }
-        mid.labels = { { 44, "Devices" }, { 80, "Last message" }, { 116, "Program change" }, { 156, "Assignments" } };
-        mid.extra = [this, my](juce::Graphics& g) {
-            auto& md = *model.midi;
-            g.setColour(md.sources.isEmpty() ? theme::secondary : theme::text);
-            g.drawFittedText(md.sources.isEmpty() ? juce::String("None connected") : md.sources.joinIntoString(", "), 192, 44, 760, 28, juce::Justification::centredLeft, 1);
-            g.setColour(theme::secondary);
-            g.drawText(md.last.isEmpty() ? juce::String::fromUTF8("\xe2\x80\x94") : md.last, 192, 80, 400, 28, juce::Justification::centredLeft);
-            if (md.maps.empty())
-                g.drawFittedText("Nothing assigned. Use Learn, click a knob or switch, then move a control on your MIDI device. An expression pedal on Wah Position makes a real wah.",
-                                 16, my - 40, 900, 34, juce::Justification::topLeft, 2);
-        };
-        group(mid, my + 10);
-        importRec.setBounds(192, 44, 230, 28); openRec.setBounds(430, 44, 110, 28);
-        openCap.setBounds(192, 80, 110, 28); rescan.setBounds(310, 80, 80, 28);
-        openIR.setBounds(192, 116, 140, 28);
-        addNam.setBounds(192, 152, 110, 28); openNam.setBounds(310, 152, 110, 28); rescanNam.setBounds(428, 152, 80, 28);
-        addIRs.setBounds(192, 188, 110, 28); openIRs.setBounds(310, 188, 110, 28); rescanIRs.setBounds(428, 188, 80, 28);
-        lib.labels = { { 44, "Recordings" }, { 80, "Captures" }, { 116, "God's Cab" }, { 152, "NAM captures" }, { 188, "Cab IRs" } };
-        lib.extra = [this](juce::Graphics& g) {
-            g.setColour(theme::secondary);
-            g.drawText(juce::String((int) model.captures.size()) + " loaded", 400, 80, 200, 28, juce::Justification::centredLeft);
-            g.drawText(model.irLib.isEmpty() ? juce::String("No God's Cab pack found in ") + IRLibrary::root().getFullPathName() : juce::String("God's Cab pack found"),
-                       340, 116, 700, 28, juce::Justification::centredLeft);
-            g.drawText(juce::String(model.namFiles.size()) + juce::String::fromUTF8(" loaded \xc2\xb7 free captures at tone3000.com"), 520, 152, 500, 28, juce::Justification::centredLeft);
-            g.drawText(juce::String(model.cabIRs.all().size()) + juce::String::fromUTF8(" in the IR library \xc2\xb7 WAV tone packs from tone3000.com"), 520, 188, 500, 28, juce::Justification::centredLeft);
-        };
-        group(lib, 232);
-        bugB.setBounds(192, 44, 150, 28); featB.setBounds(350, 44, 170, 28);
-        fb.labels = { { 44, "GitHub" } };
-        fb.extra = [](juce::Graphics& g) {
-            g.setColour(theme::secondary);
-            g.drawFittedText("Opens a form on GitHub (a free account is needed) with your Leviathan version, Windows version and audio devices filled in. "
-                             "You can see and change everything before you submit.", 16, 80, 900, 34, juce::Justification::topLeft, 2);
-        };
-        group(fb, 124);
-        licB.setBounds(192, 80, 90, 28); noticeB.setBounds(290, 80, 140, 28); srcB.setBounds(438, 80, 120, 28);
-        about.labels = { { 44, "Leviathan" }, { 80, "License" } };
-        about.extra = [](juce::Graphics& g) {
-            g.setColour(theme::text); g.setFont(theme::font(10, true));
-            g.drawText("by Shane O'Reilly", 192, 44, 200, 28, juce::Justification::centredLeft);
-            g.setColour(theme::secondary); g.setFont(theme::font(10));
-            g.drawText(juce::String::fromUTF8("\xc2\xb7 version ") + Updater::current(), 372, 44, 200, 28, juce::Justification::centredLeft);
-            g.drawText("Free software under the GNU AGPLv3, with no warranty.", 570, 80, 420, 28, juce::Justification::centredLeft);
-            g.drawFittedText(juce::String::fromUTF8("You're free to use, share and change Leviathan. Anything made from it must also be open source under the AGPLv3 and keep the credit "
-                                                    "\xe2\x80\x9cLeviathan by Shane O'Reilly\xe2\x80\x9d.\n"
-                                                    "Built with JUCE (AGPLv3, \xc2\xa9 Raw Material Software) and the Steinberg ASIO SDK (GPLv3). ASIO is a trademark of Steinberg Media Technologies GmbH."),
-                             16, 118, 960, 76, juce::Justification::topLeft, 4);
-        };
-        group(about, 206);
+            Group::Lay lay { about };
+            lay.heading("Updates");
+            const int vy = lay.row("Version", "settings:version");
+            const int vx = Group::place(vy, { { &checkNow, 110 } }, ctrlX + 70);
+            updProgress.setVisible(u.phase == Updater::Phase::downloading);
+            if (updProgress.isVisible()) Group::place(vy, { { &updProgress, 200 } }, vx);
+            Group::place(lay.row("Automatic", "settings:autoUpdate"), { { &autoUpd, 420 } });
+            const bool avail = u.phase == Updater::Phase::available && u.release;
+            int ry = -1;
+            for (auto* c : { &newsB, &installB, &pageB }) c->setVisible(avail);
+            if (avail) { ry = lay.row("Available", "settings:version"); Group::place(ry, { { &newsB, 120 }, { &installB, 120 }, { &pageB, 140 } }, ctrlX + 150); }
+            lay.heading("Feedback");
+            Group::place(lay.row("GitHub", "settings:feedback"), { { &bugB, 150 }, { &featB, 170 } });
+            lay.heading("License");
+            const int ly = lay.row("Leviathan", "settings:license");
+            Group::place(lay.row("", "settings:license"), { { &licB, 90 }, { &noticeB, 140 }, { &srcB, 120 } });
+            const int cy = lay.row("", "settings:license", 40);
+            about.extra = [this, vy, vx, ry, ly, cy, w](juce::Graphics& g) {
+                auto& up = *model.updater;
+                g.setColour(theme::text); g.setFont(theme::font(11, true));
+                g.drawText(Updater::current(), ctrlX, vy, 66, rowH, juce::Justification::centredLeft);
+                if (ry >= 0) g.drawText("Leviathan " + up.release->version, ctrlX, ry, 146, rowH, juce::Justification::centredLeft);
+                g.drawText("by Shane O'Reilly", ctrlX, ly, 170, rowH, juce::Justification::centredLeft);
+                juce::String st; juce::Colour c = theme::secondary;
+                switch (up.phase) {
+                case Updater::Phase::checking: st = "Checking" + ellipsis; break;
+                case Updater::Phase::upToDate: st = "Up to date"; break;
+                case Updater::Phase::available: st = "Leviathan " + up.release->version + " is available"; c = theme::text; break;
+                case Updater::Phase::installing: st = "Installing" + ellipsis; break;
+                case Updater::Phase::failed: st = up.error; c = juce::Colours::orange; break;
+                default: break;
+                }
+                g.setFont(theme::font(11));
+                if (up.phase != Updater::Phase::downloading) { g.setColour(c); g.drawFittedText(st, vx + 4, vy, w - vx - 24, rowH, juce::Justification::centredLeft, 1); }
+                g.setColour(theme::secondary);
+                g.drawText("Free software under the GNU AGPLv3, with no warranty.", ctrlX + 176, ly, 520, rowH, juce::Justification::centredLeft);
+                g.setFont(theme::font(10));
+                g.drawFittedText(juce::String::fromUTF8("Built with JUCE (AGPLv3, \xc2\xa9 Raw Material Software) and the Steinberg ASIO SDK (GPLv3). "
+                                                        "ASIO is a trademark of Steinberg Media Technologies GmbH."),
+                                 ctrlX, cy, w - ctrlX - labelX, 40, juce::Justification::topLeft, 2);
+            };
+            fit(about, lay);
+        }
+        int shownBottom = 0;
+        for (auto* g : groups()) if (g->isVisible()) shownBottom = g->getBottom();
         inner.setSize(viewport.getMaximumVisibleWidth(), shownBottom + 24);
-        juce::ignoreUnused(y);
     }
     void paint(juce::Graphics& g) override {
         const auto r = nav.getBounds().toFloat().reduced(0.5f);
@@ -913,35 +1024,28 @@ struct SettingsScreen : Screen_ {
         g.setColour(theme::line); g.drawRoundedRectangle(r, 12, 1);
     }
 
-    /// Left-hand navigation: groups of sections (same as the Mac app); the last one opened is remembered.
+    /// Left-hand navigation (same sections as the Mac app); the last one opened is remembered.
     static constexpr int navW = 220;
     juce::String section;
     struct Nav : juce::Component {
         explicit Nav(SettingsScreen& o) : owner(o) {}
-        struct Item { const char* group; const char* name; };
-        static constexpr Item items[] = { { "Playing", "Audio" }, { "Playing", "MIDI" }, { "Playing", "Tuner" }, { "Sounds", "Library" },
-                                          { "App", "Appearance" }, { "App", "Updates" }, { "App", "Help & feedback" }, { "App", "About" } };
+        static constexpr const char* items[] = { "Audio", "MIDI", "Library", "Appearance", "About" };
         std::vector<std::pair<juce::Rectangle<int>, juce::String>> rows;
         void paint(juce::Graphics& g) override {
             g.fillAll(theme::bar);
             drawSectionTitle(g, "SETTINGS", { 24, 12, 180, 28 });
             rows.clear();
-            int y = 48; juce::String last;
-            for (const auto& it : items) {
-                if (last != it.group) {
-                    last = it.group; y += 10;
-                    g.setColour(theme::secondary); g.setFont(theme::font(9, true, 1));
-                    g.drawText(juce::String(it.group).toUpperCase(), 24, y, 180, 20, juce::Justification::centredLeft); y += 22;
-                }
+            int y = 52;
+            for (const auto* it : items) {
                 const juce::Rectangle<int> r(14, y, getWidth() - 28, 32);
-                const bool on = owner.section == it.name;
+                const bool on = owner.section == it;
                 if (on) { g.setColour(juce::Colours::white.withAlpha(0.08f)); g.fillRoundedRectangle(r.toFloat(), 7); }
                 g.setColour(on ? owner.model.accent() : theme::text); g.setFont(theme::font(11));
-                g.drawText(it.name, r.withTrimmedLeft(12), juce::Justification::centredLeft);
-                if (juce::String(it.name) == "Updates" && owner.model.updater->phase == Updater::Phase::available) {
+                g.drawText(it, r.withTrimmedLeft(12), juce::Justification::centredLeft);
+                if (juce::String(it) == "About" && owner.model.updater->phase == Updater::Phase::available) {
                     g.setColour(juce::Colours::red); g.fillEllipse((float) r.getRight() - 18, (float) r.getCentreY() - 4, 8, 8);
                 }
-                rows.emplace_back(r, it.name); y += 34;
+                rows.emplace_back(r, it); y += 34;
             }
         }
         void mouseUp(const juce::MouseEvent& e) override {
@@ -954,6 +1058,7 @@ struct SettingsScreen : Screen_ {
     };
     Nav nav { *this };
 
+    /// One MIDI assignment: "CC 7 · ch 1" in the label column, the target at the control column, momentary, remove.
     struct MapRow : juce::Component {
         MapRow(Model& m, const MidiMap& mp) : model(m), id(mp.id), x(IconButton::cross, [this] { model.midi->removeMap(id); }, 11) {
             label = "CC " + juce::String(mp.cc) + dot + "ch " + juce::String(mp.channel + 1); name = mp.name;
@@ -965,53 +1070,60 @@ struct SettingsScreen : Screen_ {
                 addAndMakeVisible(momentary);
             }
         }
-        void resized() override { momentary.setBounds(500, 2, 180, 26); x.setBounds(700, 4, 22, 22); }
+        void resized() override {
+            using namespace settingsLayout;
+            momentary.setBounds(ctrlX - labelX + 330, 2, 180, 26); x.setBounds(getWidth() - 26, 4, 22, 22);
+        }
         void paint(juce::Graphics& g) override {
-            g.setFont(theme::font(10)); g.setColour(theme::secondary); g.drawText(label, 0, 0, 170, getHeight(), juce::Justification::centredLeft);
-            g.setColour(theme::text); g.drawText(name, 176, 0, 310, getHeight(), juce::Justification::centredLeft);
+            using namespace settingsLayout;
+            g.setFont(theme::font(11)); g.setColour(theme::secondary); g.drawText(label, 0, 0, labelW, getHeight(), juce::Justification::centredLeft);
+            g.setColour(theme::text); g.drawText(name, ctrlX - labelX, 0, 320, getHeight(), juce::Justification::centredLeft);
         }
         Model& model; juce::String id, label, name; IconButton x; juce::ToggleButton momentary;
     };
 
-    struct AudioInfo : juce::Component {
-        explicit AudioInfo(Model& m) : model(m) {}
+    /// Latency summary and breakdown, then the engine's load; repainted a few times a second.
+    struct AudioInfo : juce::Component, private juce::Timer {
+        explicit AudioInfo(Model& m) : model(m) { startTimerHz(4); }
+        void timerCallback() override { if (isShowing()) repaint(); }
         void paint(juce::Graphics& g) override {
-            g.setFont(theme::font(10)); g.setColour(theme::secondary);
-            g.drawText("Input channel", 0, -36, 170, 28, juce::Justification::centredLeft);
             const auto& i = model.info;
-            if (i.sampleRate <= 0) { g.drawText("Not running.", 0, 0, getWidth(), 20, juce::Justification::centredLeft); return; }
+            g.setFont(theme::font(11));
+            if (i.sampleRate <= 0) { g.setColour(theme::secondary); g.drawText("Not running.", 0, 0, getWidth(), 30, juce::Justification::centredLeft); return; }
+            const std::pair<const char*, double> parts[] = { { "your interface's input", i.inMs }, { "the buffers", i.bufferMs }, { "the output device", i.outMs } };
+            const auto* big = &parts[0]; for (auto& p : parts) if (p.second > big->second) big = &p;
             g.setColour(theme::text);
-            g.drawText("Latency: ~" + juce::String(i.latencyMs(), 1) + " ms round trip (" + i.breakdown() + ")" + dot
-                           + juce::String(i.sampleRate / 1000, 1) + " kHz" + dot + juce::String(i.buffer) + " samples" + dot + i.type,
-                       0, 0, getWidth(), 20, juce::Justification::centredLeft);
+            g.drawText("About " + juce::String(i.latencyMs(), 1) + " ms from string to ear"
+                           + (big->second > i.latencyMs() * 0.5 ? ", mostly " + juce::String(big->first) : juce::String()),
+                       0, 0, getWidth(), 22, juce::Justification::centredLeft);
+            g.setColour(theme::secondary); g.setFont(theme::font(10));
+            g.drawText("Input " + juce::String(i.inMs, 1) + dot + "buffers " + juce::String(i.bufferMs, 1) + dot + "output " + juce::String(i.outMs, 1) + " ms"
+                           + dot + juce::String(i.sampleRate / 1000, 1) + " kHz" + dot + juce::String(i.buffer) + " samples" + dot + i.type,
+                       0, 22, getWidth(), 20, juce::Justification::centredLeft);
+            g.setFont(theme::font(11));
             g.setColour(model.dropouts > 0 || model.cpu > 0.6f ? juce::Colours::orange : theme::secondary);
             g.drawText("DSP load " + juce::String(juce::roundToInt(model.cpu * 100)) + "%" + dot + juce::String(model.dropouts) + " dropout" + (model.dropouts == 1 ? "" : "s"),
-                       0, 22, getWidth(), 20, juce::Justification::centredLeft);
-            g.setColour(theme::secondary);
-            g.drawFittedText("Smallest buffer that never crackles is best. ASIO (your interface's own driver) is fastest; \"Windows Audio (Exclusive Mode)\" is next. "
-                             "Bluetooth headphones and monitor speakers add delay you can't see here.", 0, 44, getWidth(), 40, juce::Justification::topLeft, 3);
+                       0, engineY, getWidth(), 30, juce::Justification::centredLeft);
         }
-        Model& model;
+        Model& model; int engineY = 54;
     };
-
-    struct LabelsPainter;
-    void paintOverChildren(juce::Graphics&) override {}
 
     Model& model;
     juce::Viewport viewport; juce::Component inner;
+    SelectorLookAndFeel selLnf;
     juce::AudioDeviceSelectorComponent audioSel;
-    Group audio, look, tun, upd, mid, lib, fb, about;
-    juce::TextButton bugB, featB, licB, noticeB, srcB;
+    Group audio, mid, lib, look, about;
+    HelpStrip strip;
     juce::ComboBox inputCh; AudioInfo audioInfo { model };
+    juce::Slider a4; juce::ComboBox tuning;
+    juce::ToggleButton pcT; juce::TextButton learnB, clearB;
+    std::vector<std::unique_ptr<MapRow>> mapRows;
+    juce::TextButton importRec, openRec, addNam, openNam, rescanNam, addIRs, openIRs, rescanIRs, openCap, rescan, openIR;
     std::vector<std::unique_ptr<Swatch>> swatchButtons;
     juce::TextButton followAmp, zoomMinus, zoomPlus;
     juce::ToggleButton explain;
-    juce::Slider a4; juce::ComboBox tuning;
-    juce::TextButton checkNow, installB, newsB, pageB; juce::ToggleButton autoUpd;
+    juce::TextButton checkNow, newsB, installB, pageB, bugB, featB, licB, noticeB, srcB; juce::ToggleButton autoUpd;
     double progressValue = 0; juce::ProgressBar updProgress { progressValue };
-    juce::ToggleButton pcT; juce::TextButton learnB, clearB;
-    std::vector<std::unique_ptr<MapRow>> mapRows;
-    juce::TextButton importRec, openRec, openCap, rescan, openIR, addNam, openNam, rescanNam, addIRs, openIRs, rescanIRs;
     juce::String signature;
 };
 
@@ -1066,7 +1178,7 @@ struct WhatsNew : juce::Component {
         notes.setMarkdown(r.notes.isNotEmpty() ? r.notes : juce::String("No notes for this release."), true);
         view.setViewedComponent(&notes, false); view.setScrollBarsShown(true, false);
         addAndMakeVisible(view); addAndMakeVisible(close);
-        ignore.setButtonText("Ignore"); ignore.setTooltip("Hide this update until the next version (Settings, Updates still has it)");
+        ignore.setButtonText("Ignore"); ignore.setTooltip("Hide this update until the next version (Settings, About still has it)");
         ignore.onClick = [this] { model.updater->dismiss(); done(); };
         update.setButtonText("Update Now"); update.setToggleState(true, juce::dontSendNotification);
         update.onClick = [this] { done(); model.updater->install(); };

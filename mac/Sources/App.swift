@@ -1990,11 +1990,12 @@ final class HoverHelp: ObservableObject {
 
 struct HoverHelpStrip: View {
     @ObservedObject private var h = HoverHelp.shared
+    var idle = "Hover over any control for an explanation. Scroll or drag a dial to change it; ↺ resets it."
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Image(systemName: "info.circle").foregroundStyle(.secondary)
             if h.text.isEmpty {
-                Text("Hover over any control for an explanation. Scroll or drag a dial to change it; ↺ resets it.").foregroundStyle(.secondary)
+                Text(idle).foregroundStyle(.secondary)
             } else {
                 Text(h.title).fontWeight(.semibold)
                 Text(h.text).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)

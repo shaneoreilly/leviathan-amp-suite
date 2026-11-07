@@ -22,40 +22,31 @@ enum Feedback {
     }
 }
 
-/// The Help & feedback group on the Settings screen.
+/// Settings > About: reporting bugs and asking for features.
 struct FeedbackSettings: View {
     @EnvironmentObject var m: Model
-    let row: (String, AnyView) -> AnyView
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            row("GitHub", AnyView(HStack {
-                Button("Report a bug…") { Feedback.open("bug_report.yml", model: m) }
-                Button("Request a feature…") { Feedback.open("feature_request.yml", model: m) }
-            }))
-            Text("Opens a form on GitHub (a free account is needed) with your Leviathan version, macOS version and audio devices filled in. You can see and change everything before you submit.")
-                .font(.system(size: 11 * UI)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        SettingsHeading("Feedback")
+        SettingsRow("GitHub", explain: "settings:feedback") {
+            Button("Report a bug\u{2026}") { Feedback.open("bug_report.yml", model: m) }
+            Button("Request a feature\u{2026}") { Feedback.open("feature_request.yml", model: m) }
         }
     }
 }
 
-/// The About group: author credit, version and license (the AGPLv3 "Appropriate Legal Notices"; see NOTICE.md).
+/// Settings > About: author credit and license (the AGPLv3 "Appropriate Legal Notices", kept visible; see NOTICE.md).
 struct AboutSettings: View {
-    let row: (String, AnyView) -> AnyView
     static let site = URL(string: "https://github.com/\(Updater.repo)")!
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            row("Leviathan", AnyView(HStack(spacing: 6) {
-                Text("by Shane O'Reilly").fontWeight(.semibold)
-                Text("· version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")").foregroundStyle(.secondary)
-            }))
-            row("License", AnyView(HStack {
-                Text("Free software under the GNU AGPLv3, with no warranty.")
-                Button("License") { NSWorkspace.shared.open(AboutSettings.site.appendingPathComponent("blob/main/LICENSE")) }
-                Button("Notice & credits") { NSWorkspace.shared.open(AboutSettings.site.appendingPathComponent("blob/main/NOTICE.md")) }
-                Button("Source code") { NSWorkspace.shared.open(AboutSettings.site) }
-            }))
-            Text("You're free to use, share and change Leviathan. Anything made from it must also be open source under the AGPLv3 and keep the credit \u{201C}Leviathan by Shane O'Reilly\u{201D}.")
-                .font(.system(size: 11 * UI)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        SettingsHeading("License")
+        SettingsRow("Leviathan", explain: "settings:license") {
+            Text("by Shane O'Reilly").fontWeight(.semibold)
+            Text("Free software under the GNU AGPLv3, with no warranty.").foregroundStyle(.secondary)
+        }
+        SettingsRow("", explain: "settings:license") {
+            Button("License") { NSWorkspace.shared.open(AboutSettings.site.appendingPathComponent("blob/main/LICENSE")) }
+            Button("Notice & credits") { NSWorkspace.shared.open(AboutSettings.site.appendingPathComponent("blob/main/NOTICE.md")) }
+            Button("Source code") { NSWorkspace.shared.open(AboutSettings.site) }
         }
     }
 }

@@ -157,6 +157,13 @@ private:
     static constexpr int pad = 12, headerH = 24, gapAfterHeader = 10;
 };
 
+/// The explanation strip at the bottom of the rig and Settings: what the control under the pointer does.
+struct HelpStrip : juce::Component {
+    HelpStrip(Model& m, juce::String idleText) : model(m), idle(std::move(idleText)) {}
+    void paint(juce::Graphics&) override;
+    Model& model; juce::String idle;
+};
+
 /// Panels snap to a 24-column grid; expanded panels in a row share the row's height. Folded panels keep their expanded
 /// width and, while the row has an open panel, their expanded height, so a collapse never moves anything else.
 /// A nullptr item starts a new row.

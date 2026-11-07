@@ -85,33 +85,10 @@ std::unique_ptr<juce::TextButton> textButton(const juce::String& t, std::functio
 } // namespace
 
 namespace {
-struct HelpStrip : juce::Component {
-    explicit HelpStrip(Model& m) : model(m) {}
-    void paint(juce::Graphics& g) override {
-        g.fillAll(theme::bar);
-        g.setColour(theme::line); g.fillRect(0, 0, getWidth(), 1);
-        auto r = getLocalBounds().reduced(14, 6);
-        g.setColour(theme::secondary);
-        g.drawEllipse(juce::Rectangle<float>((float) r.getX(), (float) r.getCentreY() - 7, 14, 14), 1.2f);
-        g.setFont(theme::font(10, true)); g.drawText("i", r.getX(), r.getCentreY() - 7, 14, 14, juce::Justification::centred);
-        r.removeFromLeft(24);
-        if (model.hoverText.isEmpty()) {
-            g.setFont(theme::font(12));
-            g.drawText(juce::String::fromUTF8("Hover over any control for an explanation. Scroll or drag a dial to change it; \xe2\x86\xba resets it."), r, juce::Justification::centredLeft, true);
-            return;
-        }
-        g.setColour(theme::text); g.setFont(theme::font(12, true));
-        const int tw = juce::GlyphArrangement::getStringWidthInt(theme::font(12, true), model.hoverTitle) + 12;
-        g.drawText(model.hoverTitle, r.removeFromLeft(tw), juce::Justification::centredLeft, true);
-        g.setColour(theme::secondary); g.setFont(theme::font(12));
-        g.drawFittedText(model.hoverText, r, juce::Justification::centredLeft, 2);
-    }
-    Model& model;
-};
 } // namespace
 
 RigView::RigView(Model& m) : model(m) {
-    helpStrip = std::make_unique<HelpStrip>(m);
+    helpStrip = std::make_unique<HelpStrip>(m, juce::String::fromUTF8("Hover over any control for an explanation. Scroll or drag a dial to change it; \xe2\x86\xba resets it."));
     addChildComponent(*helpStrip);
     addAndMakeVisible(viewport);
     viewport.setViewedComponent(&canvas, false);

@@ -252,29 +252,26 @@ final class Updater: ObservableObject {
     }
 }
 
-/// The Updates group on the Settings screen.
+/// Settings > About: version and updates.
 struct UpdateSettings: View {
     @EnvironmentObject var up: Updater
-    let row: (String, AnyView) -> AnyView
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            row("Version", AnyView(HStack(spacing: 12) {
-                Text(up.current).monospacedDigit()
-                Button("Check now") { Task { await up.check() } }.disabled(busy)
-                status
-            }))
-            row("Automatic", AnyView(Toggle("Check for updates when Leviathan opens", isOn: $up.autoCheck)))
-            if let r = up.available {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Leviathan \(r.version) is available").font(.system(size: 13 * UI, weight: .semibold))
-                    HStack {
-                        Button("Update and relaunch") { up.install(r) }.buttonStyle(.borderedProminent)
-                        Button("What\u{2019}s new") { up.showNotes = true }
-                        Button("View on GitHub") { NSWorkspace.shared.open(r.page) }
-                    }
-                }
-                .padding(12).background(RoundedRectangle(cornerRadius: 8).fill(panel2))
+        SettingsHeading("Updates", first: true)
+        SettingsRow("Version", explain: "settings:version") {
+            Text(up.current).monospacedDigit().fontWeight(.semibold)
+            Button("Check now") { Task { await up.check() } }.disabled(busy)
+            status
+        }
+        SettingsRow("Automatic", explain: "settings:autoUpdate") {
+            Toggle("Check for updates when Leviathan opens", isOn: $up.autoCheck)
+        }
+        if let r = up.available {
+            SettingsRow("Available", explain: "settings:version") {
+                Text("Leviathan \(r.version)").fontWeight(.semibold)
+                Button("What\u{2019}s new") { up.showNotes = true }
+                Button("Update now") { up.install(r) }.buttonStyle(.borderedProminent)
+                Button("View on GitHub") { NSWorkspace.shared.open(r.page) }
             }
         }
     }
@@ -328,7 +325,7 @@ struct WhatsNewSheet: View {
             HStack {
                 Spacer()
                 Button("Ignore") { updater.dismissedVersion = release.version; updater.showNotes = false }
-                    .help("Hide this update until the next version (Settings → Updates still has it)")
+                    .help("Hide this update until the next version (Settings → About still has it)")
                 Button("Update Now") { updater.showNotes = false; updater.install(release) }
                     .buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
             }

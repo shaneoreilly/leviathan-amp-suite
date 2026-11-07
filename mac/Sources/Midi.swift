@@ -275,38 +275,33 @@ struct MidiLearnBanner: View {
 struct MidiSettings: View {
     @EnvironmentObject var m: Model
     @EnvironmentObject var midi: Midi
-    let row: (String, AnyView) -> AnyView
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            row("Devices", AnyView(
-                Text(midi.sources.isEmpty ? "None connected" : midi.sources.joined(separator: ", "))
-                    .foregroundStyle(midi.sources.isEmpty ? .secondary : .primary)))
-            row("Last message", AnyView(MonitorText(mon: midi.monitor)))
-            row("Program change", AnyView(
-                Toggle("Program 1, 2, 3… loads the 1st, 2nd, 3rd… preset in the Presets list", isOn: $midi.programChange)))
-            row("Assignments", AnyView(
-                HStack {
-                    Button("Learn on the rig…") { m.screen = .rig; midi.learning = true }
-                    Button("Clear all", role: .destructive) { midi.maps = [] }.disabled(midi.maps.isEmpty)
-                }))
-            if midi.maps.isEmpty {
-                Text("Nothing assigned. Use Learn, click a knob or switch, then move a control on your MIDI device. An expression pedal on Wah Position makes a real wah.")
-                    .font(.system(size: 11 * UI)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            } else {
-                Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
-                    ForEach($midi.maps) { $mp in
-                        GridRow {
-                            Text("CC \(mp.cc) · ch \(mp.channel + 1)").monospacedDigit().foregroundStyle(.secondary)
-                            Text(mp.name)
-                            if mp.toggle {
-                                Toggle("Momentary switch", isOn: $mp.momentary)
-                                    .help("On: each press flips it. Off: the switch's value sets it (127 = on, 0 = off).")
-                            } else { Text("") }
-                            Button { midi.maps.removeAll { $0.id == mp.id } } label: { Image(systemName: "xmark") }.buttonStyle(.borderless)
-                        }
-                    }
+        SettingsHeading("Connection", first: true)
+        SettingsRow("Devices", explain: "settings:midiDevices") {
+            Text(midi.sources.isEmpty ? "None connected" : midi.sources.joined(separator: ", "))
+                .foregroundStyle(midi.sources.isEmpty ? .secondary : .primary)
+        }
+        SettingsRow("Last message", explain: "settings:midiLast") { MonitorText(mon: midi.monitor) }
+        SettingsHeading("Presets")
+        SettingsRow("Program change", explain: "settings:programChange") {
+            Toggle("Program changes load presets", isOn: $midi.programChange)
+        }
+        SettingsHeading("Assignments")
+        SettingsRow("Assign", explain: "settings:midiAssign") {
+            Button("Learn on the rig\u{2026}") { m.screen = .rig; midi.learning = true }
+            Button("Clear all", role: .destructive) { midi.maps = [] }.disabled(midi.maps.isEmpty)
+            if midi.maps.isEmpty { SettingsCount("Nothing assigned yet") }
+        }
+        ForEach($midi.maps) { $mp in
+            SettingsRow("CC \(mp.cc) \u{00B7} ch \(mp.channel + 1)") {
+                Text(mp.name).frame(width: SettingsLayout.wide, alignment: .leading)
+                if mp.toggle {
+                    Toggle("Momentary switch", isOn: $mp.momentary)
+                        .help("On: each press flips it. Off: the switch's value sets it (127 = on, 0 = off).")
                 }
+                Spacer()
+                Button { midi.maps.removeAll { $0.id == mp.id } } label: { Image(systemName: "xmark") }.buttonStyle(.borderless).help("Remove")
             }
         }
     }

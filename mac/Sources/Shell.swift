@@ -559,12 +559,18 @@ struct SettingsView: View {
     @EnvironmentObject var updater: Updater
     @StateObject private var ui = SettingsUI()
 
-    /// Left-hand navigation: groups of sections.
-    static let nav: [(group: String, items: [(name: String, icon: String)])] = [
-        ("Playing", [("Audio", "speaker.wave.2"), ("MIDI", "pianokeys"), ("Tuner", "tuningfork")]),
-        ("Sounds", [("Library", "folder")]),
-        ("App", [("Appearance", "paintpalette"), ("Updates", "arrow.down.circle"), ("Help & feedback", "questionmark.bubble"), ("About", "info.circle")]),
+    /// The sections, in order (Windows: SettingsScreen::Nav lists the same).
+    static let nav: [(name: String, icon: String)] = [
+        ("Audio", "speaker.wave.2"), ("MIDI", "pianokeys"), ("Library", "folder"), ("Appearance", "paintpalette"), ("About", "info.circle"),
     ]
+    /// Sections from before 0.4.9 and where they live now.
+    static func current(_ saved: String) -> String {
+        switch saved {
+        case "Tuner": return "Audio"
+        case "Updates", "Help & feedback": return "About"
+        default: return nav.contains { $0.name == saved } ? saved : "Audio"
+        }
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
@@ -572,37 +578,34 @@ struct SettingsView: View {
                 .background(RoundedRectangle(cornerRadius: 12).fill(Color(white: 0.07)))
                 .overlay(RoundedRectangle(cornerRadius: 12).stroke(line))
                 .padding(.vertical, 18)
-            ScrollView { sections.frame(maxWidth: .infinity, alignment: .leading) }
+            ScrollView { section.padding(24).frame(maxWidth: 940, alignment: .leading).frame(maxWidth: .infinity, alignment: .leading) }
         }
         .padding(.horizontal, 24)
         .frame(maxWidth: 1240)                                  // centred on wide windows instead of hugging the sidebar
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .safeAreaInset(edge: .bottom, spacing: 0) { if m.explainOnHover { HoverHelpStrip(idle: "Hover over a setting for an explanation.") } }
     }
 
     var navigation: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text("SETTINGS").font(.system(size: 10 * UI, weight: .bold)).tracking(2).foregroundStyle(.secondary)
-                .padding(.horizontal, 10).padding(.bottom, 10)
-            ForEach(SettingsView.nav, id: \.group) { g in
-                Text(g.group.uppercased()).font(.system(size: 9 * UI, weight: .semibold)).tracking(1).foregroundStyle(.secondary)
-                    .padding(.horizontal, 10).padding(.top, 12).padding(.bottom, 4)
-                ForEach(g.items, id: \.name) { item in
-                    let on = ui.section == item.name
-                    Button { ui.section = item.name } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: item.icon).frame(width: 18 * Z)
-                            Text(item.name).lineLimit(1).fixedSize()
-                            Spacer()
-                            if item.name == "Updates" && updater.available != nil { Circle().fill(.red).frame(width: 8, height: 8) }
-                        }
-                        .font(.system(size: 12 * UI))
-                        .foregroundStyle(on ? Color.accentColor : .primary)
-                        .padding(.horizontal, 10).padding(.vertical, 7)
-                        .background(RoundedRectangle(cornerRadius: 7).fill(on ? Color.white.opacity(0.08) : .clear))
-                        .contentShape(Rectangle())
+                .padding(.horizontal, 10).padding(.bottom, 12)
+            ForEach(SettingsView.nav, id: \.name) { item in
+                let on = SettingsView.current(ui.section) == item.name
+                Button { ui.section = item.name } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: item.icon).frame(width: 18 * Z)
+                        Text(item.name).lineLimit(1).fixedSize()
+                        Spacer()
+                        if item.name == "About" && updater.available != nil { Circle().fill(.red).frame(width: 8, height: 8) }
                     }
-                    .buttonStyle(.plain)
+                    .font(.system(size: 12 * UI))
+                    .foregroundStyle(on ? Color.accentColor : .primary)
+                    .padding(.horizontal, 10).padding(.vertical, 7)
+                    .background(RoundedRectangle(cornerRadius: 7).fill(on ? Color.white.opacity(0.08) : .clear))
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
             }
             Spacer()
         }
@@ -611,152 +614,199 @@ struct SettingsView: View {
         .frame(maxHeight: .infinity, alignment: .top)
     }
 
-    var sections: some View {
-            VStack(alignment: .leading, spacing: 18) {
-                if ui.section == "Audio" {
-                group("Audio") {
-                    row("Input") {
-                        Picker("", selection: $m.inputUID) {
-                            Text("No input (playback only)").tag(Model.noInput)
-                            ForEach(m.inputs) { Text($0.name).tag($0.uid) }
-                            if m.input == nil && m.inputUID != Model.noInput { Text("Not connected").tag(m.inputUID) }
-                        }.labelsHidden().frame(width: 320 * Z)
-                        if (m.input?.ins ?? 1) > 1 {
-                            Picker("", selection: $m.s.inputChannel) {
-                                ForEach(0..<min(m.input?.ins ?? 1, 8), id: \.self) { Text("Channel \($0 + 1)").tag($0) }
-                            }.labelsHidden().frame(width: 160 * Z)
-                        }
-                    }
-                    row("Output") {
-                        Picker("", selection: $m.outputUID) {
-                            ForEach(m.outputs) { d in
-                                Text(d.outputWarning != nil ? "\(d.name) ⚠︎ slow" : String(format: "%@ · %.1f ms", d.name, d.outLatencyMs)).tag(d.uid)
-                            }
-                        }.labelsHidden().frame(width: 320 * Z)
-                        if let w = m.output?.outputWarning { Text(w).foregroundStyle(.orange) }
-                    }
-                    row("Buffer") {
-                        Picker("", selection: $m.bufferSize) { ForEach([16, 32, 64, 128, 256], id: \.self) { Text("\($0) samples").tag($0) } }
-                            .labelsHidden().frame(width: 200 * Z)
-                        if let i = m.info {
-                            Text(String(format: "%.1f kHz · %d samples", i.sampleRate / 1000, i.buffer)).foregroundStyle(.secondary).monospacedDigit()
-                        }
-                    }
-                    if let i = m.info {
-                        row("Latency") {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(String(format: "~%.1f ms round trip", i.latencyMs)).monospacedDigit()
-                                Text(i.breakdown).foregroundStyle(.secondary).monospacedDigit()
-                                Text("Smallest buffer that never crackles is best. Most of the delay is usually the output device: wired headphones or your interface's own output are fastest; Bluetooth, monitor speakers and EQ apps (eqMac) are slowest.")
-                                    .font(.system(size: 11 * UI)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).frame(maxWidth: 560, alignment: .leading)
-                            }
-                        }
-                        row("Engine") { EngineLoad(mt: m.meters) }
-                    }
-                }
-                }
-                if ui.section == "Appearance" {
-                group("Appearance") {
-                    row("Accent colour") {
-                        ColorPicker("", selection: m.accentBinding, supportsOpacity: false).labelsHidden()
-                        ForEach(Array(accentSwatches.enumerated()), id: \.offset) { _, c in
-                            Button { m.accentRGB = c } label: {
-                                Circle().fill(Color(red: c[0], green: c[1], blue: c[2])).frame(width: 22 * Z, height: 22 * Z)
-                                    .overlay(Circle().stroke(Color.white.opacity(m.accentRGB == c ? 0.9 : 0), lineWidth: 2))
-                            }.buttonStyle(.plain)
-                        }
-                        Button("Follow amp channel") { m.accentRGB = nil }.disabled(m.accentRGB == nil)
-                    }
-                    row("Explanations") {
-                        Toggle("Explain controls on hover", isOn: $m.explainOnHover)
-                        Text("Shows what the dial or section under the pointer does, in a strip at the bottom of the rig.").foregroundStyle(.secondary)
-                    }
-                    row("Zoom") {
-                        Button { m.zoomStep(-1) } label: { Image(systemName: "minus") }
-                        Text("\(Int((m.zoom * 100).rounded()))%").monospacedDigit().frame(width: 60 * Z)
-                        Button { m.zoomStep(1) } label: { Image(systemName: "plus") }
-                    }
-                }
-                }
-                if ui.section == "Tuner" {
-                group("Tuner") {
-                    row("Reference") { Stepper(value: $m.a4, in: 430...450, step: 1) { Text("A4 = \(Int(m.a4)) Hz").monospacedDigit() } }
-                    row("Guitar tuning") {
-                        Picker("", selection: $m.tuningIndex) { ForEach(TUNINGS.indices, id: \.self) { Text(TUNINGS[$0].label).tag($0) } }
-                            .labelsHidden().frame(width: 320 * Z)
-                    }
-                }
-                }
-                if ui.section == "Updates" {
-                group("Updates") {
-                    UpdateSettings(row: { label, c in AnyView(row(label) { c }) })
-                }
-                }
-                if ui.section == "MIDI" {
-                group("MIDI") {
-                    MidiSettings(row: { label, c in AnyView(row(label) { c }) })
-                }
-                }
-                if ui.section == "Help & feedback" {
-                group("Help & feedback") {
-                    FeedbackSettings(row: { label, c in AnyView(row(label) { c }) })
-                }
-                }
-                if ui.section == "Library" {
-                group("Library") {
-                    row("Recordings") {
-                        Button("Import recordings (WAV)…") { rec.importRecordings(); m.screen = .recordings }
-                        Button("Open folder") { NSWorkspace.shared.open(Sessions.root) }
-                    }
-                    row("Cab IRs") {
-                        Button("Add IRs…") { m.importCabIRs() }
-                        Button("Open folder") { NSWorkspace.shared.open(CabIRLibrary.root) }
-                        Button("Rescan") { m.cabIRs.scan(); m.objectWillChange.send() }
-                        Text("\(m.cabIRs.files.count) in the IR library").foregroundStyle(.secondary)
-                    }
-                    row("NAM captures") {
-                        Button("Add .nam…") { m.importNam() }
-                        Button("Open folder") { NSWorkspace.shared.open(NamHost.dir) }
-                        Button("Rescan") { m.rescanNam() }
-                        Text("\(m.namHost.files.count) loaded · free captures at tone3000.com").foregroundStyle(.secondary)
-                    }
-                    row("Captures") {
-                        Button("Open folder") {
-                            try? FileManager.default.createDirectory(at: Capture.dir, withIntermediateDirectories: true)
-                            NSWorkspace.shared.open(Capture.dir)
-                        }
-                        Button("Rescan") { m.reloadCaptures() }
-                        Text("\(m.captures.count) loaded").foregroundStyle(.secondary)
-                    }
-                }
-                }
-                if ui.section == "About" {
-                group("About") {
-                    AboutSettings(row: { label, c in AnyView(row(label) { c }) })
-                }
-                }
-            }
-            .padding(24)
-            .frame(maxWidth: 900, alignment: .leading)
+    @ViewBuilder var section: some View {
+        switch SettingsView.current(ui.section) {
+        case "MIDI": SettingsCard("MIDI") { MidiSettings() }
+        case "Library": SettingsCard("Library") { library }
+        case "Appearance": SettingsCard("Appearance") { appearance }
+        case "About": SettingsCard("About") { UpdateSettings(); FeedbackSettings(); AboutSettings() }
+        default: SettingsCard("Audio") { audio }
+        }
     }
 
-    func group<C: View>(_ title: String, @ViewBuilder _ c: () -> C) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(title).font(.system(size: 14 * UI, weight: .semibold))
-            c()
+    // MARK: Audio
+
+    @ViewBuilder var audio: some View {
+        SettingsHeading("Devices", first: true)
+        SettingsRow("Input", explain: "inputDevice") {
+            Picker("", selection: $m.inputUID) {
+                Text("No input (playback only)").tag(Model.noInput)
+                ForEach(m.inputs) { Text($0.name).tag($0.uid) }
+                if m.input == nil && m.inputUID != Model.noInput { Text("Not connected").tag(m.inputUID) }
+            }.labelsHidden().frame(width: SettingsLayout.wide, alignment: .leading)
         }
-        .padding(16)
+        if (m.input?.ins ?? 1) > 1 {
+            SettingsRow("Input channel", explain: "inputChannel") {
+                Picker("", selection: $m.s.inputChannel) {
+                    ForEach(0..<min(m.input?.ins ?? 1, 8), id: \.self) { Text("Channel \($0 + 1)").tag($0) }
+                }.labelsHidden().frame(width: SettingsLayout.narrow, alignment: .leading)
+            }
+        }
+        SettingsRow("Output", explain: "outputDevice") {
+            Picker("", selection: $m.outputUID) {
+                ForEach(m.outputs) { d in Text(d.outputWarning != nil ? "\(d.name) ⚠︎" : d.name).tag(d.uid) }
+            }.labelsHidden().frame(width: SettingsLayout.wide, alignment: .leading)
+            if let w = m.output?.outputWarning { Text(w).foregroundStyle(.orange).lineLimit(2) }
+        }
+
+        SettingsHeading("Speed")
+        SettingsRow("Buffer", explain: "settings:buffer") {
+            Picker("", selection: $m.bufferSize) {
+                ForEach([16, 32, 64, 128, 256], id: \.self) { n in Text(bufferLabel(n)).tag(n) }
+            }.labelsHidden().frame(width: SettingsLayout.wide, alignment: .leading)
+        }
+        if let i = m.info {
+            SettingsRow("Latency", explain: "settings:latency") {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(latencySummary(i)).monospacedDigit()
+                    Text(String(format: "Input %.1f · buffers %.1f · output %.1f ms · %.1f kHz", i.inMs, i.bufferMs, i.outMs, i.sampleRate / 1000))
+                        .font(.system(size: 11 * UI)).foregroundStyle(.secondary).monospacedDigit()
+                }
+            }
+            SettingsRow("Engine", explain: "settings:engine") { EngineLoad(mt: m.meters) }
+        }
+
+        SettingsHeading("Tuner")
+        SettingsRow("Reference", explain: "settings:a4") {
+            Stepper(value: $m.a4, in: 430...450, step: 1) { Text("A4 = \(Int(m.a4)) Hz").monospacedDigit() }
+        }
+        SettingsRow("Guitar tuning", explain: "settings:tuning") {
+            Picker("", selection: $m.tuningIndex) { ForEach(TUNINGS.indices, id: \.self) { Text(TUNINGS[$0].label).tag($0) } }
+                .labelsHidden().frame(width: SettingsLayout.wide, alignment: .leading)
+        }
+    }
+
+    /// "64 samples · ~9.8 ms": the round trip this buffer size would give with the current devices.
+    func bufferLabel(_ n: Int) -> String {
+        guard let i = m.info, i.buffer > 0 else { return "\(n) samples" }
+        let ms = i.inMs + i.outMs + i.bufferMs * Double(n) / Double(i.buffer)
+        return String(format: "%d samples · ~%.1f ms", n, ms)
+    }
+
+    /// "About 21.4 ms from string to ear, mostly the output device"
+    func latencySummary(_ i: HALEngine.Info) -> String {
+        let parts = [("your interface's input", i.inMs), ("the buffers", i.bufferMs), ("the output device", i.outMs)]
+        let big = parts.max { $0.1 < $1.1 }!
+        let most = big.1 > i.latencyMs * 0.5 ? ", mostly \(big.0)" : ""
+        return String(format: "About %.1f ms from string to ear%@", i.latencyMs, most)
+    }
+
+    // MARK: Library
+
+    @ViewBuilder var library: some View {
+        SettingsRow("Recordings", explain: "settings:recordings") {
+            Button("Import WAV\u{2026}") { rec.importRecordings(); m.screen = .recordings }
+            Button("Open folder") { NSWorkspace.shared.open(Sessions.root) }
+        }
+        SettingsRow("NAM captures", explain: "settings:nam") {
+            Button("Add\u{2026}") { m.importNam() }
+            Button("Open folder") { NSWorkspace.shared.open(NamHost.dir) }
+            Button("Rescan") { m.rescanNam() }
+            SettingsCount("\(m.namHost.files.count) loaded")
+        }
+        SettingsRow("Cab IRs", explain: "settings:cabIRs") {
+            Button("Add\u{2026}") { m.importCabIRs() }
+            Button("Open folder") { NSWorkspace.shared.open(CabIRLibrary.root) }
+            Button("Rescan") { m.cabIRs.scan(); m.objectWillChange.send() }
+            SettingsCount("\(m.cabIRs.files.count) in the library")
+        }
+        SettingsRow("Your captures", explain: "settings:captures") {
+            Button("Open folder") {
+                try? FileManager.default.createDirectory(at: Capture.dir, withIntermediateDirectories: true)
+                NSWorkspace.shared.open(Capture.dir)
+            }
+            Button("Rescan") { m.reloadCaptures() }
+            SettingsCount("\(m.captures.count) loaded")
+        }
+    }
+
+    // MARK: Appearance
+
+    @ViewBuilder var appearance: some View {
+        SettingsRow("Accent colour", explain: "settings:accent") {
+            ColorPicker("", selection: m.accentBinding, supportsOpacity: false).labelsHidden()
+            ForEach(Array(accentSwatches.enumerated()), id: \.offset) { _, c in
+                Button { m.accentRGB = c } label: {
+                    Circle().fill(Color(red: c[0], green: c[1], blue: c[2])).frame(width: 22 * Z, height: 22 * Z)
+                        .overlay(Circle().stroke(Color.white.opacity(m.accentRGB == c ? 0.9 : 0), lineWidth: 2))
+                }.buttonStyle(.plain)
+            }
+            Button("Follow amp channel") { m.accentRGB = nil }.disabled(m.accentRGB == nil)
+        }
+        SettingsRow("Zoom", explain: "settings:zoom") {
+            Button { m.zoomStep(-1) } label: { Image(systemName: "minus") }
+            Text("\(Int((m.zoom * 100).rounded()))%").monospacedDigit().frame(width: 56 * Z)
+            Button { m.zoomStep(1) } label: { Image(systemName: "plus") }
+        }
+        SettingsRow("Explanations", explain: "settings:explain") {
+            Toggle("Explain controls on hover", isOn: $m.explainOnHover)
+        }
+    }
+}
+
+// MARK: - Settings layout: one card per section, sub-headings, and rows on a shared grid
+
+/// A section: its title, then rows. Every section uses the same card, spacing and label column.
+struct SettingsCard<C: View>: View {
+    let title: String
+    @ViewBuilder let content: C
+    init(_ title: String, @ViewBuilder content: () -> C) { self.title = title; self.content = content() }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10 * Z) {
+            Text(title).font(.system(size: 16 * UI, weight: .semibold)).padding(.bottom, 4 * Z)
+            content
+        }
+        .padding(20 * Z)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 12).fill(panel))
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(line))
     }
+}
 
-    func row<C: View>(_ label: String, @ViewBuilder _ c: () -> C) -> some View {
-        HStack(spacing: 12) {
-            Text(label).foregroundStyle(.secondary).frame(width: 160 * Z, alignment: .leading)
-            c()
+/// A small heading inside a section ("DEVICES"), with a rule above it except at the top.
+struct SettingsHeading: View {
+    let text: String, first: Bool
+    init(_ text: String, first: Bool = false) { self.text = text; self.first = first }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8 * Z) {
+            if !first { Rectangle().fill(line).frame(height: 1).padding(.top, 8 * Z) }
+            Text(text.uppercased()).font(.system(size: 9 * UI, weight: .semibold)).tracking(1.2).foregroundStyle(.secondary)
         }
     }
+}
+
+/// Label in a fixed left column, controls from the same x on every row, one minimum height; hovering anywhere on
+/// the row explains it in the strip at the bottom.
+enum SettingsLayout {
+    static var labelWidth: CGFloat { 170 * Z }   // the label column
+    static var wide: CGFloat { 320 * Z }         // device and tuning pickers
+    static var narrow: CGFloat { 180 * Z }       // channel picker
+}
+
+struct SettingsRow<C: View>: View {
+    let label: String, key: String?
+    @ViewBuilder let content: C
+    init(_ label: String, explain key: String? = nil, @ViewBuilder content: () -> C) { self.label = label; self.key = key; self.content = content() }
+    var body: some View {
+        HStack(alignment: .center, spacing: 10 * Z) {
+            Text(label).foregroundStyle(.secondary).frame(width: SettingsLayout.labelWidth, alignment: .leading)
+            content
+            Spacer(minLength: 0)
+        }
+        .frame(minHeight: 30 * Z)
+        .contentShape(Rectangle())
+        .onHover { inside in
+            guard let key else { return }
+            if inside { HoverHelp.shared.show(id: "settings·" + label, title: label, text: EXPLAIN[key]) } else { HoverHelp.shared.clear(id: "settings·" + label) }
+        }
+    }
+}
+
+/// A count after a row's buttons ("34 loaded").
+struct SettingsCount: View {
+    let text: String
+    init(_ text: String) { self.text = text }
+    var body: some View { Text(text).foregroundStyle(.secondary).monospacedDigit().padding(.leading, 4 * Z) }
 }
 
 // MARK: - Grid layout: panels snap to a 24-column grid so edges line up across rows

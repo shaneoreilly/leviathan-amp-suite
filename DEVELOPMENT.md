@@ -140,7 +140,7 @@ mac/                     macOS app (Swift, SwiftUI, CoreAudio)
     Tempo.swift          tempo, metronome, tap
     Updater.swift        self-update from GitHub releases
     PresetFiles.swift    .leviathan import / export
-    Feedback.swift       Help & feedback, About
+    Feedback.swift       bug reports and feature requests; Settings > About
     IRLibrary.swift      God's Cab browser and the cab IR library
     Logo.swift           the logo as stroke geometry (in-app mark, icon, SVG)
   Capture/               amp-capture test signal + model fitter (Python)

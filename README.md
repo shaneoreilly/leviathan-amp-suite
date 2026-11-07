@@ -157,7 +157,7 @@ Leviathan uses two kinds of sound file:
 
 ## Help and feedback
 
-Found a problem or have an idea? In Leviathan, go to **Settings → Help & feedback**. It opens a form with your setup already filled in. You can also [open an issue on GitHub](https://github.com/shaneoreilly/leviathan-amp-suite/issues/new/choose).
+Found a problem or have an idea? In Leviathan, go to **Settings → About** and click **Report a bug** or **Request a feature**. It opens a form with your setup already filled in. You can also [open an issue on GitHub](https://github.com/shaneoreilly/leviathan-amp-suite/issues/new/choose).
 
 ## Credits and license
 
