@@ -96,6 +96,7 @@ These are built and reasoned through, but nobody has tried them on real hardware
 | 0.4.6 | Saved presets load after updates (lenient decode; unreadable ones kept); 23 more NAM captures (34 total); Presets columns NAME / MODIFIED / LAST PLAYED (YYYY-MM-DD HH:MM, import date fallback); decluttered Amp and Cabinet panels; Master output picker; rows fill the width |
 | 0.4.7 | Low power chords stay clean in the pitch shifter (30 ms search, centred 10 ms window); collapsing a panel moves nothing else; INPUT/MASTER pickers level; gate Release to 2 s; CI on every push |
 | 0.4.8 | What's new popup in the update banner: release notes rendered in the app (paragraphs as bullets, NYC release time, every version since yours), Update Now / Ignore; update progress and errors in the banner |
+| 0.5.0 | Amp B (dual amp, mid/side, polarity-aligned captures); Doubler; FDN reverb replaces Freeverb; Gate Depth and two-stage gate (no hang-then-drop through high gain); Undo; unsaved-changes prompt; Settings in 5 sections on one grid with hover help; 48-column rig grid; clearer audio-start errors |
 
 Full detail is in the GitHub release notes for each version.
 
