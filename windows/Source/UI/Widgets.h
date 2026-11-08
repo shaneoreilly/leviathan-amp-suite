@@ -52,6 +52,8 @@ public:
     void sync();
     void paint(juce::Graphics&) override;
     void mouseUp(const juce::MouseEvent&) override;
+    void mouseEnter(const juce::MouseEvent&) override { repaint(); }   // outline follows the pointer
+    void mouseExit(const juce::MouseEvent&) override { repaint(); }
     MidiArmed armed;
 private:
     Model& model; float r;

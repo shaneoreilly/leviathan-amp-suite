@@ -203,10 +203,14 @@ final class Midi: ObservableObject {
 }
 
 /// Learn-mode overlay for a knob dial or an on/off switch: click to arm, shows the assigned CC.
+/// Whether the pointer is over a control in MIDI learn mode.
+final class HoverFlag: ObservableObject { @Published var on = false }
+
 struct MidiLearnOverlay: View {
     @EnvironmentObject var midi: Midi
     let armed: MidiArmed
     var cornerRadius: CGFloat = 10
+    @StateObject private var hover = HoverFlag()
 
     var body: some View {
         if midi.learning { box } else { EmptyView() }
@@ -235,8 +239,10 @@ struct MidiLearnOverlay: View {
 
     private var box: some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius)
-        let stroke: Color = isArmed ? Color.accentColor : Color.white.opacity(0.35)
-        let style = StrokeStyle(lineWidth: isArmed ? 2 : 1, dash: isArmed ? [] : [3, 3])
+        // a light tint on every assignable control; a solid outline only on the one you're pointing at or arming
+        // (dashed outlines on every control looked like a rendering glitch)
+        let stroke: Color = isArmed || hover.on ? Color.accentColor : .clear
+        let style = StrokeStyle(lineWidth: isArmed ? 2 : 1.5)
         let showLabel = isArmed || mapped != nil
         return shape.fill(fillColor)
             .overlay(shape.stroke(stroke, style: style))
@@ -247,6 +253,7 @@ struct MidiLearnOverlay: View {
                     .opacity(showLabel ? 1 : 0)
             }
             .contentShape(Rectangle())
+            .onHover { hover.on = $0 }
             .onTapGesture { midi.arm(armed) }
             .contextMenu { if mapped != nil { Button("Forget MIDI") { midi.forget(armed.key) } } }
             .help(tip)

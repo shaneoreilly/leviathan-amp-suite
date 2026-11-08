@@ -112,13 +112,10 @@ void LearnOverlay::paint(juce::Graphics& g) {
     auto b = getLocalBounds().toFloat().reduced(1);
     g.setColour(isArmed ? acc.withAlpha(0.35f) : mapped ? acc.withAlpha(0.15f) : juce::Colours::white.withAlpha(0.04f));
     g.fillRoundedRectangle(b, r);
+    // a light tint on every assignable control; a solid outline only on the one you're pointing at or arming
+    // (dashed outlines on every control looked like a rendering glitch)
     if (isArmed) { g.setColour(acc); g.drawRoundedRectangle(b, r, 2); }
-    else {
-        juce::Path p; p.addRoundedRectangle(b, r);
-        juce::Path dashed; const float dl[] = { 3, 3 };
-        juce::PathStrokeType(1).createDashedStroke(dashed, p, dl, 2);
-        g.setColour(juce::Colours::white.withAlpha(0.35f)); g.fillPath(dashed);
-    }
+    else if (isMouseOver()) { g.setColour(acc); g.drawRoundedRectangle(b, r, 1.5f); }
     const auto label = isArmed ? juce::String("move a\ncontrol") : mapped ? "CC " + juce::String(mapped->cc) : juce::String();
     if (label.isNotEmpty()) {
         g.setFont(theme::font(9, true));
