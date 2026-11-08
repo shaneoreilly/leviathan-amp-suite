@@ -78,7 +78,7 @@ private:
     std::unique_ptr<juce::AudioFormatWriter> dryWriter, wetWriter;
     juce::File recDir; double recRate = 48000; juce::Time recStart; juce::int64 recFrames = 0;
     std::vector<float> tmp[3];
-    int playLen = 0; double playRate = 48000;
+    int playLen = 0, fullLen = 0; double playRate = 48000;
     float liveLo = 0, liveHi = 0; int liveN = 0;
     /// The take last loaded for playback, kept so clicking around the waveform doesn't reload the file.
     juce::File loadedFile; double loadedRate = 0; std::vector<std::vector<float>> loadedCh;

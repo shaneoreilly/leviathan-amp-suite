@@ -470,8 +470,15 @@ struct Waveform : juce::Component {
         model.sessions->selection = std::make_pair(std::min(a, b), std::max(std::min(a, b) + 0.05, std::max(a, b)));
         changed();
     }
-    void mouseUp(const juce::MouseEvent& e) override {   // a plain click clears the selection and plays from there
-        if (dragging == 0 && !selecting) { model.sessions->selection.reset(); seekTo(e); changed(); }
+    void mouseUp(const juce::MouseEvent& e) override {   // a plain click seeks (and clears a selection it's outside of)
+        if (dragging == 0 && !selecting) {
+            auto& s = *model.sessions;
+            if (auto* cur = s.current(); cur && s.selection) {
+                const double t = juce::jlimit(0.0, 1.0, (double) e.x / getWidth()) * cur->duration;
+                if (t < s.selection->first || t > s.selection->second) s.selection.reset();
+            }
+            seekTo(e); changed();
+        }
         dragging = 0; selecting = false;
     }
     void dragHandle(const juce::MouseEvent& e) {

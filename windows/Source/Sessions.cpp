@@ -236,14 +236,16 @@ void Sessions::play(double from, double to) {
     p.bkL.store(l); p.bkR.store(r); p.bkLen.store(len); p.bkLoop.store(false); p.bkVol = 0;
     p.bkPos.store(std::min((int) (from * sr), std::max(len - 1, 0)));
     p.bkPlaying.store(true, std::memory_order_release);
-    playLen = len; playRate = sr; playing = true;
+    playLen = len; fullLen = full; playRate = sr; playing = true;
     m.changed();
 }
 
 void Sessions::seek(double t) {
-    // still playing in the engine: just move the playhead; otherwise (stopped, or it ran off the end) start again from t
-    if (playing && m.params.bkPlaying.load()) { m.params.bkSeek.store(juce::jlimit(0, std::max(playLen - 1, 0), (int) (t * playRate))); playPos = t; }
-    else play(t);
+    // still playing the right range in the engine: just move the playhead; otherwise (stopped, ran off the end, or the
+    // selection changed under it) start again from t, up to the end of the selection if there is one
+    const int want = selection ? juce::jlimit(1, std::max(fullLen, 1), (int) (selection->second * playRate)) : fullLen;
+    if (playing && m.params.bkPlaying.load() && want == playLen) { m.params.bkSeek.store(juce::jlimit(0, std::max(playLen - 1, 0), (int) (t * playRate))); playPos = t; }
+    else play(t, selection ? selection->second : -1.0);
 }
 
 void Sessions::stopPlayback() {

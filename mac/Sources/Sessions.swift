@@ -70,7 +70,7 @@ final class Sessions: ObservableObject {
 
     private var dryFile: AVAudioFile?, wetFile: AVAudioFile?, recDir: URL?, recRate = 48000.0, recStart = Date()
     private let tmp = (0..<3).map { _ in UnsafeMutablePointer<Float>.allocate(capacity: 1 << 18) }
-    private var playLen = 0, playRate = 48000.0
+    private var playLen = 0, fullLen = 0, playRate = 48000.0
 
     init(model: Model) {
         m = model
@@ -261,12 +261,15 @@ final class Sessions: ObservableObject {
         OSMemoryBarrier()
         p.bkPlaying = true
         retire(oldL, oldR)
-        playLen = len; playRate = sr; playing = true
+        playLen = len; fullLen = l.count; playRate = sr; playing = true
     }
 
     func seek(_ t: Double) {
-        // still playing in the engine: just move the playhead; otherwise (stopped, or it ran off the end) start again from t
-        if playing && m.params.bkPlaying { m.params.bkSeek = max(0, min(Int(t * playRate), playLen - 1)); playPos = t } else { play(from: t) }
+        // still playing the right range in the engine: just move the playhead; otherwise (stopped, ran off the end, or
+        // the selection changed under it) start again from t, up to the end of the selection if there is one
+        let want = selection.map { min(max(Int($0.end * playRate), 1), fullLen) } ?? fullLen
+        if playing && m.params.bkPlaying && want == playLen { m.params.bkSeek = max(0, min(Int(t * playRate), playLen - 1)); playPos = t }
+        else { play(from: t, to: selection?.end) }
     }
 
     func stopPlayback() {

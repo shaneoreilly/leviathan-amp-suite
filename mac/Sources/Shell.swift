@@ -365,7 +365,8 @@ struct RecordingsView: View {
     func detail(_ s: Session) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             WaveformView(samples: rec.waveform, duration: s.meta.duration, position: rec.playing ? rec.playPos : nil,
-                         seek: { rec.seek($0) }, select: { a, b in rec.selection = .init(start: a, end: b) }, clear: { rec.selection = nil })
+                         seek: { rec.seek($0) }, select: { a, b in rec.selection = .init(start: a, end: b) },
+                         clear: { t in if let sel = rec.selection, t < sel.start || t > sel.end { rec.selection = nil } })
                 .overlay {
                     if let sel = rec.selection {
                         TrimOverlay(duration: s.meta.duration,
@@ -519,7 +520,8 @@ struct WaveformView: View {
     let position: Double?
     let seek: (Double) -> Void
     var select: (Double, Double) -> Void = { _, _ in }
-    var clear: () -> Void = {}
+    /// A plain click at time t (the screen clears the selection unless t is inside it).
+    var clear: (Double) -> Void = { _ in }
     @StateObject private var drag = DragFlag()
 
     var body: some View {
@@ -566,8 +568,8 @@ struct WaveformView: View {
                     let a = max(0, min(Double(v.startLocation.x / w), 1)) * duration, b = max(0, min(Double(v.location.x / w), 1)) * duration
                     select(min(a, b), max(min(a, b) + 0.05, max(a, b)))
                 }
-                .onEnded { v in     // a plain click clears the selection and plays from there
-                    if !drag.on { clear(); seek(max(0, min(Double(v.location.x / w), 1)) * duration) }
+                .onEnded { v in     // a plain click seeks (and clears a selection it's outside of)
+                    if !drag.on { let t = max(0, min(Double(v.location.x / w), 1)) * duration; clear(t); seek(t) }
                     drag.on = false
                 })
         }
