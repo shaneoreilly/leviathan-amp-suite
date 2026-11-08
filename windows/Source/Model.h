@@ -122,6 +122,17 @@ public:
     bool tunerOn = false, tunerMute = true;
     int tuningIndex = 1;
     double a4 = 440;
+
+    // MARK: NAM input calibration (as in the NAM plugin; app-wide, not per preset)
+    bool namCalibrate = false;
+    double interfaceLevel = 12;   // dBu that reaches 0 dBFS on your input
+    std::optional<double> namCalibration() const { return namCalibrate ? std::optional<double>(interfaceLevel) : std::nullopt; }
+    void setNamCalibrate(bool on);
+    void setInterfaceLevel(double dbu);
+    /// Per loaded capture (amp A, amp B): its calibrated input level if the file has one, and the trim applied (dB).
+    std::optional<double> namInputLevel, namInputLevelB; double namTrim = 0, namTrimB = 0;
+    /// Input calibration gain (dB) for a capture made at `capture` dBu, with your interface at `interface` dBu (nullopt = off).
+    static double calibrationTrim(std::optional<double> capture, std::optional<double> interface);
     juce::String tunerNote = juce::String::fromUTF8("\xe2\x80\x93");
     double tunerCents = 0, tunerFreq = 0;
     int tunerString = -1;
@@ -165,6 +176,7 @@ public:
     juce::StringArray namFiles;
     juce::String namLoaded;                 // name of the model in the engine now
     double namExpectedRate = 0; std::optional<double> namLoudness;
+    bool namReadyB() const { return namModelB != nullptr && namLoadedB == settings.s("ampBNam") && settings.s("ampBNam").isNotEmpty(); }
     bool namReady() const { return namModel != nullptr && namLoaded == settings.s("nam") && settings.s("nam").isNotEmpty(); }
     void rescanNam();
     void importNamDialog();
@@ -219,13 +231,13 @@ private:
     Settings settings;
     std::unique_ptr<juce::PropertiesFile> propsFile;
     std::optional<std::pair<std::vector<float>, double>> userIR;
-    LevNam* namModel = nullptr; double namRate = 0; float namGain = 1; int namGen = 0;
-    LevNam* namModelB = nullptr; double namRateB = 0; float namGainB = 1; int namGenB = 0; juce::String namLoadedB;
-    void setEngineNamB(LevNam* m, float gain);
+    LevNam* namModel = nullptr; double namRate = 0; float namGain = 1, namIn = 1; int namGen = 0; std::optional<double> namCal;
+    LevNam* namModelB = nullptr; double namRateB = 0; float namGainB = 1, namInB = 1; int namGenB = 0; juce::String namLoadedB; std::optional<double> namCalB;
+    void setEngineNamB(LevNam* m, float gain, float input = 1);
     std::shared_ptr<std::atomic<bool>> alive = std::make_shared<std::atomic<bool>>(true);
-    struct NamOpen { LevNam* m = nullptr; float gain = 1; double expected = 0; std::optional<double> loudness; };
-    static NamOpen openNam(const juce::File& f, double rate);
-    void setEngineNam(LevNam* m, float gain);
+    struct NamOpen { LevNam* m = nullptr; float gain = 1, input = 1; double expected = 0, trim = 0; std::optional<double> loudness, inputLevel; };
+    static NamOpen openNam(const juce::File& f, double rate, std::optional<double> calibration);
+    void setEngineNam(LevNam* m, float gain, float input = 1);
 
     // engine (the DSP is created when the device starts, at its rate)
     juce::SpinLock dspLock;

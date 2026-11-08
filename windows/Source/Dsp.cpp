@@ -503,13 +503,15 @@ void DSP::process(const float* input, float* outL, float* outR, int frames) {
     LevNam* nb = namB.load(std::memory_order_acquire);
     const bool sideOn = nb != nullptr && (bMix.target > 0 || bMix.v > 1e-4f);
     if (sideOn) {
-        for (int i = 0; i < n; ++i) bBuf[(size_t) i] = a[(size_t) i];
+        const float k = namBCal.load();
+        for (int i = 0; i < n; ++i) bBuf[(size_t) i] = a[(size_t) i] * k;
         if (!sideWasOn) std::fill(hist2.begin(), hist2.end(), 0.0f);
     }
 
     LevNam* nm = p.namOn ? nam.load(std::memory_order_acquire) : nullptr;
     if (nm) {
-        for (int i = 0; i < n; ++i) namBuf[(size_t) i] = a[(size_t) i] * namInG.next(c);
+        const float k = namCal.load();
+        for (int i = 0; i < n; ++i) namBuf[(size_t) i] = a[(size_t) i] * namInG.next(c) * k;
         lev_nam_process(nm, namBuf.data(), namBuf.data(), n);
         const float g = namGain.load();
         for (int i = 0; i < n; ++i) {

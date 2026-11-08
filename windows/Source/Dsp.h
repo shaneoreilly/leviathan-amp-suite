@@ -236,8 +236,9 @@ public:
     void setIR(const std::vector<float>& h);
     /// Swap in a NAM model (already reset for this rate and maxN), with its loudness-normalising gain.
     /// The caller keeps ownership and frees the previous model once the audio thread has moved on.
-    void setNam(LevNam* m, float gain) { namGain.store(gain); nam.store(m, std::memory_order_release); }
-    void setNamB(LevNam* m, float gain) { namBGain.store(gain); namB.store(m, std::memory_order_release); }
+    /// `input` is the input calibration gain into the capture (1 = none).
+    void setNam(LevNam* m, float gain, float input = 1) { namGain.store(gain); namCal.store(input); nam.store(m, std::memory_order_release); }
+    void setNamB(LevNam* m, float gain, float input = 1) { namBGain.store(gain); namBCal.store(input); namB.store(m, std::memory_order_release); }
     void process(const float* input, float* outL, float* outR, int frames);
 
 private:
@@ -258,9 +259,9 @@ private:
     Smooth ampMix, aPre, aVol;
     Voicing v = VOICINGS[2]; float tb1 = 0, tb2 = 0;
 
-    std::atomic<LevNam*> nam { nullptr }; std::atomic<float> namGain { 1 };
+    std::atomic<LevNam*> nam { nullptr }; std::atomic<float> namGain { 1 }, namCal { 1 };
     // Amp B: its capture, the pre-amp copy it runs on, and the side signal (A - B) with its own EQ, cab and filter state
-    std::atomic<LevNam*> namB { nullptr }; std::atomic<float> namBGain { 1 };
+    std::atomic<LevNam*> namB { nullptr }; std::atomic<float> namBGain { 1 }, namBCal { 1 };
     Smooth bMix, bLvl, bSpread; bool sideWasOn = false;
     std::vector<float> bBuf = std::vector<float>(maxN, 0.0f), sBuf = std::vector<float>(maxN, 0.0f), sConv = std::vector<float>(maxN, 0.0f),
                        hist2 = std::vector<float>(maxIR + maxN, 0.0f);

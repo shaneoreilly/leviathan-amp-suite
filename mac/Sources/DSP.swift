@@ -485,7 +485,7 @@ final class DSP {
     private var kLvl = Smooth()
 
     // NAM capture: model pointer swapped in by the main thread (shared C++ bridge, same code as the Windows app)
-    private var nam: OpaquePointer?, namGain: Float = 1
+    private var nam: OpaquePointer?, namGain: Float = 1, namCal: Float = 1   // namCal: input calibration gain
     private var namInG = Smooth(), namOutG = Smooth()
     private let namBuf = UnsafeMutablePointer<Float>.allocate(capacity: DSP.maxN)
 
@@ -501,7 +501,7 @@ final class DSP {
     private var irActive = 0
     private let hist = UnsafeMutablePointer<Float>.allocate(capacity: DSP.maxIR + DSP.maxN)
     // Amp B: its capture, the pre-amp copy it runs on, and the side signal (A - B) with its own EQ, cab and filter state
-    private var namB: OpaquePointer?, namBGain: Float = 1, namBOwned = false
+    private var namB: OpaquePointer?, namBGain: Float = 1, namBCal: Float = 1, namBOwned = false
     private var bMix = Smooth(), bLvl = Smooth(), bSpread = Smooth(), sideWasOn = false
     private let bBuf: UnsafeMutablePointer<Float> = { let x = UnsafeMutablePointer<Float>.allocate(capacity: DSP.maxN); x.initialize(repeating: 0, count: DSP.maxN); return x }()
     private let sBuf: UnsafeMutablePointer<Float> = { let x = UnsafeMutablePointer<Float>.allocate(capacity: DSP.maxN); x.initialize(repeating: 0, count: DSP.maxN); return x }()
@@ -552,8 +552,8 @@ final class DSP {
 
     /// Swap in a NAM model (already reset for this rate and maxN) and its loudness-normalising gain.
     /// The caller keeps ownership and frees the previous model once the audio thread has moved on.
-    func setNam(_ m: OpaquePointer?, gain: Float, owned: Bool = false) { namGain = gain; namOwned = owned; OSMemoryBarrier(); nam = m }
-    func setNamB(_ m: OpaquePointer?, gain: Float, owned: Bool = false) { namBGain = gain; namBOwned = owned; OSMemoryBarrier(); namB = m }
+    func setNam(_ m: OpaquePointer?, gain: Float, input: Float = 1, owned: Bool = false) { namGain = gain; namCal = input; namOwned = owned; OSMemoryBarrier(); nam = m }
+    func setNamB(_ m: OpaquePointer?, gain: Float, input: Float = 1, owned: Bool = false) { namBGain = gain; namBCal = input; namBOwned = owned; OSMemoryBarrier(); namB = m }
     private var namOwned = false
     deinit { if namOwned, let nam { lev_nam_free(nam) }; if namBOwned, let namB { lev_nam_free(namB) } }
 
@@ -700,12 +700,13 @@ final class DSP {
 
         // Amp B runs on the same pedal output: keep a copy before amp A changes it
         let nb = namB, sideOn = nb != nil && (bMix.target > 0 || bMix.v > 1e-4)
-        if sideOn { for i in 0..<n { bBuf[i] = a[i] }; if !sideWasOn { hist2.update(repeating: 0, count: DSP.maxIR + DSP.maxN) } }
+        if sideOn { let k = namBCal; for i in 0..<n { bBuf[i] = a[i] * k }; if !sideWasOn { hist2.update(repeating: 0, count: DSP.maxIR + DSP.maxN) } }
 
         // NAM capture in place of the amp (block-processed; same bridge as the Windows app)
         let nm = p.namOn ? nam : nil
         if let nm {
-            for i in 0..<n { namBuf[i] = a[i] * namInG.next(c) }
+            let k = namCal
+            for i in 0..<n { namBuf[i] = a[i] * namInG.next(c) * k }
             lev_nam_process(nm, namBuf, namBuf, Int32(n))
             let g = namGain
             for i in 0..<n {

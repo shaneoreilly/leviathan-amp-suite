@@ -698,6 +698,22 @@ struct SettingsView: View {
             SettingsRow("Engine", explain: "settings:engine") { EngineLoad(mt: m.meters) }
         }
 
+        SettingsHeading("Amp captures")
+        SettingsRow("Calibrate input", explain: "settings:namCalibrate") {
+            Toggle("Match each capture's input level", isOn: $m.namCalibrate)
+        }
+        if m.namCalibrate {
+            SettingsRow("Interface level", explain: "settings:interfaceLevel") {
+                Stepper(value: $m.interfaceLevel, in: -10...30, step: 0.5) { Text(String(format: "%.1f dBu", m.interfaceLevel)).monospacedDigit() }
+            }
+            SettingsRow("Now", explain: "settings:namCalibrate") {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(calibrationLine("Amp", m.s.nam, m.namHost))
+                    if m.s.ampBOn && !m.s.ampBNam.isEmpty { Text(calibrationLine("Amp B", m.s.ampBNam, m.namHostB)) }
+                }.font(.system(size: 11 * UI)).foregroundStyle(.secondary).monospacedDigit()
+            }
+        }
+
         SettingsHeading("Tuner")
         SettingsRow("Reference", explain: "settings:a4") {
             Stepper(value: $m.a4, in: 430...450, step: 1) { Text("A4 = \(Int(m.a4)) Hz").monospacedDigit() }
@@ -706,6 +722,14 @@ struct SettingsView: View {
             Picker("", selection: $m.tuningIndex) { ForEach(TUNINGS.indices, id: \.self) { Text(TUNINGS[$0].label).tag($0) } }
                 .labelsHidden().frame(width: SettingsLayout.wide, alignment: .leading)
         }
+    }
+
+    /// "Amp: +3.0 dB (captured at 9.0 dBu)": what input calibration is doing to a loaded capture.
+    func calibrationLine(_ label: String, _ name: String, _ h: NamHost) -> String {
+        if name.isEmpty { return "\(label): no capture (the built-in amp isn't calibrated)" }
+        guard h.loadedName == name, h.model != nil else { return "\(label): loads when audio starts" }
+        guard let lvl = h.inputLevel else { return "\(label): this capture has no input level, so it's left as it is" }
+        return String(format: "%@: %+.1f dB (captured at %.1f dBu)", label, h.inputTrim, lvl)
     }
 
     /// "64 samples · ~9.8 ms": the round trip this buffer size would give with the current devices.

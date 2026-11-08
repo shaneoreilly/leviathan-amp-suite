@@ -24,7 +24,7 @@ static float testInput(int i, double sr) {
     return (float) x;
 }
 
-struct Scenario { const char* name; void (*setup)(Params&); std::vector<float> (*ir)(double sr); bool nam = false; bool namB = false; };
+struct Scenario { const char* name; void (*setup)(Params&); std::vector<float> (*ir)(double sr); bool nam = false; bool namB = false; float cal = 1; };
 
 static std::vector<float> builtinCab(double sr) { return renderCab(CABS[0], 0.3, sr); }
 
@@ -102,6 +102,10 @@ static const Scenario scenarios[] = {
         p.chainCount = 0; p.ampOn = true; p.ampChannel = 2; p.ampGain = 0.6f; p.eqOn = true; p.cabOn = true; p.masterVol = -6;
         p.ampBOn = true; p.ampBLevel = -2; p.ampBSpread = 0.8f; p.gateOn = true; p.gateThresh = -50;
     }, builtinCab, false, true },
+    { "nam_calibrated", [](Params& p) {   // input calibration gain into both captures
+        p.chainCount = 0; p.ampOn = true; p.namOn = true; p.namIn = 1; p.eqOn = true; p.cabOn = true; p.masterVol = -6;
+        p.ampBOn = true; p.ampBLevel = -2; p.ampBSpread = 0.8f; p.gateOn = true; p.gateThresh = -50;
+    }, builtinCab, true, true, 1.8f },
     { "metronome", [](Params& p) {
         p.ampOn = false; p.cabOn = false; p.eqOn = false; p.chainCount = 0; p.gateOn = false;
         p.metroOn = true; p.bpm = 133; p.beatsPerBar = 3; p.metroVol = -6;
@@ -124,7 +128,7 @@ int main(int argc, char** argv) {
             nm = lev_nam_load(argv[2], err, sizeof err);
             if (!nm) { std::fprintf(stderr, "nam: %s\n", err); return 1; }
             lev_nam_reset(nm, sr, DSP::maxN);
-            d.setNam(nm, 0.5f);
+            d.setNam(nm, 0.5f, sc.cal);
         }
         LevNam* nmB = nullptr;
         if (sc.namB) {   // Amp B: a second instance of the same example model
@@ -132,7 +136,7 @@ int main(int argc, char** argv) {
             nmB = lev_nam_load(argv[2], err, sizeof err);
             if (!nmB) { std::fprintf(stderr, "nam: %s\n", err); return 1; }
             lev_nam_reset(nmB, sr, DSP::maxN);
-            d.setNamB(nmB, 0.5f);
+            d.setNamB(nmB, 0.5f, sc.cal * 0.7f);
         }
         std::vector<float> in((size_t) block), l((size_t) total), r((size_t) total);
         for (int t = 0; t < total; t += block) {

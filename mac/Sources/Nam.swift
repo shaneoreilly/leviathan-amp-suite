@@ -18,14 +18,17 @@ final class NamHost {
     private(set) var model: OpaquePointer?
     private(set) var loadedName = "", loadedRate = 0.0
     private(set) var expectedRate = 0.0, loudness: Double?
+    /// The capture's calibrated input level (dBu at 0 dBFS), if its file has one, and the input gain applied for it.
+    private(set) var inputLevel: Double?, inputTrim = 0.0
+    private var loadedCal: Double?
     private var generation = 0
 
     /// 0 = amp A, 1 = amp B: which engine slot this host loads into.
     let slot: Int
     init(slot: Int = 0) { self.slot = slot; scan() }
 
-    private func install(_ m: OpaquePointer?, gain: Float, dsp: DSP?) {
-        if slot == 0 { dsp?.setNam(m, gain: gain) } else { dsp?.setNamB(m, gain: gain) }
+    private func install(_ m: OpaquePointer?, gain: Float, input: Float, dsp: DSP?) {
+        if slot == 0 { dsp?.setNam(m, gain: gain, input: input) } else { dsp?.setNamB(m, gain: gain, input: input) }
     }
 
     func scan() {
@@ -45,34 +48,47 @@ final class NamHost {
         return NamHost.bundled?.appendingPathComponent(name + ".nam") ?? mine
     }
 
-    /// Loads (off the main thread) and reset for `rate`; returns the model and its loudness-normalising gain.
-    nonisolated static func open(_ url: URL, rate: Double) -> (model: OpaquePointer, gain: Float, expected: Double, loudness: Double?)? {
+    struct Opened { let model: OpaquePointer, gain: Float, input: Float, expected: Double, loudness: Double?, inputLevel: Double?, trim: Double }
+
+    /// Input calibration: the gain (dB) that makes your interface hit the capture the way the original rig did.
+    /// `interface` is the level (dBu) that reaches 0 dBFS on your input, or nil when calibration is off.
+    nonisolated static func calibrationTrim(capture: Double?, interface: Double?) -> Double {
+        guard let capture, let interface else { return 0 }
+        return min(max(interface - capture, -24), 24)
+    }
+
+    /// Loads (off the main thread) and reset for `rate`; returns the model, its loudness-normalising gain and its
+    /// input calibration gain (`calibration`: your interface's dBu at 0 dBFS, nil = off).
+    nonisolated static func open(_ url: URL, rate: Double, calibration: Double?) -> Opened? {
         var err = [CChar](repeating: 0, count: 256)
         guard let m = lev_nam_load(url.path, &err, Int32(err.count)) else { return nil }
         lev_nam_reset(m, rate, Int32(DSP.maxN))
         let loud: Double? = lev_nam_has_loudness(m) != 0 ? lev_nam_loudness(m) : nil
-        // level-match every capture by measuring it (many files have no loudness metadata)
-        // level-matched, and the right way up (some captures invert, which cancels when two are blended)
-        let gain = Float(pow(10, (LEV_NAM_TARGET_LEVEL - lev_nam_measure_level(m, rate)) / 20)) * Float(lev_nam_polarity(m, rate))
-        return (m, gain, lev_nam_expected_rate(m), loud)
+        let level: Double? = lev_nam_has_input_level(m) != 0 ? lev_nam_input_level(m) : nil
+        let trim = calibrationTrim(capture: level, interface: calibration), input = Float(pow(10, trim / 20))
+        // level-matched (measured at the calibrated input, since many files have no loudness metadata), and the
+        // right way up (some captures invert, which cancels when two are blended)
+        let gain = Float(pow(10, (LEV_NAM_TARGET_LEVEL - lev_nam_measure_level_in(m, rate, input)) / 20)) * Float(lev_nam_polarity(m, rate))
+        return Opened(model: m, gain: gain, input: input, expected: lev_nam_expected_rate(m), loudness: loud, inputLevel: level, trim: trim)
     }
 
     /// Make `name` the engine's capture at `rate` ("" unloads). `done` reports an error message, if any.
-    func select(_ name: String, rate: Double, dsp: DSP?, done: @escaping (String?) -> Void) {
+    func select(_ name: String, rate: Double, calibration: Double?, dsp: DSP?, done: @escaping (String?) -> Void) {
         generation += 1
         let gen = generation
         if name.isEmpty { swap(nil, name: "", rate: 0, gain: 1, dsp: dsp); done(nil); return }
-        if name == loadedName && rate == loadedRate, model != nil { install(model, gain: currentGain, dsp: dsp); done(nil); return }
+        if name == loadedName && rate == loadedRate && calibration == loadedCal, model != nil { install(model, gain: currentGain, input: currentInput, dsp: dsp); done(nil); return }
         let url = url(name)
         guard FileManager.default.fileExists(atPath: url.path) else { swap(nil, name: "", rate: 0, gain: 1, dsp: dsp); done("NAM capture \u{201C}\(name)\u{201D} isn't in the NAM folder."); return }
         DispatchQueue.global(qos: .userInitiated).async {
-            let r = NamHost.open(url, rate: rate)
+            let r = NamHost.open(url, rate: rate, calibration: calibration)
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     guard gen == self.generation else { if let r { lev_nam_free(r.model) }; return }   // superseded
                     guard let r else { self.swap(nil, name: "", rate: 0, gain: 1, dsp: dsp); done("Couldn't load NAM capture \u{201C}\(name)\u{201D}."); return }
-                    self.expectedRate = r.expected; self.loudness = r.loudness
-                    self.swap(r.model, name: name, rate: rate, gain: r.gain, dsp: dsp)
+                    self.expectedRate = r.expected; self.loudness = r.loudness; self.inputLevel = r.inputLevel; self.inputTrim = r.trim
+                    self.loadedCal = calibration
+                    self.swap(r.model, name: name, rate: rate, gain: r.gain, input: r.input, dsp: dsp)
                     done(r.expected > 0 && abs(r.expected - rate) > 1
                          ? String(format: "\u{201C}%@\u{201D} was captured at %.1f kHz but the engine runs at %.1f kHz, so it won't sound quite right. Use a %.0f kHz device setting if you can.", name, r.expected / 1000, rate / 1000, r.expected / 1000)
                          : nil)
@@ -81,13 +97,14 @@ final class NamHost {
         }
     }
 
-    private var currentGain: Float = 1
+    private var currentGain: Float = 1, currentInput: Float = 1
 
     /// Hand the new model to the audio thread; free the old one once it can no longer be in use.
-    private func swap(_ m: OpaquePointer?, name: String, rate: Double, gain: Float, dsp: DSP?) {
+    private func swap(_ m: OpaquePointer?, name: String, rate: Double, gain: Float, input: Float = 1, dsp: DSP?) {
         let old = model
-        model = m; loadedName = name; loadedRate = rate; currentGain = gain
-        install(m, gain: gain, dsp: dsp)
+        model = m; loadedName = name; loadedRate = rate; currentGain = gain; currentInput = input
+        if m == nil { inputLevel = nil; inputTrim = 0; loadedCal = nil }
+        install(m, gain: gain, input: input, dsp: dsp)
         if let old, old != m {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { lev_nam_free(old) }
         }

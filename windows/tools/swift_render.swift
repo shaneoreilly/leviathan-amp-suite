@@ -15,7 +15,7 @@ func testInput(_ i: Int, _ sr: Double) -> Float {
     return Float(x)
 }
 
-struct Scenario { let name: String; let setup: (Params) -> Void; let ir: ((Double) -> [Float])?; var nam = false; var namB = false }
+struct Scenario { let name: String; let setup: (Params) -> Void; let ir: ((Double) -> [Float])?; var nam = false; var namB = false; var cal: Float = 1 }
 let builtinCab: (Double) -> [Float] = { sr in renderCab(CABS[0], mic: 0.3, sr: sr) }
 
 let scenarios: [Scenario] = [
@@ -91,6 +91,10 @@ let scenarios: [Scenario] = [
         p.chainCount = 0; p.ampOn = true; p.ampChannel = 2; p.ampGain = 0.6; p.eqOn = true; p.cabOn = true; p.masterVol = -6
         p.ampBOn = true; p.ampBLevel = -2; p.ampBSpread = 0.8; p.gateOn = true; p.gateThresh = -50
     }, ir: builtinCab, namB: true),
+    Scenario(name: "nam_calibrated", setup: { p in   // input calibration gain into both captures
+        p.chainCount = 0; p.ampOn = true; p.namOn = true; p.namIn = 1; p.eqOn = true; p.cabOn = true; p.masterVol = -6
+        p.ampBOn = true; p.ampBLevel = -2; p.ampBSpread = 0.8; p.gateOn = true; p.gateThresh = -50
+    }, ir: builtinCab, nam: true, namB: true, cal: 1.8),
     Scenario(name: "metronome", setup: { p in
         p.ampOn = false; p.cabOn = false; p.eqOn = false; p.chainCount = 0; p.gateOn = false
         p.metroOn = true; p.bpm = 133; p.beatsPerBar = 3; p.metroVol = -6
@@ -112,7 +116,7 @@ let scenarios: [Scenario] = [
                 nm = lev_nam_load(CommandLine.arguments[2], nil, 0)
                 guard let nm else { fatalError("nam load failed") }
                 lev_nam_reset(nm, sr, Int32(DSP.maxN))
-                d.setNam(nm, gain: 0.5)
+                d.setNam(nm, gain: 0.5, input: sc.cal)
             }
             defer { lev_nam_free(nm) }
             var nmB: OpaquePointer?
@@ -120,7 +124,7 @@ let scenarios: [Scenario] = [
                 nmB = lev_nam_load(CommandLine.arguments[2], nil, 0)
                 guard let nmB else { fatalError("nam load failed") }
                 lev_nam_reset(nmB, sr, Int32(DSP.maxN))
-                d.setNamB(nmB, gain: 0.5)
+                d.setNamB(nmB, gain: 0.5, input: sc.cal * 0.7)
             }
             defer { lev_nam_free(nmB) }
             var inp = [Float](repeating: 0, count: block)

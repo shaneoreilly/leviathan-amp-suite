@@ -485,6 +485,14 @@ final class Model: ObservableObject {
         didSet { UserDefaults.standard.set(tuningIndex, forKey: "tuning") }
     }
     @Published var a4 = UserDefaults.standard.object(forKey: "a4") as? Double ?? 440 { didSet { UserDefaults.standard.set(a4, forKey: "a4") } }
+    /// NAM input calibration (as in the NAM plugin): your interface's input level in dBu at 0 dBFS. App-wide, not per preset.
+    @Published var namCalibrate = UserDefaults.standard.bool(forKey: "namCalibrate") {
+        didSet { UserDefaults.standard.set(namCalibrate, forKey: "namCalibrate"); updateNam(); updateNamB() }
+    }
+    @Published var interfaceLevel = UserDefaults.standard.object(forKey: "interfaceLevel") as? Double ?? 12 {
+        didSet { UserDefaults.standard.set(interfaceLevel, forKey: "interfaceLevel"); if namCalibrate { updateNam(); updateNamB() } }
+    }
+    var namCalibration: Double? { namCalibrate ? interfaceLevel : nil }
     @Published var tunerNote = "–"
     @Published var tunerCents = 0.0
     @Published var tunerFreq = 0.0
@@ -874,7 +882,7 @@ final class Model: ObservableObject {
     /// Load the selected NAM capture into the running engine (at its rate); unloads when none is selected.
     func updateNam() {
         guard let dsp = engine.dsp else { return }
-        namHost.select(s.nam, rate: Double(dsp.sr), dsp: dsp) { [weak self] err in
+        namHost.select(s.nam, rate: Double(dsp.sr), calibration: namCalibration, dsp: dsp) { [weak self] err in
             guard let self else { return }
             if let err { self.status = err }
             self.applyAll(); self.objectWillChange.send()
@@ -884,7 +892,7 @@ final class Model: ObservableObject {
     /// Amp B's capture into the running engine ("" unloads it).
     func updateNamB() {
         guard let dsp = engine.dsp else { return }
-        namHostB.select(s.ampBNam, rate: Double(dsp.sr), dsp: dsp) { [weak self] err in
+        namHostB.select(s.ampBNam, rate: Double(dsp.sr), calibration: namCalibration, dsp: dsp) { [weak self] err in
             guard let self else { return }
             if let err { self.status = "Amp B: " + err }
             self.objectWillChange.send()
@@ -991,11 +999,13 @@ final class Model: ObservableObject {
         s.apply(to: p)
         let d = DSP(sampleRate: sr, params: p)
         d.setIR(currentIR(sr: sr))
-        if !s.nam.isEmpty, let r = NamHost.open(namHost.url(s.nam), rate: sr) {   // its own instance, freed with the rig
+        if !s.nam.isEmpty, let r = NamHost.open(namHost.url(s.nam), rate: sr, calibration: namCalibration) {   // its own instance, freed with the rig
             p.namOn = true
-            d.setNam(r.model, gain: r.gain, owned: true)
+            d.setNam(r.model, gain: r.gain, input: r.input, owned: true)
         }
-        if p.ampBOn, let r = NamHost.open(namHost.url(s.ampBNam), rate: sr) { d.setNamB(r.model, gain: r.gain, owned: true) }
+        if p.ampBOn, let r = NamHost.open(namHost.url(s.ampBNam), rate: sr, calibration: namCalibration) {
+            d.setNamB(r.model, gain: r.gain, input: r.input, owned: true)
+        }
         return d
     }
 

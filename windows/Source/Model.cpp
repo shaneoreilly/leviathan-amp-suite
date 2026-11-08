@@ -42,6 +42,7 @@ Model::Model() {
     presetSort = juce::jlimit(0, 4, p.getIntValue("presetSort", 0));
     presetSortReversed = p.getBoolValue("presetSortReversed", false);
     tuningIndex = p.getIntValue("tuning", 1); a4 = p.getDoubleValue("a4", 440);
+    namCalibrate = p.getBoolValue("namCalibrate", false); interfaceLevel = p.getDoubleValue("interfaceLevel", 12);
     bpm = p.getDoubleValue("bpm", 120); beatsPerBar = p.getIntValue("beatsPerBar", 4); metroVol = p.getDoubleValue("metroVol", -12);
     if (p.containsKey("accent")) accentPick = juce::Colour::fromString(p.getValue("accent"));
     zoom = p.getDoubleValue("zoom", 1.0);
@@ -635,6 +636,16 @@ void Model::playAs(int semis) {
 void Model::setTuningIndex(int i) { tuningIndex = juce::jlimit(0, (int) TUNINGS.size() - 1, i); props().setValue("tuning", tuningIndex); changed(); }
 void Model::setA4(double v) { a4 = juce::jlimit(430.0, 450.0, v); props().setValue("a4", a4); changed(); }
 
+void Model::setNamCalibrate(bool on) { namCalibrate = on; props().setValue("namCalibrate", on); updateNam(); updateNamB(); }
+void Model::setInterfaceLevel(double dbu) {
+    interfaceLevel = juce::jlimit(-10.0, 30.0, dbu); props().setValue("interfaceLevel", interfaceLevel);
+    if (namCalibrate) { updateNam(); updateNamB(); } else changed();
+}
+double Model::calibrationTrim(std::optional<double> capture, std::optional<double> interface) {
+    if (!capture || !interface) return 0;
+    return juce::jlimit(-24.0, 24.0, *interface - *capture);
+}
+
 // MARK: - tempo
 
 void Model::setBpm(double v) {
@@ -752,12 +763,12 @@ std::unique_ptr<OfflineRig> Model::offlineRig(double sr) {
     r->dsp = std::make_unique<DSP>(sr, r->p);
     r->dsp->setIR(currentIR(sr));
     if (settings.s("nam").isNotEmpty()) {   // its own instance, freed with the rig
-        auto o = openNam(namFile(settings.s("nam")), sr);
-        if (o.m) { r->nam = o.m; r->p.namOn = true; r->dsp->setNam(o.m, o.gain); }
+        auto o = openNam(namFile(settings.s("nam")), sr, namCalibration());
+        if (o.m) { r->nam = o.m; r->p.namOn = true; r->dsp->setNam(o.m, o.gain, o.input); }
     }
     if (r->p.ampBOn) {
-        auto o = openNam(namFile(settings.s("ampBNam")), sr);
-        if (o.m) { r->namB = o.m; r->dsp->setNamB(o.m, o.gain); }
+        auto o = openNam(namFile(settings.s("ampBNam")), sr, namCalibration());
+        if (o.m) { r->namB = o.m; r->dsp->setNamB(o.m, o.gain, o.input); }
     }
     if (std::abs(sr - dspRate) > 0.5) irLib.scan(dspRate);
     return r;
@@ -787,7 +798,7 @@ void Model::rescanNam() {
     changed();
 }
 
-Model::NamOpen Model::openNam(const juce::File& f, double rate) {
+Model::NamOpen Model::openNam(const juce::File& f, double rate, std::optional<double> calibration) {
     NamOpen o;
     char err[256] = {};
     o.m = lev_nam_load(f.getFullPathName().toRawUTF8(), err, sizeof err);
@@ -795,19 +806,23 @@ Model::NamOpen Model::openNam(const juce::File& f, double rate) {
     lev_nam_reset(o.m, rate, DSP::maxN);
     o.expected = lev_nam_expected_rate(o.m);
     if (lev_nam_has_loudness(o.m)) o.loudness = lev_nam_loudness(o.m);
-    // level-match every capture by measuring it (many files have no loudness metadata)
-    // ...and the right way up (some captures invert, which cancels when two are blended as amp A and B)
-    o.gain = (float) std::pow(10.0, (LEV_NAM_TARGET_LEVEL - lev_nam_measure_level(o.m, rate)) / 20) * (float) lev_nam_polarity(o.m, rate);
+    if (lev_nam_has_input_level(o.m)) o.inputLevel = lev_nam_input_level(o.m);
+    o.trim = calibrationTrim(o.inputLevel, calibration);
+    o.input = (float) std::pow(10.0, o.trim / 20);
+    // level-matched (measured at the calibrated input, since many files have no loudness metadata), and the
+    // right way up (some captures invert, which cancels when two are blended as amp A and B)
+    o.gain = (float) std::pow(10.0, (LEV_NAM_TARGET_LEVEL - lev_nam_measure_level_in(o.m, rate, o.input)) / 20) * (float) lev_nam_polarity(o.m, rate);
     return o;
 }
 
 /// Hand a model to the audio thread; free the previous one once it can no longer be in use.
-void Model::setEngineNam(LevNam* m, float gain) {
+void Model::setEngineNam(LevNam* m, float gain, float input) {
     LevNam* old = namModel;
-    namModel = m; namGain = gain;
+    namModel = m; namGain = gain; namIn = input;
+    if (!m) { namInputLevel.reset(); namTrim = 0; namCal.reset(); }
     {
         const juce::SpinLock::ScopedLockType sl(dspLock);
-        if (dsp) dsp->setNam(m, gain);
+        if (dsp) dsp->setNam(m, gain, input);
     }
     if (old && old != m) juce::Timer::callAfterDelay(1000, [old] { lev_nam_free(old); });
 }
@@ -820,7 +835,8 @@ void Model::updateNam() {
         if (name.isEmpty()) { setEngineNam(nullptr, 1); namLoaded = {}; }
         applyAll(); changed(); return;
     }
-    if (name == namLoaded && namRate == dspRate && namModel) { setEngineNam(namModel, namGain); applyAll(); changed(); return; }
+    const auto cal = namCalibration();
+    if (name == namLoaded && namRate == dspRate && cal == namCal && namModel) { setEngineNam(namModel, namGain, namIn); applyAll(); changed(); return; }
     const auto file = namFile(name);
     if (!file.existsAsFile()) {
         setEngineNam(nullptr, 1); namLoaded = {};
@@ -828,13 +844,14 @@ void Model::updateNam() {
     }
     const double rate = dspRate;
     auto aliveFlag = alive;
-    juce::Thread::launch([this, aliveFlag, file, name, rate, gen] {
-        auto o = openNam(file, rate);
-        juce::MessageManager::callAsync([this, aliveFlag, o, name, rate, gen] {
+    juce::Thread::launch([this, aliveFlag, file, name, rate, gen, cal] {
+        auto o = openNam(file, rate, cal);
+        juce::MessageManager::callAsync([this, aliveFlag, o, name, rate, gen, cal] {
             if (!aliveFlag->load() || gen != namGen) { lev_nam_free(o.m); return; }   // superseded
             if (!o.m) { setEngineNam(nullptr, 1); namLoaded = {}; status = "Couldn't load NAM capture \"" + name + "\"."; applyAll(); changed(); return; }
             namLoaded = name; namRate = rate; namExpectedRate = o.expected; namLoudness = o.loudness;
-            setEngineNam(o.m, o.gain);
+            setEngineNam(o.m, o.gain, o.input);
+            namInputLevel = o.inputLevel; namTrim = o.trim; namCal = cal;
             if (o.expected > 0 && std::abs(o.expected - rate) > 1)
                 status = "\"" + name + "\" was captured at " + juce::String(o.expected / 1000, 1) + " kHz but the engine runs at "
                          + juce::String(rate / 1000, 1) + " kHz, so it won't sound quite right.";
@@ -843,12 +860,13 @@ void Model::updateNam() {
     });
 }
 
-void Model::setEngineNamB(LevNam* m, float gain) {
+void Model::setEngineNamB(LevNam* m, float gain, float input) {
     LevNam* old = namModelB;
-    namModelB = m; namGainB = gain;
+    namModelB = m; namGainB = gain; namInB = input;
+    if (!m) { namInputLevelB.reset(); namTrimB = 0; namCalB.reset(); }
     {
         const juce::SpinLock::ScopedLockType sl(dspLock);
-        if (dsp) dsp->setNamB(m, gain);
+        if (dsp) dsp->setNamB(m, gain, input);
     }
     if (old && old != m) juce::Timer::callAfterDelay(1000, [old] { lev_nam_free(old); });
 }
@@ -861,18 +879,20 @@ void Model::updateNamB() {
         if (name.isEmpty()) { setEngineNamB(nullptr, 1); namLoadedB = {}; }
         changed(); return;
     }
-    if (name == namLoadedB && namRateB == dspRate && namModelB) { setEngineNamB(namModelB, namGainB); changed(); return; }
+    const auto cal = namCalibration();
+    if (name == namLoadedB && namRateB == dspRate && cal == namCalB && namModelB) { setEngineNamB(namModelB, namGainB, namInB); changed(); return; }
     const auto file = namFile(name);
     if (!file.existsAsFile()) { setEngineNamB(nullptr, 1); namLoadedB = {}; status = "Amp B: NAM capture \"" + name + "\" isn't in the NAM folder."; changed(); return; }
     const double rate = dspRate;
     auto aliveFlag = alive;
-    juce::Thread::launch([this, aliveFlag, file, name, rate, gen] {
-        auto o = openNam(file, rate);
-        juce::MessageManager::callAsync([this, aliveFlag, o, name, rate, gen] {
+    juce::Thread::launch([this, aliveFlag, file, name, rate, gen, cal] {
+        auto o = openNam(file, rate, cal);
+        juce::MessageManager::callAsync([this, aliveFlag, o, name, rate, gen, cal] {
             if (!aliveFlag->load() || gen != namGenB) { lev_nam_free(o.m); return; }   // superseded
             if (!o.m) { setEngineNamB(nullptr, 1); namLoadedB = {}; status = "Amp B: couldn't load NAM capture \"" + name + "\"."; changed(); return; }
             namLoadedB = name; namRateB = rate;
-            setEngineNamB(o.m, o.gain);
+            setEngineNamB(o.m, o.gain, o.input);
+            namInputLevelB = o.inputLevel; namTrimB = o.trim; namCalB = cal;
             changed();
         });
     });

@@ -57,7 +57,9 @@ extern "C" void lev_nam_process(LevNam* m, const float* in, float* out, int fram
     }
 }
 
-extern "C" double lev_nam_measure_level(LevNam* m, double sampleRate) {
+extern "C" double lev_nam_measure_level(LevNam* m, double sampleRate) { return lev_nam_measure_level_in(m, sampleRate, 1.0f); }
+
+extern "C" double lev_nam_measure_level_in(LevNam* m, double sampleRate, float inputGain) {
     if (!m || m->maxBlock <= 0) return 0;
     // a decaying low power chord with pick noise at a typical DI level (about -18 dBFS RMS while it rings)
     const int n = (int) sampleRate;
@@ -69,7 +71,7 @@ extern "C" double lev_nam_measure_level(LevNam* m, double sampleRate) {
         for (double f : { 82.41, 123.47, 164.81 }) v += std::sin(2 * 3.141592653589793 * f * t);
         seed = seed * 1664525u + 1013904223u;
         const double noise = ((seed >> 8) / 16777216.0 - 0.5) * std::exp(-t * 30.0);
-        x[(size_t) i] = (float) ((v / 3 * 0.3 + noise * 0.2) * env * 2.45);
+        x[(size_t) i] = (float) ((v / 3 * 0.3 + noise * 0.2) * env * 2.45) * inputGain;
     }
     lev_nam_process(m, x.data(), y.data(), n);
     double e = 0;

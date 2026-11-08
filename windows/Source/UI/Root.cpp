@@ -793,6 +793,12 @@ struct SettingsScreen : Screen_ {
         for (size_t i = 0; i < TUNINGS.size(); ++i) tuning.addItem(tuningLabel(TUNINGS[i]), (int) i + 1);
         tuning.onChange = [this] { model.setTuningIndex(tuning.getSelectedId() - 1); };
         audio.addAndMakeVisible(a4); audio.addAndMakeVisible(tuning);
+        namCalT.setButtonText("Match each capture's input level");
+        namCalT.onClick = [this] { model.setNamCalibrate(namCalT.getToggleState()); };
+        ifaceLvl.setSliderStyle(juce::Slider::IncDecButtons); ifaceLvl.setRange(-10, 30, 0.5); ifaceLvl.setTextValueSuffix(" dBu");
+        ifaceLvl.setNumDecimalPlacesToDisplay(1);
+        ifaceLvl.onValueChange = [this] { model.setInterfaceLevel(ifaceLvl.getValue()); };
+        audio.addAndMakeVisible(namCalT); audio.addChildComponent(ifaceLvl);
 
         // midi
         pcT.setButtonText("Program changes load presets");
@@ -876,6 +882,8 @@ struct SettingsScreen : Screen_ {
         selLnf.setAccent(m.accent());
         inputCh.setSelectedId(m.s().i("inputChannel") + 1, juce::dontSendNotification);
         a4.setValue(m.a4, juce::dontSendNotification);
+        namCalT.setToggleState(m.namCalibrate, juce::dontSendNotification);
+        ifaceLvl.setValue(m.interfaceLevel, juce::dontSendNotification);
         tuning.setSelectedId(m.tuningIndex + 1, juce::dontSendNotification);
         followAmp.setEnabled(m.accentPick.has_value());
         autoUpd.setToggleState(m.updater->autoCheck, juce::dontSendNotification);
@@ -918,10 +926,26 @@ struct SettingsScreen : Screen_ {
             const int ey = lay.row("Engine", "settings:engine");
             audioInfo.setBounds(ctrlX, ly, w - ctrlX - labelX, ey + rowH - ly);
             audioInfo.engineY = ey - ly;
+            lay.heading("Amp captures");
+            Group::place(lay.row("Calibrate input", "settings:namCalibrate"), { { &namCalT, 420 } });
+            ifaceLvl.setVisible(model.namCalibrate);
+            int nowY = -1;
+            if (model.namCalibrate) {
+                Group::place(lay.row("Interface level", "settings:interfaceLevel"), { { &ifaceLvl, 160 } });
+                nowY = lay.row("Now", "settings:namCalibrate", model.s().b("ampBOn") && model.s().s("ampBNam").isNotEmpty() ? 46 : rowH);
+            }
             lay.heading("Tuner");
             Group::place(lay.row("Reference", "settings:a4"), { { &a4, 160 } });
             Group::place(lay.row("Guitar tuning", "settings:tuning"), { { &tuning, 320 } });
-            audio.extra = [this](juce::Graphics& g) {   // JUCE's own labels for its device panel, in our label column
+            audio.extra = [this, nowY](juce::Graphics& g) {   // JUCE's own labels for its device panel, in our label column
+                if (nowY >= 0) {
+                    g.setColour(theme::secondary); g.setFont(theme::font(11));
+                    auto& m = model;
+                    juce::StringArray lines { calibrationLine("Amp", m.s().s("nam"), m.namReady(), m.namInputLevel, m.namTrim) };
+                    if (m.s().b("ampBOn") && m.s().s("ampBNam").isNotEmpty())
+                        lines.add(calibrationLine("Amp B", m.s().s("ampBNam"), m.namReadyB(), m.namInputLevelB, m.namTrimB));
+                    for (int i = 0; i < lines.size(); ++i) g.drawText(lines[i], ctrlX, nowY + 2 + i * 20, 700, 18, juce::Justification::centredLeft);
+                }
                 std::function<void(juce::Component&)> scan = [&](juce::Component& c) {
                     for (auto* ch : c.getChildren()) {
                         if (auto* l = dynamic_cast<juce::Label*>(ch); l && l->getAttachedComponent() && l->getAttachedComponent()->isVisible()) {
@@ -1139,6 +1163,14 @@ struct SettingsScreen : Screen_ {
     HelpStrip strip;
     juce::ComboBox inputCh; AudioInfo audioInfo { model };
     juce::Slider a4; juce::ComboBox tuning;
+    juce::ToggleButton namCalT; juce::Slider ifaceLvl;
+    /// "Amp: +3.0 dB (captured at 9.0 dBu)": what input calibration is doing to a loaded capture.
+    static juce::String calibrationLine(const juce::String& label, const juce::String& name, bool loaded, std::optional<double> level, double trim) {
+        if (name.isEmpty()) return label + ": no capture (the built-in amp isn't calibrated)";
+        if (!loaded) return label + ": loads when audio starts";
+        if (!level) return label + ": this capture has no input level, so it's left as it is";
+        return label + ": " + (trim >= 0 ? "+" : "") + juce::String(trim, 1) + " dB (captured at " + juce::String(*level, 1) + " dBu)";
+    }
     juce::ToggleButton pcT; juce::TextButton learnB, clearB;
     std::vector<std::unique_ptr<MapRow>> mapRows;
     juce::TextButton importRec, openRec, addNam, openNam, rescanNam, addIRs, openIRs, rescanIRs, openCap, rescan, openIR;
