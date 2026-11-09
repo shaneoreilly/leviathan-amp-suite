@@ -13,6 +13,21 @@ const juce::String dot = juce::String::fromUTF8(" \xc2\xb7 ");
 std::unique_ptr<Stack> row(int gap = 2) { return std::make_unique<Stack>(false, gap); }
 std::unique_ptr<Stack> col(int gap = 8, juce::Justification j = juce::Justification::centred) { return std::make_unique<Stack>(true, gap, j); }
 
+/// Holds one component and reports at least `min` as its size: top left aligned, or centred across when `centre`.
+/// Keeps a panel whose contents change (the cab type) the same size, so the panels around it don't move.
+struct MinSize : juce::Component {
+    MinSize(std::unique_ptr<juce::Component> c, juce::Point<int> min, bool centre) : child(std::move(c)), centred(centre) {
+        addAndMakeVisible(*child);
+        const auto p = pref(*child);
+        setPref(*this, std::max(p.x, min.x), std::max(p.y, min.y));
+    }
+    void resized() override {
+        const auto p = pref(*child);
+        child->setBounds(centred ? (getWidth() - p.x) / 2 : 0, 0, p.x, p.y);
+    }
+    std::unique_ptr<juce::Component> child; bool centred;
+};
+
 struct GateDot : juce::Component {
     explicit GateDot(Model& m) : model(m) { setPref(*this, 10, 10); }
     void paint(juce::Graphics& g) override {
@@ -61,13 +76,19 @@ juce::String namTitle(juce::String n) {
     return w.joinIntoString(" ");
 }
 
+/// "Open folder" for a library folder, or no action on Android (nothing there can show a folder).
+std::function<void()> openFolder(const juce::File& dir) {
+    if (!canRevealFiles) return {};
+    return [dir] { dir.createDirectory(); dir.startAsProcess(); };
+}
+
 /// A small "..." button that opens a menu of actions.
 std::unique_ptr<juce::TextButton> moreButton(std::vector<std::pair<juce::String, std::function<void()>>> items, const juce::String& tip) {
     auto b = std::make_unique<juce::TextButton>(juce::String::fromUTF8("\xe2\x8b\xaf"));
     auto* bp = b.get();
     b->onClick = [bp, items] {
         juce::PopupMenu menu;
-        for (auto& [t, fn] : items) menu.addItem(t, fn);
+        for (auto& [t, fn] : items) if (fn) menu.addItem(t, fn);   // no action: not on this platform
         menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(bp));
     };
     setPref(*b, 30, 26);
@@ -88,11 +109,13 @@ namespace {
 } // namespace
 
 RigView::RigView(Model& m) : model(m) {
-    helpStrip = std::make_unique<HelpStrip>(m, juce::String::fromUTF8("Hover over any control for an explanation. Scroll or drag a dial to change it; \xe2\x86\xba resets it."));
+    helpStrip = std::make_unique<HelpStrip>(m, onAndroid ? juce::String::fromUTF8("Touch any control for an explanation. Drag a dial up or down to change it; \xe2\x86\xba resets it.")
+                                                        : juce::String::fromUTF8("Hover over any control for an explanation. Scroll or drag a dial to change it; \xe2\x86\xba resets it."));
     addChildComponent(*helpStrip);
     addAndMakeVisible(viewport);
     viewport.setViewedComponent(&canvas, false);
     viewport.setScrollBarsShown(true, false);
+    viewport.moved = [this] { if (onScroll) onScroll(); };
     startTimerHz(15);
     refresh();
 }
@@ -123,18 +146,40 @@ juce::String RigView::currentSignature() const {
     sig.add(s.s("capture")); sig.add(juce::String((int) model.captures.size()));
     sig.add(s.s("nam")); sig.add(model.namFiles.joinIntoString(",")); sig.add(model.namReady() ? "namok" : "");
     sig.add(s.b("wahAuto") ? "wa" : "wm");
-    sig.add("cab" + juce::String(s.i("cabModel"))); sig.add(model.irLib.isEmpty() ? "nolib" : "lib"); sig.add(model.userIRName);
-    sig.add(s.s("irA")); sig.add(s.s("irB"));
     sig.add(s.i("delaySync") == 0 ? "free" : "sync");
     sig.add(model.tunerOn ? "tuner" : "");
     sig.add(juce::String(model.accent().getARGB()));
     return sig.joinIntoString("/");
 }
 
+/// What the cabinet panel's structure depends on: a change here rebuilds that panel alone, so picking a cab or
+/// an IR doesn't rebuild (and flash) the whole rig.
+juce::String RigView::cabSignature() const {
+    const auto& s = model.s();
+    juce::StringArray sig;
+    sig.add("cab" + juce::String(s.i("cabModel"))); sig.add(model.irLib.isEmpty() ? "nolib" : "lib"); sig.add(model.userIRName);
+    sig.add(juce::String(model.cabIRs.all().size()));
+    sig.add(s.s("irA")); sig.add(s.s("irB"));
+    return sig.joinIntoString("/");
+}
+
 void RigView::refresh() {
-    const auto sig = currentSignature();
-    if (sig != signature) { signature = sig; rebuild(); }
+    const auto sig = currentSignature(), cab = cabSignature();
+    if (sig != signature) { signature = sig; cabSig = cab; rebuild(); }
+    else if (cab != cabSig) { cabSig = cab; rebuildPanel("cab"); }
     else { syncAll(canvas); layout(); }
+}
+
+void RigView::rebuildPanel(const juce::String& id) {
+    auto it = panels.find(id);
+    if (it == panels.end()) return;
+    auto* old = it->second.get();
+    live.erase(std::remove_if(live.begin(), live.end(), [old](juce::Component* c) { return old->isParentOf(c); }), live.end());
+    canvas.removeChildComponent(old);
+    it->second = makePanel(id);
+    canvas.addAndMakeVisible(*it->second);
+    syncAll(*it->second);
+    layout();
 }
 
 void RigView::syncAll(juce::Component& c) {
@@ -205,7 +250,7 @@ void RigView::rebuild() {
 
 void RigView::layout() {
     const int w = std::max(viewport.getMaximumVisibleWidth(), 300), padding = 14;
-    int y = padding;
+    int y = topInset + padding;
     const juce::Rectangle<int> full(padding, 0, w - 2 * padding, 0);
     if (tunerView) { tunerView->setBounds(full.getX(), y, full.getWidth(), 300); y += 312; }
     std::vector<UnitBox*> items;
@@ -296,7 +341,7 @@ std::unique_ptr<UnitBox> RigView::makePanel(const juce::String& id) {
         if (!m.captures.empty()) { cap->addSectionHeading("Your captures"); int i = 2; for (auto& [k, v] : m.captures) cap->addItem(k, i++); }
         r1->add(std::move(cap));
         r1->add(moreButton({ { juce::String::fromUTF8("Add NAM captures (.nam)\xe2\x80\xa6"), [&m] { m.importNamDialog(); } },
-                             { "Open NAM folder", [] { Model::namDir().createDirectory(); Model::namDir().startAsProcess(); } },
+                             { "Open NAM folder", openFolder(Model::namDir()) },
                              { "Rescan", [&m] { m.reloadCaptures(); m.rescanNam(); } } }, "Add or rescan amp captures"));
         c->add(std::move(r1));
         if (m.s().s("nam").isNotEmpty()) {
@@ -347,32 +392,50 @@ std::unique_ptr<UnitBox> RigView::makePanel(const juce::String& id) {
         c->add(std::move(r));
         box = std::make_unique<UnitBox>(m, "MASTER", std::move(c), "", "panel:master");
     } else if (id == "cab") {
-        const bool lib = s.i("cabModel") == CAB_LIB;
+        // The rows and knobs depend on the cab type. Each part is sized to its largest variant (of the types on
+        // offer), so switching types never resizes the panel and the panels around it stay where they are.
+        std::vector<int> kinds { 0 };
+        if (!m.cabIRs.isEmpty()) kinds.push_back(CAB_IRLIB);
+        if (!m.irLib.isEmpty()) kinds.push_back(CAB_LIB);
+        if (m.userIRName.isNotEmpty()) kinds.push_back(CAB_USER);
+        auto block = [&](int kind) {
+            auto b = col(8, juce::Justification::left);
+            auto r1 = row(8);
+            auto pick = std::make_unique<Picker>((int) (200 * theme::W), [&m] { return m.s().i("cabModel") + 1; }, [&m](int i) { m.set("cabModel", i - 1); });
+            if (!m.cabIRs.isEmpty()) { pick->addSectionHeading("Your IRs"); pick->addItem("IR library (" + juce::String(m.cabIRs.all().size()) + ")", CAB_IRLIB + 1); }
+            if (!m.irLib.isEmpty()) { pick->addSectionHeading("Multi-mic"); pick->addItem(juce::String::fromUTF8("God's Cab \xc2\xb7 Mesa 4x12"), CAB_LIB + 1); }
+            pick->addSectionHeading("Built-in");
+            for (int i = 0; i < kCabCount; ++i) pick->addItem(CABS[i].name, i + 1);
+            if (m.userIRName.isNotEmpty()) { pick->addSectionHeading("File"); pick->addItem(m.userIRName, CAB_USER + 1); }
+            r1->add(std::move(pick));
+            r1->add(moreButton({ { juce::String::fromUTF8("Add IRs to the library (files or a folder)\xe2\x80\xa6"), [&m] { m.importCabIRsDialog(); } },
+                                 { juce::String::fromUTF8("Load a single IR file\xe2\x80\xa6"), [&m] { m.loadIR(); } },
+                                 { "Open IR library folder", openFolder(CabIRLibrary::root()) } }, "Add cabinet IRs"));
+            b->add(std::move(r1));
+            if (kind == CAB_IRLIB) b->add(irLibraryRow());
+            if (kind == CAB_LIB) { b->add(irRow("A", "irA", false)); b->add(irRow("B", "irB", true)); }
+            return b;
+        };
+        auto knobs = [&](int kind) {
+            auto r = row();
+            if (kind == CAB_LIB) r->add(knob(juce::String::fromUTF8("A \xe2\x86\x94 B"), "irBlend", 0, 1, 0.35, pct, "CABINET"));
+            else if (kind < kCabCount)
+                r->add(knob("Mic Pos", "cabMic", 0, 1, 0.3, [](double v) { return v < 0.12 ? juce::String("center") : v > 0.88 ? juce::String("edge") : juce::String(v * 10, 1); }, "CABINET"));
+            r->add(knob("Low Cut", "cabLowCut", 20, 300, 80, intUnit("Hz"), "CABINET"));
+            r->add(knob("High Cut", "cabHighCut", 2500, 16000, 10000, [](double v) { return juce::String(v / 1000, 1) + "k"; }, "CABINET"));
+            r->add(knob("Level", "cabLevel", -12, 12, 0, [](double v) { return juce::String::formatted("%+.1f", v); }, "CABINET"));
+            return r;
+        };
+        juce::Point<int> blockMax, knobsMax;
+        for (int k : kinds) {
+            const auto bp = pref(*block(k)), kp = pref(*knobs(k));
+            blockMax = { std::max(blockMax.x, bp.x), std::max(blockMax.y, bp.y) };
+            knobsMax = { std::max(knobsMax.x, kp.x), std::max(knobsMax.y, kp.y) };
+        }
+        const int kind = s.i("cabModel");
         auto c = col(8);
-        auto block = col(8, juce::Justification::left);
-        auto r1 = row(8);
-        auto pick = std::make_unique<Picker>((int) (200 * theme::W), [&m] { return m.s().i("cabModel") + 1; }, [&m](int i) { m.set("cabModel", i - 1); });
-        if (!m.cabIRs.isEmpty()) { pick->addSectionHeading("Your IRs"); pick->addItem("IR library (" + juce::String(m.cabIRs.all().size()) + ")", CAB_IRLIB + 1); }
-        if (!m.irLib.isEmpty()) { pick->addSectionHeading("Multi-mic"); pick->addItem(juce::String::fromUTF8("God's Cab \xc2\xb7 Mesa 4x12"), CAB_LIB + 1); }
-        pick->addSectionHeading("Built-in");
-        for (int i = 0; i < kCabCount; ++i) pick->addItem(CABS[i].name, i + 1);
-        if (m.userIRName.isNotEmpty()) { pick->addSectionHeading("File"); pick->addItem(m.userIRName, CAB_USER + 1); }
-        r1->add(std::move(pick));
-        r1->add(moreButton({ { juce::String::fromUTF8("Add IRs to the library (files or a folder)\xe2\x80\xa6"), [&m] { m.importCabIRsDialog(); } },
-                             { juce::String::fromUTF8("Load a single IR file\xe2\x80\xa6"), [&m] { m.loadIR(); } },
-                             { "Open IR library folder", [] { CabIRLibrary::root().createDirectory(); CabIRLibrary::root().startAsProcess(); } } }, "Add cabinet IRs"));
-        block->add(std::move(r1));
-        if (s.i("cabModel") == CAB_IRLIB) block->add(irLibraryRow());
-        if (lib) { block->add(irRow("A", "irA", false)); block->add(irRow("B", "irB", true)); }
-        c->add(std::move(block));
-        auto r = row();
-        if (lib) r->add(knob(juce::String::fromUTF8("A \xe2\x86\x94 B"), "irBlend", 0, 1, 0.35, pct, "CABINET"));
-        else if (s.i("cabModel") < kCabCount)
-            r->add(knob("Mic Pos", "cabMic", 0, 1, 0.3, [](double v) { return v < 0.12 ? juce::String("center") : v > 0.88 ? juce::String("edge") : juce::String(v * 10, 1); }, "CABINET"));
-        r->add(knob("Low Cut", "cabLowCut", 20, 300, 80, intUnit("Hz"), "CABINET"));
-        r->add(knob("High Cut", "cabHighCut", 2500, 16000, 10000, [](double v) { return juce::String(v / 1000, 1) + "k"; }, "CABINET"));
-        r->add(knob("Level", "cabLevel", -12, 12, 0, [](double v) { return juce::String::formatted("%+.1f", v); }, "CABINET"));
-        c->add(std::move(r));
+        c->add(std::make_unique<MinSize>(block(kind), blockMax, false));
+        c->add(std::make_unique<MinSize>(knobs(kind), knobsMax, true));
         box = std::make_unique<UnitBox>(m, "CABINET", std::move(c), "cabOn", "panel:cab");
     } else if (id == "eq") {
         static const char* freqs[] = { "80", "160", "320", "640", "1.2k", "2.5k", "5k", "10k" };
@@ -418,7 +481,7 @@ std::unique_ptr<UnitBox> RigView::makePanel(const juce::String& id) {
         auto r1 = row(6);
         r1->add(std::move(pick));
         r1->add(moreButton({ { juce::String::fromUTF8("Add NAM captures (.nam)\xe2\x80\xa6"), [&m] { m.importNamDialog(); } },
-                             { "Open NAM folder", [] { Model::namDir().createDirectory(); Model::namDir().startAsProcess(); } },
+                             { "Open NAM folder", openFolder(Model::namDir()) },
                              { "Rescan", [&m] { m.reloadCaptures(); m.rescanNam(); } } }, "Add or rescan amp captures"));
         c->add(std::move(r1));
         auto r = row();
@@ -451,14 +514,16 @@ public:
         search.setTextToShowWhenEmpty("Search " + juce::String(m.cabIRs.all().size()) + juce::String::fromUTF8(" IRs (band, song, amp\xe2\x80\xa6)"), theme::secondary);
         search.onTextChange = [this] { filter(); };
         addAndMakeVisible(search);
-        list.setModel(this); list.setRowHeight(24);
+        list.setModel(this); list.setRowHeight(onAndroid ? 40 : 24);   // finger-sized rows on touch screens
         list.setColour(juce::ListBox::backgroundColourId, juce::Colours::transparentBlack);
         addAndMakeVisible(list);
         filter();
         setSize(440, 440);
     }
     void resized() override { auto r = getLocalBounds().reduced(8); search.setBounds(r.removeFromTop(28)); r.removeFromTop(6); list.setBounds(r); }
-    void visibilityChanged() override { if (isShowing()) search.grabKeyboardFocus(); }
+    // Desktop: type straight away. Android: focusing would raise the on-screen keyboard over the list, and the
+    // next tap would only dismiss it; tap the search box to search.
+    void visibilityChanged() override { if (isShowing() && !onAndroid) search.grabKeyboardFocus(); }
 private:
     void filter() {
         hits.clear();
@@ -525,7 +590,20 @@ std::unique_ptr<juce::Component> RigView::irLibraryRow() {
     auto b = textButton(rel.isEmpty() ? juce::String::fromUTF8("Choose an IR\xe2\x80\xa6") : CabIRLibrary::title(rel), {});
     auto* bp = b.get();
     b->onClick = [&m, bp] {
-        juce::CallOutBox::launchAsynchronously(std::make_unique<IRBrowser>(m), bp->getScreenBounds(), nullptr);
+        if (!onAndroid) { juce::CallOutBox::launchAsynchronously(std::make_unique<IRBrowser>(m), bp->getScreenBounds(), nullptr); return; }
+        // Android: the library as a native picker, grouped by folder, the current IR selected
+        juce::PopupMenu menu;
+        const auto cur = m.s().s("irFile");
+        juce::String folder = "-";
+        for (const auto& rel : m.cabIRs.all()) {
+            const auto f = rel.containsChar('/') ? rel.upToLastOccurrenceOf("/", false, false) : juce::String();
+            if (f != folder) { folder = f; if (f.isNotEmpty()) menu.addSectionHeader(f); }
+            juce::PopupMenu::Item it(CabIRLibrary::title(rel));
+            it.setTicked(rel == cur);
+            it.setAction([&m, rel] { Settings x = m.s(); x.set("irFile", rel); x.set("cabModel", CAB_IRLIB); x.set("cabOn", true); m.setSettings(x); });
+            menu.addItem(it);
+        }
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(bp));
     };
     setPref(*b, (int) (185 * theme::W), 26);
     b->setTooltip(rel);

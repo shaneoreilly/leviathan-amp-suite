@@ -139,14 +139,14 @@ std::unique_ptr<juce::AudioFormatWriter> Sessions::openWriter(const juce::File& 
 
 void Sessions::startRecording() {
     if (recording) return;
-    if (!m.running || m.engineRate() <= 0) { message = "Turn the amp on to record."; m.changed(); return; }
+    if (!m.running || m.engineRate() <= 0) { message = "Turn the amp on to record."; fixIn("amp:on"); m.changed(); return; }
     stopPlayback();
     const double sr = m.engineRate();
     const auto dir = root().getChildFile(juce::Time::getCurrentTime().formatted("%Y-%m-%d %H.%M.%S"));
     dir.createDirectory();
     dryWriter = openWriter(dir.getChildFile("dry.wav"), sr, 1);
     wetWriter = openWriter(dir.getChildFile("wet.wav"), sr, 2);
-    if (!dryWriter || !wetWriter) { dryWriter.reset(); wetWriter.reset(); message = "Could not start recording in " + dir.getFullPathName(); m.changed(); return; }
+    if (!dryWriter || !wetWriter) { dryWriter.reset(); wetWriter.reset(); message = "Could not start recording in " + dir.getFullPathName(); fixIn("Library"); m.changed(); return; }
     recDir = dir; recRate = sr; recStart = juce::Time::getCurrentTime(); recSeconds = 0; recFrames = 0;
     liveWave.clear(); liveLo = liveHi = 0; liveN = 0;
     m.params.recDry.reset(); m.params.recL.reset(); m.params.recR.reset();
@@ -258,7 +258,7 @@ void Sessions::stopPlayback() {
 void Sessions::startLiveReamp() {
     auto* s = current();
     if (!s) return;
-    if (!m.running || m.engineRate() <= 0) { message = "Turn the amp on to re-amp."; m.changed(); return; }
+    if (!m.running || m.engineRate() <= 0) { message = "Turn the amp on to re-amp."; fixIn("amp:on"); m.changed(); return; }
     stopPlayback();
     auto w = loadAudio(s->dry(), m.engineRate());
     if (w.channels.empty()) { message = "This session has no dry take."; m.changed(); return; }
@@ -331,7 +331,7 @@ void Sessions::loadPreset() {
 
 // MARK: - trim
 
-std::optional<double> Sessions::trimFiles(const juce::File& dir, double start, double end) {
+std::optional<double> Sessions::trimFiles(const juce::File& dir, double start, double end, bool keep) {
     const auto backup = dir.getChildFile("untrimmed");
     juce::Array<juce::File> files;
     for (auto* n : { "dry.wav", "wet.wav", "wet-original.wav" }) if (dir.getChildFile(n).existsAsFile()) files.add(dir.getChildFile(n));
@@ -346,20 +346,39 @@ std::optional<double> Sessions::trimFiles(const juce::File& dir, double start, d
         const int total = (int) w.channels[0].size();
         const int a = juce::jlimit(0, total, (int) (start * w.rate)), b = juce::jlimit(a, total, (int) (end * w.rate));
         if (b <= a) continue;
+        std::vector<std::vector<float>> cutOut;   // keep == false: before a, then after b, crossfaded over xf frames
         std::vector<const float*> ch;
-        for (auto& c : w.channels) ch.push_back(c.data() + a);
+        int frames = b - a;
+        if (keep) {
+            for (auto& c : w.channels) ch.push_back(c.data() + a);
+        } else {
+            const int xf = std::min({ (int) (0.005 * w.rate), a, total - b });
+            frames = a + (total - b) - xf;
+            if (frames <= 0) continue;
+            for (auto& c : w.channels) {
+                std::vector<float> o((size_t) frames);
+                std::copy(c.begin(), c.begin() + (a - xf), o.begin());
+                for (int i = 0; i < xf; ++i) {
+                    const float t = (float) (i + 1) / (float) (xf + 1);
+                    o[(size_t) (a - xf + i)] = c[(size_t) (a - xf + i)] * (1 - t) + c[(size_t) (b + i)] * t;
+                }
+                std::copy(c.begin() + (b + xf), c.end(), o.begin() + a);
+                cutOut.push_back(std::move(o));
+            }
+            for (auto& c : cutOut) ch.push_back(c.data());
+        }
         const auto tmp = dir.getChildFile(".trim-" + f.getFileName());
-        if (!writeWav(tmp, ch, b - a, w.rate) || !tmp.moveFileTo(f)) return std::nullopt;
-        if (f.getFileName() == "wet.wav" || !length) length = (double) (b - a) / w.rate;
+        if (!writeWav(tmp, ch, frames, w.rate) || !tmp.moveFileTo(f)) return std::nullopt;
+        if (f.getFileName() == "wet.wav" || !length) length = (double) frames / w.rate;
     }
     return length;
 }
 
-void Sessions::trim(double start, double end) {
+void Sessions::trimTake(double start, double end, bool keep) {
     auto* s = current();
     if (!s || end - start < 0.05) return;
     stopPlayback(); stopLiveReamp();
-    const auto len = trimFiles(s->dir, start, end);
+    const auto len = trimFiles(s->dir, start, end, keep);
     if (!len) { message = "Couldn't trim this recording."; m.changed(); return; }
     Session copy = *s; copy.duration = *len; save(copy);
     loadedFile = juce::File();
@@ -394,22 +413,67 @@ void Sessions::rename(const juce::String& name) {
     refresh();
 }
 
+/// To the Recycle Bin on desktop. Android has none (JUCE's moveToTrash does nothing there), so the take is deleted,
+/// after asking, since that can't be undone.
+static void trashTake(const juce::File& dir, std::function<void()> after) {
+#if JUCE_ANDROID
+    auto opts = juce::MessageBoxOptions().withIconType(juce::MessageBoxIconType::WarningIcon)
+        .withTitle("Delete this recording?")
+        .withMessage("It will be deleted from this phone. This can't be undone.")
+        .withButton("Delete", 1).withButton("Cancel", 0);
+    juce::AlertWindow::showAsync(opts, [dir, after](int r) { if (r == 1 && dir.deleteRecursively()) after(); });
+#else
+    dir.moveToTrash();
+    after();
+#endif
+}
+
 void Sessions::remove() {
     auto* s = current();
     if (!s) return;
     stopPlayback(); stopLiveReamp();
-    s->dir.moveToTrash();
-    selected = juce::File();
-    refresh();
+    const auto dir = s->dir;
+    trashTake(dir, [this, dir, flag = alive] {
+        if (!flag->load()) return;
+        if (selected == dir) selected = juce::File();
+        refresh(); m.changed();
+    });
 }
 
 void Sessions::remove(const juce::File& dir) {
     if (dir == selected) { remove(); return; }
-    dir.moveToTrash();
-    refresh();
+    trashTake(dir, [this, flag = alive] { if (flag->load()) { refresh(); m.changed(); } });
 }
 
-void Sessions::reveal() { if (auto* s = current()) s->wet().revealToUser(); }
+void Sessions::share(ShareKind kind) {
+    auto* s = current();
+    if (!s || !canShare) return;
+    const bool amped = kind != ShareKind::rawWav, m4a = kind == ShareKind::ampedForMessages;
+    const auto src = amped ? s->wet() : s->dry();
+    if (!src.existsAsFile()) { message = amped ? "This take has no amped (wet) file." : "This take has no raw (dry) file."; m.changed(); return; }
+    // Shared under the take's name, not dry.wav / wet.wav. WAV as 16-bit (takes are 32-bit float, which many players
+    // can't play); for messages as AAC (.m4a), since chat apps like WhatsApp play no WAV at all.
+    const auto dir = juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("Share");
+    const auto out = dir.getChildFile(juce::File::createLegalFileName(s->name.isNotEmpty() ? s->name : juce::String("Leviathan take"))
+                                      + (amped ? " (amped)" : " (raw)") + (m4a ? ".m4a" : ".wav"));
+    message = juce::String::fromUTF8("Preparing the file to share\xe2\x80\xa6"); m.changed();
+    juce::Thread::launch([this, src, dir, out, m4a, flag = alive] {
+        dir.deleteRecursively(); dir.createDirectory();
+        auto w = loadAudio(src, 0, 24 * 3600);
+        std::vector<const float*> ch;
+        for (auto& c : w.channels) ch.push_back(c.data());
+        const int frames = ch.empty() ? 0 : (int) w.channels[0].size();
+        const bool ok = w.rate > 0 && frames > 0 && (m4a ? writeM4A(out, ch, frames, w.rate) : writeWav(out, ch, frames, w.rate, true));
+        juce::MessageManager::callAsync([this, out, ok, flag] {
+            if (!flag->load()) return;
+            message = ok ? juce::String() : juce::String("Couldn't prepare the file to share.");
+            m.changed();
+            if (ok) shareBox = juce::ContentSharer::shareFilesScoped({ juce::URL(out) }, [](bool, const juce::String&) {});
+        });
+    });
+}
+
+void Sessions::reveal() { if (auto* s = current(); s && canRevealFiles) s->wet().revealToUser(); }
 
 void Sessions::importRecordings() {
     // Windows' native dialog picks files or a folder, not both at once: ask which
@@ -417,12 +481,12 @@ void Sessions::importRecordings() {
     menu.addItem(juce::String::fromUTF8("Choose recordings (WAV)\xe2\x80\xa6"), [this] {
         auto chooser = std::make_shared<juce::FileChooser>("Choose WAV recordings", juce::File(), "*.wav;*.wave;*.aif;*.aiff;*.flac");
         chooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::canSelectMultipleItems,
-                             [this, chooser](const juce::FileChooser& fc) { importFiles(fc.getResults()); });
+                             [this, chooser](const juce::FileChooser& fc) { importFiles(pickedFiles(fc)); });
     });
     menu.addItem(juce::String::fromUTF8("Choose a folder of recordings\xe2\x80\xa6"), [this] {
         auto chooser = std::make_shared<juce::FileChooser>("Choose a folder of WAV recordings", juce::File());
         chooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
-                             [this, chooser](const juce::FileChooser& fc) { importFiles(fc.getResults()); });
+                             [this, chooser](const juce::FileChooser& fc) { importFiles(pickedFiles(fc)); });
     });
     menu.showMenuAsync({});
 }
@@ -489,7 +553,8 @@ void Sessions::importFiles(const juce::Array<juce::File>& picked) {
     refresh();
     message = added == 0 ? juce::String("Nothing new to import.") : "Imported " + juce::String(added) + " recording" + (added == 1 ? "" : "s") + ".";
     m.setScreen(Screen::recordings);
-    if (importedFrom.isEmpty()) return;
+    // Android: the picker gave copies of the originals (content links), which Leviathan can't move or delete
+    if (importedFrom.isEmpty() || onAndroid) return;
     // offer to move the originals to the Recycle Bin so the takes live only in Leviathan (recoverable from there)
     const int n = importedFrom.size();
     auto opts = juce::MessageBoxOptions().withIconType(juce::MessageBoxIconType::QuestionIcon)

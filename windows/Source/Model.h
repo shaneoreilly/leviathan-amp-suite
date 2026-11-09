@@ -48,10 +48,25 @@ public:
     bool running = false;
     Info info;
     juce::String status;
+    /// Where the current status message gets fixed: a Settings section ("Audio", "Library", "About"), or "amp:on"
+    /// to switch the amp on. Only errors have one. It belongs to the message it was set for (statusFixFor), so a
+    /// later message never inherits it. The banner shows "Click to resolve" for it.
+    juce::String statusFix, statusFixFor;
+    void fixIn(const juce::String& where) { statusFix = where; statusFixFor = status; }
+    juce::String currentFix() const { return status.isNotEmpty() && status == statusFixFor ? statusFix : juce::String(); }
+    /// Goes to a fix: opens that Settings section, or switches the amp on.
+    void resolve(const juce::String& where);
+    /// Settings opens on this section next time it shows (set by resolve; Settings clears it).
+    juce::String settingsJump;
     int dropouts = 0;
     float cpu = 0;
     void start();
     void stop();
+    /// Android: leaving the app releases the audio device entirely (its exclusive low-latency streams and CPU hint
+    /// otherwise starve other apps' playback); coming back reopens it. Not while recording or live re-amping.
+    void enterBackground();
+    void enterForeground();
+    bool pausedForBackground = false, wasRunningBeforeBackground = false;
     void toggle() { running ? stop() : start(); }
     void restartAudio();
     bool hasInput() const;

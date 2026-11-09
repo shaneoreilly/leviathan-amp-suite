@@ -9,7 +9,8 @@ The state of the project, for whoever picks it up next. For the current version,
 
 - **Released:** every release carries both installers, and auto-update works on both platforms. `v0.2.0` is the one tag with no release: its CI failed and 0.2.1 superseded it.
 - **CI:** `ci.yml` builds the Mac app and runs the engine parity check on every push to `main` and on pull requests; `windows.yml` builds the Windows installer when `windows/` or `shared/` change.
-- **Secrets:** `LEVIATHAN_STABLE_P12_BASE64` and `LEVIATHAN_STABLE_P12_PASSWORD` hold the Mac signing certificate. The Apple Developer ID and notarization secrets (`MACOS_CERT_*`, `APPLE_*`) are *not* set.
+- **Android:** a port built from the same JUCE sources (`android/build.sh`; DEVELOPMENT.md "Build for Android"). It runs on the owner's Pixel 9 Pro XL (rooted, Android 17) with the iRig HD through a USB-C hub. Measured there: about 28 ms round trip through the phone's own speaker and mic (the OS reports 8.8 ms); the built-in amp uses ~0.1% of the audio callback and a standard NAM capture 60–70% at small buffers. `android.yml` builds it, and releases will attach a signed APK once the `LEVIATHAN_ANDROID_KEYSTORE_*` secrets are set.
+- **Secrets:** `LEVIATHAN_STABLE_P12_BASE64` and `LEVIATHAN_STABLE_P12_PASSWORD` hold the Mac signing certificate. `LEVIATHAN_ANDROID_KEYSTORE_BASE64` and `LEVIATHAN_ANDROID_KEYSTORE_PASSWORD` hold the Android release key (`android-release.jks` in the Mac's `Signing/` folder). The Apple Developer ID and notarization secrets (`MACOS_CERT_*`, `APPLE_*`) are *not* set.
 - **Owner's setup:**
   - Interface and outputs: an iRig HD into a Mac (Apple silicon), listening through an HDMI monitor (H27P22) or headphones.
   - Daily copy: the latest release, in `/Applications`. A development build also lives in `mac/Leviathan.app`.
@@ -31,7 +32,8 @@ These are built and reasoned through, but nobody has tried them on real hardware
    - **Interaction:** scroll-to-turn on dials (`ScrollCatcher`), and dragging the trim handles.
    - **Recording and playback:** the live recording waveform, playback starting audio automatically, and the new metronome click on the owner's monitor speakers. Testing these would have meant restarting the owner's app.
 3. **Windows trim:** `Sessions::trimFiles` builds but hasn't been run. The Mac version was tested on a copy of a real 96 s take: exact slice, backup kept.
-4. **The microphone fix (0.4.4)** is verified by signature: the release DMG's designated requirement equals the dev build's. The owner hasn't yet confirmed that the prompt stopped.
+4. **Android, untested so far:** the in-app update (download, checksum, Android's installer through FileProvider) has never seen a release with an APK; `android.yml` hasn't run on GitHub yet; the native picker and name prompt were installed but not confirmed on screen; Windows has no Share (JUCE's share sheet is Android/iOS only).
+5. **The microphone fix (0.4.4)** is verified by signature: the release DMG's designated requirement equals the dev build's. The owner hasn't yet confirmed that the prompt stopped.
 
 ## Known issues and rough edges
 
@@ -40,6 +42,7 @@ These are built and reasoned through, but nobody has tried them on real hardware
 - **NAM sample-rate mismatch:** a capture trained at a different sample rate plays with a warning but isn't resampled.
 - **Long IRs** are cut at 4096 samples (`DSP.maxIR`), with a fade.
 - **Delay wrapping:** in the default layout, Delay wraps onto its own row at common window widths. It wasn't in the owner's requested order.
+- **Android audio:** JUCE quits when Android destroys its activity, so anything that recreates it (some config changes, a second launch) closes the app. Known triggers are handled (single-instance guard off on Android, `build.sh install` doesn't double-launch); others may exist. NAM at the lowest buffer (1 ms callbacks) can crackle; the owner chose "lowest, then only change it by hand".
 - **The Python capture fitter** (`mac/Capture/`) predates NAM, which gives better results for high-gain amps. Both apps still load the models it writes, so it stays until that feature is removed.
 
 ## Backlog (owner's wishes and sensible next steps)

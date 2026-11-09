@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The in-app updater downloads a release's APK to files/Updates and hands it to Android's installer through
+     androidx FileProvider (authority local.leviathan.ampsuite.updates; see android/build.sh and Updater.cpp). -->
+<paths>
+    <files-path name="updates" path="Updates/" />
+</paths>

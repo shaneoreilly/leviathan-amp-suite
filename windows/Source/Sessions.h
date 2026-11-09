@@ -3,6 +3,7 @@
 #pragma once
 #include <JuceHeader.h>
 #include "Settings.h"
+#include "Library.h"
 
 namespace lev {
 
@@ -32,6 +33,10 @@ public:
     std::vector<float> waveform;         // min/max pairs
     std::vector<float> liveWave;         // min/max pairs of the take being recorded, 20 per second (top bar)
     juce::String message;
+    /// As Model::statusFix, for message.
+    juce::String messageFix, messageFixFor;
+    void fixIn(const juce::String& where) { messageFix = where; messageFixFor = message; }
+    juce::String currentFix() const { return message.isNotEmpty() && message == messageFixFor ? messageFix : juce::String(); }
 
     const Session* current() const;
     void select(const juce::File& dir);
@@ -59,10 +64,18 @@ public:
     void rename(const juce::String& name);
     /// Cuts the selected take (dry, wet, wet-original) to start...end seconds; the first trim keeps the untouched
     /// audio in untrimmed/ so it can be restored.
-    void trim(double start, double end);
+    void trim(double start, double end) { trimTake(start, end, true); }
+    /// Cuts start...end out of the take, joining what's either side with a 5 ms crossfade (no click).
+    void cut(double start, double end) { trimTake(start, end, false); }
     void restoreUntrimmed();
     bool canRestoreUntrimmed() const;
-    static std::optional<double> trimFiles(const juce::File& dir, double start, double end);
+    /// keep: leave only start...end; otherwise remove start...end. Returns the new length.
+    static std::optional<double> trimFiles(const juce::File& dir, double start, double end, bool keep = true);
+    /// The system share sheet for the selected take: the raw guitar (dry) or the amped sound (wet). Android
+    /// (and the Mac app); Windows has no share sheet JUCE can open.
+    static constexpr bool canShare = onAndroid;
+    enum class ShareKind { ampedForMessages, ampedWav, rawWav };
+    void share(ShareKind kind);
     void remove();
     void remove(const juce::File& dir);
     /// Finish a take that was cut off before Stop (unfinished WAV headers, no session.json) so it shows up again.
@@ -71,6 +84,10 @@ public:
     static double fixWavHeader(const juce::File& f);
     static juce::Time dateInName(const juce::String& s);
     void reveal();
+private:
+    void trimTake(double start, double end, bool keep);
+    juce::ScopedMessageBox shareBox;   // the share sheet; closing it early would cancel the share
+public:
     void importRecordings();
 
 private:

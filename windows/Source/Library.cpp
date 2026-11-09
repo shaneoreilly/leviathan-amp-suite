@@ -1,3 +1,6 @@
+#ifdef __ANDROID__
+ #define JUCE_CORE_INCLUDE_JNI_HELPERS 1   // getEnv/getAppContext, for the app's external Music folder
+#endif
 #include "Library.h"
 
 namespace lev {
@@ -10,8 +13,122 @@ juce::File appDataDir() {
 #endif
 }
 
+#if JUCE_ANDROID
+/// Context.getExternalFilesDir("Music"): the app's own folder on shared storage. Android's public Music folder
+/// only takes audio files, and every take also writes session.json.
+static juce::File androidExternalMusicDir() {
+    auto* env = juce::getEnv();
+    const auto ctx = juce::getAppContext();
+    const juce::LocalRef<jclass> ctxClass { env->GetObjectClass(ctx.get()) };
+    const auto getDir = env->GetMethodID(ctxClass.get(), "getExternalFilesDir", "(Ljava/lang/String;)Ljava/io/File;");
+    const juce::LocalRef<jstring> type { env->NewStringUTF("Music") };
+    const juce::LocalRef<jobject> dir { env->CallObjectMethod(ctx.get(), getDir, type.get()) };
+    if (dir == nullptr) return {};
+    const juce::LocalRef<jclass> fileClass { env->GetObjectClass(dir.get()) };
+    const auto getPath = env->GetMethodID(fileClass.get(), "getAbsolutePath", "()Ljava/lang/String;");
+    const juce::LocalRef<jstring> path { (jstring) env->CallObjectMethod(dir.get(), getPath) };
+    return juce::File(juce::juceString(path.get()));
+}
+#endif
+
 juce::File musicDir() {
+#if JUCE_ANDROID
+    static const juce::File dir = [] { const auto d = androidExternalMusicDir(); return d == juce::File() ? appDataDir().getChildFile("Music") : d; }();
+    return dir.getChildFile("Leviathan");
+#else
     return juce::File::getSpecialLocation(juce::File::userMusicDirectory).getChildFile("Leviathan");
+#endif
+}
+
+// MARK: - file pickers
+
+#if JUCE_ANDROID
+/// Copies a picked document (a file, or a folder with its whole tree) to `dest`, returning what was written.
+static juce::File copyDocument(const juce::AndroidDocument& doc, const juce::File& destDir) {
+    const auto info = doc.getInfo();
+    const auto name = juce::File::createLegalFileName(info.getName().isNotEmpty() ? info.getName() : juce::String("picked"));
+    if (info.isDirectory()) {
+        const auto dir = destDir.getChildFile(name);
+        dir.createDirectory();
+        for (const auto& child : juce::AndroidDocumentIterator::makeNonRecursive(doc)) copyDocument(child, dir);
+        return dir;
+    }
+    const auto out = destDir.getNonexistentChildFile(juce::File(name).getFileNameWithoutExtension(), juce::File(name).getFileExtension(), false);
+    if (auto in = doc.createInputStream()) {
+        juce::FileOutputStream os(out);
+        if (os.openedOk()) { os.writeFromInputStream(*in, -1); os.flush(); }
+    }
+    return out;
+}
+
+/// A fresh folder per pick under the cache; picks older than a day are cleared (by then they've been imported).
+static juce::File importStaging() {
+    const auto base = juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("Imports");
+    for (const auto& e : juce::RangedDirectoryIterator(base, false, "*", juce::File::findDirectories))
+        if (e.getModificationTime() < juce::Time::getCurrentTime() - juce::RelativeTime::days(1)) e.getFile().deleteRecursively();
+    const auto dir = base.getChildFile(juce::String(juce::Time::currentTimeMillis()));
+    dir.createDirectory();
+    return dir;
+}
+#endif
+
+juce::Array<juce::File> pickedFiles(const juce::FileChooser& fc) {
+#if JUCE_ANDROID
+    juce::Array<juce::File> out;
+    const auto urls = fc.getURLResults();
+    if (urls.isEmpty()) return out;
+    const auto staging = importStaging();
+    for (const auto& u : urls) {
+        const bool folder = u.toString(false).contains("/tree/");   // folder picks come back as document-tree URIs
+        const auto doc = folder ? juce::AndroidDocument::fromTree(u) : juce::AndroidDocument::fromDocument(u);
+        if (doc.hasValue()) out.add(copyDocument(doc, staging));
+    }
+    return out;
+#else
+    return fc.getResults();
+#endif
+}
+
+std::optional<bool> writePicked(const juce::FileChooser& fc, const juce::String& text, const juce::String& ext) {
+#if JUCE_ANDROID
+    const auto url = fc.getURLResult();
+    if (url.isEmpty()) return std::nullopt;
+    auto os = juce::AndroidDocument::fromDocument(url).createOutputStream();
+    if (os == nullptr) return false;
+    const auto ok = os->writeText(text, false, false, nullptr);
+    os->flush();
+    return ok;
+#else
+    auto f = fc.getResult();
+    if (f == juce::File()) return std::nullopt;
+    if (ext.isNotEmpty() && !f.hasFileExtension(ext)) f = f.withFileExtension(ext);
+    return f.replaceWithText(text);
+#endif
+}
+
+std::optional<PickedFolder> pickedFolder(const juce::FileChooser& fc) {
+#if JUCE_ANDROID
+    const auto url = fc.getURLResult();
+    if (url.isEmpty()) return std::nullopt;
+    const auto tree = juce::AndroidDocument::fromTree(url);
+    if (!tree.hasValue()) return std::nullopt;
+    return PickedFolder { tree.getInfo().getName(),
+        [tree](const juce::String& fileName, const juce::String& text) {
+            const auto doc = tree.createChildDocumentWithTypeAndName("application/octet-stream", fileName);
+            auto os = doc.hasValue() ? doc.createOutputStream() : nullptr;
+            if (os == nullptr) return false;
+            const auto ok = os->writeText(text, false, false, nullptr);
+            os->flush();
+            return ok;
+        },
+        [] {} };
+#else
+    const auto dir = fc.getResult();
+    if (dir == juce::File()) return std::nullopt;
+    return PickedFolder { dir.getFileName(),
+        [dir](const juce::String& fileName, const juce::String& text) { return dir.getChildFile(fileName).replaceWithText(text); },
+        [dir] { dir.revealToUser(); } };
+#endif
 }
 
 static juce::AudioFormatManager& formats() {
@@ -51,15 +168,169 @@ WavData loadAudio(const juce::File& f, double rate, double maxSeconds) {
     return w;
 }
 
-bool writeWav(const juce::File& f, const std::vector<const float*>& ch, int frames, double rate) {
+bool writeWav(const juce::File& f, const std::vector<const float*>& ch, int frames, double rate, bool bits16) {
     f.deleteFile();
     std::unique_ptr<juce::OutputStream> stream = f.createOutputStream();
     if (!stream) return false;
     juce::WavAudioFormat wav;   // 32-bit float, like the Mac app's recordings
-    auto w = wav.createWriterFor(stream, juce::AudioFormatWriterOptions{}.withSampleRate(rate).withNumChannels((int) ch.size()).withBitsPerSample(32)
-                                         .withSampleFormat(juce::AudioFormatWriterOptions::SampleFormat::floatingPoint));
+    auto opts = juce::AudioFormatWriterOptions{}.withSampleRate(rate).withNumChannels((int) ch.size());
+    opts = bits16 ? opts.withBitsPerSample(16)
+                  : opts.withBitsPerSample(32).withSampleFormat(juce::AudioFormatWriterOptions::SampleFormat::floatingPoint);
+    auto w = wav.createWriterFor(stream, opts);
     return w && w->writeFromFloatArrays(ch.data(), (int) ch.size(), frames);
 }
+
+#if JUCE_ANDROID
+namespace {
+/// A minimal .m4a (MP4 audio) writer laid out like Apple's encoder writes them: ftyp, moov first, then mdat, with
+/// the AAC packets in chunks of 24 and 32-bit chunk offsets. Android's MediaMuxer puts every packet in one chunk
+/// with 64-bit offsets and the index last, which WhatsApp plays with breaks (verified against an Apple-encoded copy).
+struct Mp4 {
+    std::vector<uint8_t> d;
+    void u8(int v) { d.push_back((uint8_t) v); }
+    void u16(int v) { u8(v >> 8); u8(v); }
+    void u32(uint32_t v) { u8((int) (v >> 24)); u8((int) (v >> 16)); u8((int) (v >> 8)); u8((int) v); }
+    void str(const char* s) { while (*s) u8(*s++); }
+    void zeros(int n) { d.insert(d.end(), (size_t) n, 0); }
+    void bytes(const std::vector<uint8_t>& b) { d.insert(d.end(), b.begin(), b.end()); }
+    size_t open(const char* type) { const auto at = d.size(); u32(0); str(type); return at; }
+    void close(size_t at) { const auto n = (uint32_t) (d.size() - at); d[at] = (uint8_t) (n >> 24); d[at + 1] = (uint8_t) (n >> 16); d[at + 2] = (uint8_t) (n >> 8); d[at + 3] = (uint8_t) n; }
+    void matrix() { const uint32_t m[9] = { 0x10000, 0, 0, 0, 0x10000, 0, 0, 0, 0x40000000 }; for (auto v : m) u32(v); }
+    void descriptor(int tag, const std::vector<uint8_t>& body) { u8(tag); u8((int) body.size()); bytes(body); }
+};
+
+std::vector<uint8_t> buildM4A(const std::vector<std::vector<uint8_t>>& frames, const std::vector<uint8_t>& asc, int rate, int channels, int bitrate) {
+    constexpr int perChunk = 24;
+    const auto count = (uint32_t) frames.size();
+    const uint32_t chunks = (count + perChunk - 1) / perChunk, duration = count * 1024;
+    auto moov = [&](uint32_t mdatData) {
+        Mp4 m;
+        const auto mv = m.open("moov");
+        { const auto b = m.open("mvhd"); m.u32(0); m.u32(0); m.u32(0); m.u32(1000); m.u32((uint32_t) ((uint64_t) duration * 1000 / (uint32_t) rate));
+          m.u32(0x10000); m.u16(0x100); m.zeros(10); m.matrix(); m.zeros(24); m.u32(2); m.close(b); }
+        const auto tr = m.open("trak");
+        { const auto b = m.open("tkhd"); m.u32(7); m.u32(0); m.u32(0); m.u32(1); m.u32(0); m.u32((uint32_t) ((uint64_t) duration * 1000 / (uint32_t) rate));
+          m.zeros(8); m.u16(0); m.u16(0); m.u16(0x100); m.u16(0); m.matrix(); m.u32(0); m.u32(0); m.close(b); }
+        const auto md = m.open("mdia");
+        { const auto b = m.open("mdhd"); m.u32(0); m.u32(0); m.u32(0); m.u32((uint32_t) rate); m.u32(duration); m.u16(0x55c4 /* und */); m.u16(0); m.close(b); }
+        { const auto b = m.open("hdlr"); m.u32(0); m.u32(0); m.str("soun"); m.zeros(12); m.str("SoundHandler"); m.u8(0); m.close(b); }
+        const auto mi = m.open("minf");
+        { const auto b = m.open("smhd"); m.u32(0); m.u16(0); m.u16(0); m.close(b); }
+        { const auto di = m.open("dinf"); const auto dr = m.open("dref"); m.u32(0); m.u32(1); { const auto u = m.open("url "); m.u32(1); m.close(u); } m.close(dr); m.close(di); }
+        const auto st = m.open("stbl");
+        { const auto sd = m.open("stsd"); m.u32(0); m.u32(1);
+          const auto a = m.open("mp4a"); m.zeros(6); m.u16(1); m.zeros(8); m.u16(channels); m.u16(16); m.u16(0); m.u16(0); m.u32((uint32_t) rate << 16);
+          { const auto e = m.open("esds"); m.u32(0);
+            Mp4 dsi; dsi.bytes(asc);
+            Mp4 dcd; dcd.u8(0x40); dcd.u8(0x15); dcd.u8(0); dcd.u16(0x1800); dcd.u32((uint32_t) bitrate); dcd.u32((uint32_t) bitrate); dcd.descriptor(0x05, dsi.d);
+            Mp4 es; es.u16(1); es.u8(0); es.descriptor(0x04, dcd.d); es.descriptor(0x06, { 0x02 });
+            m.descriptor(0x03, es.d); m.close(e); }
+          m.close(a); m.close(sd); }
+        { const auto b = m.open("stts"); m.u32(0); m.u32(1); m.u32(count); m.u32(1024); m.close(b); }
+        { const auto b = m.open("stsc"); m.u32(0); const uint32_t rem = count % perChunk;
+          m.u32(rem == 0 || chunks == 1 ? 1 : 2); m.u32(1); m.u32(chunks == 1 ? count : (uint32_t) perChunk); m.u32(1);
+          if (rem != 0 && chunks > 1) { m.u32(chunks); m.u32(rem); m.u32(1); }
+          m.close(b); }
+        { const auto b = m.open("stsz"); m.u32(0); m.u32(0); m.u32(count); for (auto& f : frames) m.u32((uint32_t) f.size()); m.close(b); }
+        { const auto b = m.open("stco"); m.u32(0); m.u32(chunks); uint32_t off = mdatData;
+          for (uint32_t c = 0; c < chunks; ++c) { m.u32(off); for (uint32_t k = c * perChunk; k < std::min(count, (c + 1) * perChunk); ++k) off += (uint32_t) frames[k].size(); }
+          m.close(b); }
+        m.close(st); m.close(mi); m.close(md); m.close(tr); m.close(mv);
+        return m.d;
+    };
+    Mp4 f;
+    { const auto b = f.open("ftyp"); f.str("M4A "); f.u32(0); f.str("M4A "); f.str("mp42"); f.str("isom"); f.close(b); }
+    const auto head = (uint32_t) (f.d.size() + moov(0).size() + 8);   // the index doesn't change size with its offsets
+    f.bytes(moov(head));
+    const auto mdat = f.open("mdat");
+    for (auto& fr : frames) f.bytes(fr);
+    f.close(mdat);
+    return f.d;
+}
+} // namespace
+
+/// AAC from Android's own encoder (MediaCodec, through JNI), written into an .m4a by buildM4A.
+bool writeM4A(const juce::File& f, const std::vector<const float*>& ch, int frames, double rate) {
+    auto* env = juce::getEnv();
+    if (env == nullptr || ch.empty() || frames <= 0) return false;
+    const int nch = std::min((int) ch.size(), 2), bitrate = 192000;
+    auto cls = [env](const char* n) { return juce::LocalRef<jclass>(env->FindClass(n)); };
+    auto ok = [env] { if (env->ExceptionCheck()) { env->ExceptionClear(); return false; } return true; };
+    const auto formatC = cls("android/media/MediaFormat"), codecC = cls("android/media/MediaCodec"), infoC = cls("android/media/MediaCodec$BufferInfo");
+    const juce::LocalRef<jstring> mime { env->NewStringUTF("audio/mp4a-latm") };
+    const juce::LocalRef<jobject> format { env->CallStaticObjectMethod(formatC.get(), env->GetStaticMethodID(formatC.get(), "createAudioFormat",
+        "(Ljava/lang/String;II)Landroid/media/MediaFormat;"), mime.get(), (jint) rate, (jint) nch) };
+    if (!ok() || format == nullptr) return false;
+    const auto setInt = env->GetMethodID(formatC.get(), "setInteger", "(Ljava/lang/String;I)V");
+    auto put = [&](const char* k, int v) { const juce::LocalRef<jstring> key { env->NewStringUTF(k) }; env->CallVoidMethod(format.get(), setInt, key.get(), (jint) v); };
+    put("aac-profile", 2);          // AAC LC
+    put("bitrate", bitrate);
+    put("max-input-size", 16384);
+    const juce::LocalRef<jobject> codec { env->CallStaticObjectMethod(codecC.get(), env->GetStaticMethodID(codecC.get(), "createEncoderByType",
+        "(Ljava/lang/String;)Landroid/media/MediaCodec;"), mime.get()) };
+    if (!ok() || codec == nullptr) return false;
+    env->CallVoidMethod(codec.get(), env->GetMethodID(codecC.get(), "configure",
+        "(Landroid/media/MediaFormat;Landroid/view/Surface;Landroid/media/MediaCrypto;I)V"), format.get(), nullptr, nullptr, (jint) 1 /* ENCODE */);
+    if (!ok()) return false;
+    env->CallVoidMethod(codec.get(), env->GetMethodID(codecC.get(), "start", "()V"));
+    if (!ok()) return false;
+
+    const auto dequeueIn = env->GetMethodID(codecC.get(), "dequeueInputBuffer", "(J)I"),
+               getIn = env->GetMethodID(codecC.get(), "getInputBuffer", "(I)Ljava/nio/ByteBuffer;"),
+               queueIn = env->GetMethodID(codecC.get(), "queueInputBuffer", "(IIIJI)V"),
+               dequeueOut = env->GetMethodID(codecC.get(), "dequeueOutputBuffer", "(Landroid/media/MediaCodec$BufferInfo;J)I"),
+               getOut = env->GetMethodID(codecC.get(), "getOutputBuffer", "(I)Ljava/nio/ByteBuffer;"),
+               releaseOut = env->GetMethodID(codecC.get(), "releaseOutputBuffer", "(IZ)V");
+    const auto fSize = env->GetFieldID(infoC.get(), "size", "I"), fOffset = env->GetFieldID(infoC.get(), "offset", "I"), fFlags = env->GetFieldID(infoC.get(), "flags", "I");
+    const juce::LocalRef<jobject> info { env->NewObject(infoC.get(), env->GetMethodID(infoC.get(), "<init>", "()V")) };
+
+    std::vector<std::vector<uint8_t>> packets;
+    std::vector<uint8_t> asc;
+    int pos = 0;
+    bool inputDone = false, outputDone = false, good = true;
+    while (!outputDone && good) {
+        if (!inputDone) {
+            const int ii = env->CallIntMethod(codec.get(), dequeueIn, (jlong) 10000);
+            if (!ok()) { good = false; break; }
+            if (ii >= 0) {
+                const juce::LocalRef<jobject> buf { env->CallObjectMethod(codec.get(), getIn, (jint) ii) };
+                auto* dst = static_cast<int16_t*>(env->GetDirectBufferAddress(buf.get()));
+                const int cap = (int) env->GetDirectBufferCapacity(buf.get()) / (2 * nch);
+                const int n = std::min({ cap, 1024, frames - pos });
+                for (int i = 0; i < n; ++i)
+                    for (int c = 0; c < nch; ++c)
+                        dst[i * nch + c] = (int16_t) juce::jlimit(-32768, 32767, juce::roundToInt(ch[(size_t) c][pos + i] * 32767.0f));
+                const jlong pts = (jlong) ((double) pos * 1000000.0 / rate);
+                pos += n;
+                inputDone = pos >= frames;
+                env->CallVoidMethod(codec.get(), queueIn, (jint) ii, (jint) 0, (jint) (n * 2 * nch), pts, (jint) (inputDone ? 4 : 0) /* END_OF_STREAM */);
+                if (!ok()) { good = false; break; }
+            }
+        }
+        const int oi = env->CallIntMethod(codec.get(), dequeueOut, info.get(), (jlong) 10000);
+        if (!ok()) { good = false; break; }
+        if (oi >= 0) {
+            const int flags = env->GetIntField(info.get(), fFlags), size = env->GetIntField(info.get(), fSize), offset = env->GetIntField(info.get(), fOffset);
+            if (size > 0) {
+                const juce::LocalRef<jobject> buf { env->CallObjectMethod(codec.get(), getOut, (jint) oi) };
+                const auto* p = static_cast<const uint8_t*>(env->GetDirectBufferAddress(buf.get())) + offset;
+                if ((flags & 2) != 0) asc.assign(p, p + size);   // CODEC_CONFIG: the AudioSpecificConfig
+                else packets.emplace_back(p, p + size);
+            }
+            env->CallVoidMethod(codec.get(), releaseOut, (jint) oi, (jboolean) false);
+            if (!ok()) { good = false; break; }
+            outputDone = (flags & 4) != 0;
+        }
+    }
+    env->CallVoidMethod(codec.get(), env->GetMethodID(codecC.get(), "stop", "()V")); ok();
+    env->CallVoidMethod(codec.get(), env->GetMethodID(codecC.get(), "release", "()V")); ok();
+    if (!good || !outputDone || packets.empty() || asc.empty()) return false;
+    const auto data = buildM4A(packets, asc, (int) rate, nch, bitrate);
+    return f.replaceWithData(data.data(), data.size());
+}
+#else
+bool writeM4A(const juce::File&, const std::vector<const float*>&, int, double) { return false; }
+#endif
 
 // MARK: - IR library
 
@@ -78,6 +349,25 @@ std::optional<IRFile> IRLibrary::parse(const juce::String& rel) {
     }
     f.position = t.joinIntoString(" ");
     return f;
+}
+
+int IRLibrary::importPack(const juce::Array<juce::File>& items) {
+    int n = 0;
+    std::function<void(const juce::File&)> visit = [&](const juce::File& d) {
+        if (!d.isDirectory()) return;
+        const auto name = d.getFileName();
+        if (name == "44.1" || name == "48") {
+            for (const auto& e : juce::RangedDirectoryIterator(d, true, "*.wav", juce::File::findFiles)) {
+                const auto to = root().getChildFile(name).getChildFile(e.getFile().getRelativePathFrom(d));
+                to.getParentDirectory().createDirectory();
+                if (e.getFile().copyFileTo(to)) ++n;
+            }
+            return;
+        }
+        for (const auto& e : juce::RangedDirectoryIterator(d, false, "*", juce::File::findDirectories)) visit(e.getFile());
+    };
+    for (const auto& f : items) visit(f);
+    return n;
 }
 
 void IRLibrary::scan(double sampleRate) {

@@ -22,6 +22,9 @@ struct RootView: View {
                     HStack {
                         Text(msg).font(.system(size: 12 * UI))
                         Spacer()
+                        // an error that a setting fixes gets a button that goes there
+                        let fix = msg == rec.message ? rec.currentFix : m.currentFix
+                        if !fix.isEmpty { Button("Click to resolve") { m.resolve(fix) }.font(.system(size: 12 * UI)) }
                         Button { if msg == rec.message { rec.message = "" } else { m.status = "" } } label: { Image(systemName: "xmark") }
                             .buttonStyle(.borderless)
                     }
@@ -383,6 +386,9 @@ struct RecordingsView: View {
                     Spacer()
                     Button("Play selection") { rec.play(from: sel.start, to: sel.end) }
                     Button("Clear") { rec.selection = nil }
+                    Button("Trim selection") { rec.cut(sel.start, sel.end); rec.selection = nil }
+                        .help("Cut the selected part out of this take (the original is kept, so you can restore it)")
+                        .disabled(sel.end - sel.start < 0.05 || (sel.start <= 0.001 && sel.end >= s.meta.duration - 0.001))
                     Button("Trim to selection") { rec.trim(sel.start, sel.end); rec.selection = nil }
                         .buttonStyle(.borderedProminent)
                         .help("Keep only the selected part of this take (the original is kept, so you can restore it)")
@@ -415,6 +421,12 @@ struct RecordingsView: View {
                         if rec.canRestoreUntrimmed {
                             Button("Restore untrimmed") { rec.restoreUntrimmed() }.help("Put back the take as it was before trimming")
                         }
+                        Menu {
+                            if let u = rec.shareURL(s, amped: true, m4a: true) { ShareLink("Amped, for messages (M4A)", item: u) }
+                            if let u = rec.shareURL(s, amped: true) { ShareLink("Amped, full quality (WAV)", item: u) }
+                            if let u = rec.shareURL(s, amped: false) { ShareLink("Raw guitar, for re-amping (WAV)", item: u) }
+                        } label: { Label("Share", systemImage: "square.and.arrow.up") }
+                            .fixedSize().help("Send this take to another app")
                         Button { rec.reveal() } label: { Image(systemName: "folder") }.help("Show in Finder")
                         Button(role: .destructive) { rec.delete() } label: { Image(systemName: "trash") }.help("Move to Trash")
                     }
@@ -580,6 +592,8 @@ struct WaveformView: View {
 
 /// Which settings section is showing (remembered between launches).
 final class SettingsUI: ObservableObject {
+    /// One for the app, so "Click to resolve" on a banner can open a section.
+    static let shared = SettingsUI()
     @Published var section = UserDefaults.standard.string(forKey: "settingsSection") ?? "Audio" {
         didSet { UserDefaults.standard.set(section, forKey: "settingsSection") }
     }
@@ -589,7 +603,7 @@ struct SettingsView: View {
     @EnvironmentObject var m: Model
     @EnvironmentObject var rec: Sessions
     @EnvironmentObject var updater: Updater
-    @StateObject private var ui = SettingsUI()
+    @ObservedObject private var ui = SettingsUI.shared
 
     /// The sections, in order (Windows: SettingsScreen::Nav lists the same).
     static let nav: [(name: String, icon: String)] = [
@@ -1081,6 +1095,7 @@ struct UpdateBanner: View {
 /// While an update downloads or installs, and if it fails: the update banner's place, so progress shows on every screen.
 struct UpdateProgressBanner: View {
     @EnvironmentObject var updater: Updater
+    @EnvironmentObject var m: Model
     var body: some View {
         switch updater.phase {
         case .downloading(let f):
@@ -1091,6 +1106,7 @@ struct UpdateProgressBanner: View {
             row {
                 Text(msg).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
                 Spacer()
+                Button("Click to resolve") { m.resolve("About") }
                 Button { updater.phase = .idle } label: { Image(systemName: "xmark") }.buttonStyle(.borderless)
             }
         default: EmptyView()

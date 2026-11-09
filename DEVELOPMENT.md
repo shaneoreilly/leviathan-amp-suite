@@ -2,10 +2,11 @@
 
 Everything about building, testing and releasing Leviathan. For using the app, see the [README](README.md). For the project's current state, open issues and the reasoning behind decisions, see [docs/HANDOFF.md](docs/HANDOFF.md). Agent guidance is in [CLAUDE.md](CLAUDE.md).
 
-Leviathan is two native apps with the same features, presets and file formats:
+Leviathan is native apps with the same features, presets and file formats:
 
 - **macOS:** Swift and SwiftUI on CoreAudio, in `mac/`.
 - **Windows:** C++ with [JUCE](https://juce.com), in `windows/`. It also builds on macOS, which is how it's tested alongside the Mac app.
+- **Android:** the same JUCE sources as Windows (`windows/Source`), built by `android/build.sh`. Android-only behaviour is behind `JUCE_ANDROID` (and `onAndroid` in `Library.h`).
 
 The two apps share:
 - **NAM:** both use the same Neural Amp Modeler bridge (`shared/nam/`).
@@ -60,6 +61,34 @@ For ASIO, download the [Steinberg ASIO SDK](https://www.steinberg.net/asiosdk) (
 
 To build on macOS for testing, run `cmake -B build -G Ninja` and then `cmake --build build --target Leviathan`. `LEVIATHAN_NO_INPUT=1` runs it output-only, with no microphone prompt.
 
+## Build for Android
+
+You need the Android SDK with platform 35, build-tools 35, NDK 28.1.13356709 and CMake 3.31.6 (`ANDROID_HOME`, default `~/Library/Android/sdk`), and JDK 17 or 21 (`JAVA_HOME`, default Homebrew's `openjdk@21`). JUCE and NeuralAmpModelerCore come from the Windows build's `windows/build/_deps` when present, otherwise they're cloned into `android/.deps`.
+
+| Command | What it does |
+| --- | --- |
+| `android/build.sh` | Release build: `android/dist/Leviathan-X.Y.Z.apk` and its `.sha256` |
+| `android/build.sh install` | The same, then installs and launches it on the connected phone (adb, USB or Wi-Fi) |
+| `android/build.sh probe [install]` | The feasibility probe in `android/Probe`: round-trip latency, callback load, NAM CPU cost |
+
+How it works:
+- **Project:** JUCE's CMake API doesn't target Android, so `build.sh` builds JUCE's Projucer, writes a `.jucer` listing every file in `windows/Source`, the NAM sources, the bundled captures and `explanations.json`, and runs Gradle on the generated project. `android/Builds`, `android/.deps`, `android/dist` and the `.jucer` are generated (gitignored).
+- **JUCE patches:** `build.sh` patches a copy of JUCE's modules (`android/.deps/JUCE-patched`, versioned by `patch_version`; the Windows build's JUCE is untouched):
+  - The Oboe device drops input that piles up when the input runs on a faster clock than the output (a USB interface and the phone speaker), uses callbacks of exactly the buffer setting (Android's own burst can be 1 ms), double-buffers the output and turns on Oboe's performance hint.
+  - Every `PopupMenu` (combo boxes and JUCE's audio-device lists included) can be handed to `levNativePopupMenu`, which `UI/NativeMenus.cpp` shows as a native Android list dialog.
+- **Signing:** release builds are signed with Leviathan's permanent Android key, because Android only installs an update signed with the same key as the installed app. The key is `~/Library/Application Support/Leviathan/Signing/android-release.jks` with its password in `android-keystore-password` next to it (override with `LEV_ANDROID_KEYSTORE` and `LEV_ANDROID_KEYSTORE_PASSWORD`). Without it, `build.sh` warns and falls back to the machine's debug key; such a build can't update, or be updated by, a released one.
+- **Differences from desktop** (all behind `JUCE_ANDROID` / `onAndroid`):
+  - Full screen, landscape, the screen kept on; the back gesture returns to the rig and never closes the app.
+  - Leaving the app releases the audio device (it would otherwise starve other apps' audio), unless it's recording or live re-amping.
+  - The buffer starts at the lowest the phone offers and only changes when you change it (no automatic step-up; dropouts show a "Tap to resolve" banner).
+  - Recordings live in the app's own Music folder (`Android/data/local.leviathan.ampsuite/files/Music/Leviathan`); the bundled captures are unpacked from the app on first launch.
+  - File pickers return `content://` links: `pickedFiles()`, `writePicked()` and `pickedFolder()` in `Library.cpp` copy them to and from ordinary files. "Open folder" and "Show in Explorer" are hidden; deleting a take asks, since there's no Recycle Bin.
+  - Share (recordings) uses the system share sheet; "for messages" is AAC in an `.m4a` written by `writeM4A` (the phone's encoder, Leviathan's own MP4 writer).
+  - Menus, drop-downs and name prompts are native Android dialogs; the top bar wraps to two rows and scrolls away with the rig.
+- **Updates:** the in-app updater downloads the release's `.apk`, checks it against its `.sha256` and hands it to Android's installer through an androidx `FileProvider` (`android/res/xml/lev_update_paths.xml`). Android asks to confirm, and the first time to allow installs from Leviathan.
+
+**Testing on a phone:** enable USB or Wi-Fi debugging and `adb` can install, launch and read the log (`adb logcat`). Android 17 relaunches an updated app by itself; `build.sh install` only launches it when it isn't already running (a second launch makes a JUCE app quit).
+
 ## Checks
 
 - **`windows/tools/compare_with_swift.sh`** renders the same test signals through both engines and reports the difference for each scenario: amp, gate, overdrive, cab, pedals, pitch, NAM and metronome. Amp, gate and overdrive are bit-identical, and the others differ only by rounding (about 70 dB or more below the signal). Run it after any change to `DSP.swift` or `Dsp.cpp`.
@@ -68,7 +97,7 @@ To build on macOS for testing, run `cmake -B build -G Ninja` and then `cmake --b
 
 ## Releasing
 
-1. Bump the version in `mac/Info.plist` (`CFBundleShortVersionString` and `CFBundleVersion`) and in `windows/VERSION`.
+1. Bump the version in `mac/Info.plist` (`CFBundleShortVersionString` and `CFBundleVersion`) and in `windows/VERSION` (Android uses it too).
 2. Push a tag:
 
    ```sh
@@ -79,7 +108,8 @@ To build on macOS for testing, run `cmake -B build -G Ninja` and then `cmake --b
 3. GitHub Actions does the rest:
    - `.github/workflows/release.yml` builds the universal Mac DMG.
    - `windows.yml` builds the Windows installer. The ASIO SDK it downloads is checksum-pinned.
-   - Both are published to a release titled "Leviathan - vX.Y.Z".
+   - `android.yml` builds the signed APK, with the key from the `LEVIATHAN_ANDROID_KEYSTORE_BASE64` and `LEVIATHAN_ANDROID_KEYSTORE_PASSWORD` secrets. A release fails without them rather than publish an APK that can't update the installed app.
+   - All three are published to a release titled "Leviathan - vX.Y.Z".
 
 The in-app updaters read the latest GitHub release.
 
@@ -146,10 +176,11 @@ mac/                     macOS app (Swift, SwiftUI, CoreAudio)
   Capture/               amp-capture test signal + model fitter (Python)
   scripts/               sign.sh (stable signing), make_dmg.sh (release package)
   build.sh
-windows/                 Windows app (C++, JUCE)
-  Source/                Dsp.cpp (port of DSP.swift), Model, Settings, Sessions, Library, Midi, Updater, UI/
+windows/                 Windows and Android app (C++, JUCE)
+  Source/                Dsp.cpp (port of DSP.swift), Model, Settings, Sessions, Library, Midi, Updater, UI/ (NativeMenus: Android dialogs)
   installer/             Inno Setup script
   tools/                 engine comparison with the Swift engine, preset checker
+android/                 Android build: build.sh (project generator, JUCE patches, signing), res/ (FileProvider paths), Probe/
 shared/
   nam/                   Neural Amp Modeler bridge (lev_nam.h/.cpp), fetch/build scripts, bundled captures
   help/                  explanations.json: hover text for every control, used by both apps

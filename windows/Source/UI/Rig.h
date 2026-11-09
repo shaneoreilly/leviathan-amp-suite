@@ -32,9 +32,18 @@ public:
     explicit RigView(Model& m);
     void refresh();
     void resized() override;
+    /// Space at the top of the scrolling content, for a top bar drawn over it that scrolls away (phones).
+    void setTopInset(int px) { if (px != topInset) { topInset = px; layout(); } }
+    int scrollY() const { return viewport.getViewPositionY(); }
+    std::function<void()> onScroll;
 private:
+    struct ScrollViewport : juce::Viewport {
+        std::function<void()> moved;
+        void visibleAreaChanged(const juce::Rectangle<int>&) override { if (moved) moved(); }
+    };
     Model& model;
-    juce::Viewport viewport;
+    int topInset = 0;
+    ScrollViewport viewport;
     juce::Component canvas;
     std::map<juce::String, std::unique_ptr<UnitBox>> panels;
     std::vector<std::unique_ptr<UnitBox>> pedals;
@@ -50,6 +59,9 @@ private:
     void timerCallback() override;
 
     std::unique_ptr<UnitBox> makePanel(const juce::String& id);
+    juce::String cabSignature() const;
+    juce::String cabSig;
+    void rebuildPanel(const juce::String& id);
     std::unique_ptr<juce::Component> inputPickers();
     std::unique_ptr<UnitBox> makePedal(PedalKind k);
     std::unique_ptr<juce::Component> makeTuner();

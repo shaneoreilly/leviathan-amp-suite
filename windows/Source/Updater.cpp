@@ -1,3 +1,6 @@
+#ifdef __ANDROID__
+ #define JUCE_CORE_INCLUDE_JNI_HELPERS 1   // the APK install intent
+#endif
 #include "Updater.h"
 #include "Model.h"
 
@@ -143,12 +146,12 @@ void Updater::check(bool quiet) {
             if (auto* assets = v["assets"].getArray()) {
                 for (const auto& a : *assets) {
                     const auto name = a["name"].toString();
-                    if (name.endsWithIgnoreCase(".exe")) { installerName = name; r.installer = juce::URL(a["browser_download_url"].toString()); }
+                    if (name.endsWithIgnoreCase(onAndroid ? ".apk" : ".exe")) { installerName = name; r.installer = juce::URL(a["browser_download_url"].toString()); }
                 }
                 for (const auto& a : *assets) if (a["name"].toString() == installerName + ".sha256") r.sha = juce::URL(a["browser_download_url"].toString());
             }
             release = r;
-            if (installerName.isEmpty()) { phase = quiet ? Phase::idle : Phase::failed; error = "Release " + tag + " has no Windows installer yet."; m.changed(); return; }
+            if (installerName.isEmpty()) { phase = quiet ? Phase::idle : Phase::failed; error = "Release " + tag + (onAndroid ? " has no Android app yet." : " has no Windows installer yet."); m.changed(); return; }
             phase = Phase::available;
             // LEVIATHAN_SHOW_NOTES=1 opens What's new once an update is found (UI testing)
             if (juce::SystemStats::getEnvironmentVariable("LEVIATHAN_SHOW_NOTES", {}).isNotEmpty()) showNotes = true;
@@ -157,14 +160,50 @@ void Updater::check(bool quiet) {
     });
 }
 
+/// Where an Android update is downloaded: files/Updates, the folder FileProvider shares with the installer
+/// (android/res/xml/lev_update_paths.xml).
+[[maybe_unused]] static juce::File androidUpdatesDir() { return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("files/Updates"); }
+
+#if JUCE_ANDROID
+/// Opens Android's installer on the downloaded APK (ACTION_VIEW on a FileProvider link). Android asks to confirm,
+/// and once to allow installs from Leviathan. Returns false if it couldn't be opened.
+static bool launchApkInstaller(const juce::File& apk) {
+    auto* env = juce::getEnv();
+    const auto ctx = juce::getAppContext();
+    auto ok = [env] { if (env->ExceptionCheck()) { env->ExceptionClear(); return false; } return true; };
+    const juce::LocalRef<jclass> fileC { env->FindClass("java/io/File") };
+    const juce::LocalRef<jobject> file { env->NewObject(fileC.get(), env->GetMethodID(fileC.get(), "<init>", "(Ljava/lang/String;)V"), juce::javaString(apk.getFullPathName()).get()) };
+    // androidx isn't on the system class path: load FileProvider through the app's class loader
+    const juce::LocalRef<jclass> ctxC { env->GetObjectClass(ctx.get()) };
+    const juce::LocalRef<jobject> loader { env->CallObjectMethod(ctx.get(), env->GetMethodID(ctxC.get(), "getClassLoader", "()Ljava/lang/ClassLoader;")) };
+    const juce::LocalRef<jclass> loaderC { env->GetObjectClass(loader.get()) };
+    const juce::LocalRef<jclass> providerC { (jclass) env->CallObjectMethod(loader.get(), env->GetMethodID(loaderC.get(), "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;"),
+                                                                            juce::javaString("androidx.core.content.FileProvider").get()) };
+    if (!ok() || providerC == nullptr) return false;
+    const juce::LocalRef<jobject> uri { env->CallStaticObjectMethod(providerC.get(), env->GetStaticMethodID(providerC.get(), "getUriForFile",
+        "(Landroid/content/Context;Ljava/lang/String;Ljava/io/File;)Landroid/net/Uri;"), ctx.get(), juce::javaString("local.leviathan.ampsuite.updates").get(), file.get()) };
+    if (!ok() || uri == nullptr) return false;
+    const juce::LocalRef<jclass> intentC { env->FindClass("android/content/Intent") };
+    const juce::LocalRef<jobject> intent { env->NewObject(intentC.get(), env->GetMethodID(intentC.get(), "<init>", "(Ljava/lang/String;)V"), juce::javaString("android.intent.action.VIEW").get()) };
+    const juce::LocalRef<jobject> r1 { env->CallObjectMethod(intent.get(), env->GetMethodID(intentC.get(), "setDataAndType", "(Landroid/net/Uri;Ljava/lang/String;)Landroid/content/Intent;"),
+                                                              uri.get(), juce::javaString("application/vnd.android.package-archive").get()) };
+    const juce::LocalRef<jobject> r2 { env->CallObjectMethod(intent.get(), env->GetMethodID(intentC.get(), "addFlags", "(I)Landroid/content/Intent;"),
+                                                              (jint) (0x00000001 /* GRANT_READ_URI_PERMISSION */ | 0x10000000 /* NEW_TASK */)) };
+    env->CallVoidMethod(ctx.get(), env->GetMethodID(ctxC.get(), "startActivity", "(Landroid/content/Intent;)V"), intent.get());
+    return ok();
+}
+#endif
+
 void Updater::install() {
-#if ! JUCE_WINDOWS
+#if ! JUCE_WINDOWS && ! JUCE_ANDROID
     if (release) release->page.launchInDefaultBrowser();   // the macOS app updates itself; this build is for testing
     return;
 #else
     if (!release || busy()) return;
     if (release->sha.isEmpty()) { fail("the release has no checksum file"); return; }
-    download = juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("Leviathan-Setup-" + release->version + ".exe");
+    if (onAndroid) { androidUpdatesDir().deleteRecursively(); androidUpdatesDir().createDirectory(); }
+    download = onAndroid ? androidUpdatesDir().getChildFile("Leviathan-" + release->version + ".apk")
+                         : juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("Leviathan-Setup-" + release->version + ".exe");
     download.deleteFile();
     phase = Phase::downloading; progressValue = 0; m.changed();
     task = release->installer.downloadToFile(download, juce::URL::DownloadTaskOptions().withExtraHeaders("User-Agent: Leviathan-Updater").withListener(this));
@@ -200,6 +239,12 @@ void Updater::verifyAndRun() {
         juce::MessageManager::callAsync([this, aliveFlag, want, got, file] {
             if (!aliveFlag->load()) return;
             if (want.length() != 64 || want != got) { file.deleteFile(); fail("the download didn't match its checksum"); return; }
+           #if JUCE_ANDROID
+            // Android's installer takes it from here: it asks to confirm, replaces the app and closes this one
+            if (!launchApkInstaller(file)) { fail("Android's installer didn't open"); return; }
+            phase = Phase::available; m.changed();   // back to the banner if the update is cancelled
+            return;
+           #endif
             // Inno Setup: closes the running app, installs over it, and its [Run] entry reopens Leviathan
             if (!file.startAsProcess("/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS")) { fail("the installer didn't start"); return; }
             juce::JUCEApplication::getInstance()->systemRequestedQuit();

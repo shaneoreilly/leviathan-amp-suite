@@ -625,6 +625,7 @@ void DSP::process(const float* input, float* outL, float* outR, int frames) {
     for (int i = 0; i < n; ++i) {
         const float d = std::min(std::max(dTime.next(0.0005f), 1.0f), (float) (dSize - 2));
         float rp = (float) dW - d; if (rp < 0) rp += (float) dSize;
+        if (rp >= (float) dSize) rp -= (float) dSize;   // a tiny negative rp + dSize can round up to exactly dSize
         const int i0 = (int) rp, i1 = (i0 + 1) % dSize; const float fr = rp - (float) i0;
         const float wet = dLP.run(dBuf[(size_t) i0] + (dBuf[(size_t) i1] - dBuf[(size_t) i0]) * fr);
         dBuf[(size_t) dW] = a[(size_t) i] * dSend.next(c) + wet * dFb + 1e-20f;

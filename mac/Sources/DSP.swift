@@ -810,6 +810,7 @@ final class DSP {
         for i in 0..<n {
             let d = min(max(dTime.next(0.0005), 1), Float(dSize - 2))
             var rp = Float(dW) - d; if rp < 0 { rp += Float(dSize) }
+            if rp >= Float(dSize) { rp -= Float(dSize) }   // a tiny negative rp + dSize can round up to exactly dSize
             let i0 = Int(rp), fr = rp - Float(i0), i1 = (i0 + 1) % dSize
             let wet = dLP.run(dBuf[i0] + (dBuf[i1] - dBuf[i0]) * fr)
             dBuf[dW] = a[i] * dSend.next(c) + wet * dFb + 1e-20

@@ -6,13 +6,15 @@ Guidance for AI coding agents (and humans) working in this repository. Read this
 
 ## What this is
 
-**Leviathan:** a free, open-source (AGPLv3) guitar amp and effects rig for players. There are two native apps with the same features, presets and file formats:
+**Leviathan:** a free, open-source (AGPLv3) guitar amp and effects rig for players. There are native apps with the same features, presets and file formats:
 
-| | macOS | Windows |
-| --- | --- | --- |
-| Code | `mac/` (Swift, SwiftUI, CoreAudio; no Xcode project) | `windows/` (C++20, JUCE 9.0.5, CMake) |
-| Engine | `mac/Sources/DSP.swift` | `windows/Source/Dsp.cpp`, a line-by-line port |
-| Build | `cd mac && ./build.sh` | `cd windows && cmake -B build -G Ninja && cmake --build build --target Leviathan` |
+| | macOS | Windows | Android |
+| --- | --- | --- | --- |
+| Code | `mac/` (Swift, SwiftUI, CoreAudio; no Xcode project) | `windows/` (C++20, JUCE 9.0.5, CMake) | the same `windows/Source`, built by `android/build.sh` (Projucer + Gradle) |
+| Engine | `mac/Sources/DSP.swift` | `windows/Source/Dsp.cpp`, a line-by-line port | `Dsp.cpp` |
+| Build | `cd mac && ./build.sh` | `cd windows && cmake -B build -G Ninja && cmake --build build --target Leviathan` | `android/build.sh [install]` |
+
+Android-only behaviour is behind `JUCE_ANDROID` (or `onAndroid` from `Library.h`); see DEVELOPMENT.md "Build for Android" for what differs and why.
 
 Shared by both apps:
 - `shared/nam/`: the Neural Amp Modeler C bridge, with NeuralAmpModelerCore v0.6.0 pinned. The bundled `.nam` captures are GPLv3, credited in `CREDITS.md`.
@@ -37,12 +39,16 @@ windows/tools/compare_with_swift.sh        # every scenario must stay ~70 dB+ be
 
 # Preset loudness/peaks over a DI take; --dump writes factory presets as JSON
 windows/build/preset_check_artefacts/Release/preset_check <dry.wav> <out-dir>   # target: cmake --build windows/build --target preset_check
+
+# Android: signed release APK in android/dist/; `install` also installs + launches it on the phone over adb
+android/build.sh install
 ```
 
 There is no unit-test suite. Verification means the parity script, `preset_check`, small `swiftc` harnesses (below), and screenshots of test copies.
 
 ## Rules that matter
 
+0. **Android shares the Windows sources.** A change in `windows/Source` is a change on Android too: build both (`cmake --build windows/build --target Leviathan` and `android/build.sh`). Android-only code goes behind `JUCE_ANDROID`; desktop-only behaviour that would be wrong on a phone (folders to open, hover, the Recycle Bin) behind `canRevealFiles` / `onAndroid`.
 1. **Never quit, restart or relaunch the user's running Leviathan without asking.** They may be recording; a restart once cut off a take. Check with `ps -axo pid,lstart,command | grep Leviathan.app/Contents/MacOS`.
 2. **Keep both apps in step.** Every feature, preset, setting and file format exists on both platforms:
    - **Settings keys:** the Swift `Settings` struct (`App.swift`) and `fillDefaults` (`Settings.cpp`) use the same keys in the same order.
@@ -78,9 +84,13 @@ There is no unit-test suite. Verification means the parity script, `preset_check
      4. Download the run's `windows-installer` artifact with `gh run download <id>`.
      5. Run `gh release create vX.Y.Z <dmg> <dmg.sha256> <exe> <exe.sha256> --title "Leviathan - vX.Y.Z" --notes-file … --verify-tag`.
 
+**Signing (Android):** release APKs must keep the same key (`~/Library/Application Support/Leviathan/Signing/android-release.jks`, password in `android-keystore-password`; CI: `LEVIATHAN_ANDROID_KEYSTORE_*` secrets). Android refuses an update signed with a different key, so changing it means every user uninstalls and reinstalls.
+
 **Signing (Mac):** releases must keep the same certificate ("Leviathan Local Signing", leaf `ac2ec283…`). macOS ties the microphone permission to it, so changing the certificate makes every user re-grant access. The Windows builds are unsigned.
 
 ## Testing the UI without disturbing the user
+
+- **Android (the user's own phone, over adb):** check that Leviathan is in front (`adb shell dumpsys window | grep mCurrentFocus`) before any `input tap` or screenshot, and never screenshot or tap another app. Read results from `adb logcat` rather than the screen where possible. The phone is rooted: `su -c` reads app-private data (read-only unless the user asks). Installing an update restarts the app, which cuts the user's sound: say so first.
 
 - **Run a separate Mac test copy.** Copy `mac/Leviathan.app`, set `CFBundleIdentifier` to `local.leviathan.uitest` with PlistBuddy, `codesign -f -s -` it, and launch with `LEVIATHAN_NO_AUDIO=1`. Add `LEVIATHAN_SCREEN=settings|presets|recordings` to open on another screen. To see the update banner and What's new popup, set the copy's `CFBundleShortVersionString` below the latest release and add `LEVIATHAN_SHOW_NOTES=1` (the JUCE build: put a lower version in `windows/VERSION` for the test build, then restore it). Its separate bundle ID gives it separate settings; seed them with `defaults export local.leviathan.ampsuite - | defaults import local.leviathan.uitest -`.
 - **Don't use the same bundle ID.** The single-instance guard makes a second copy with the user's bundle ID exit immediately.
@@ -92,7 +102,8 @@ There is no unit-test suite. Verification means the parity script, `preset_check
 ## Where the user's data lives (never delete it without asking)
 
 - **Recordings:** `~/Music/Leviathan/Sessions/<date>/`. Each folder holds `dry.wav`, `wet.wav`, `session.json`, and optionally `untrimmed/` and `wet-original.wav`.
-- **App data:** `~/Library/Application Support/Leviathan/`. It holds `NAM/`, `IRs/GodsCab/{44.1,48}/`, `IRs/Library/`, `Captures/`, `Signing/` (the stable certificate's keychain and password), and `Leviathan.settings` (JUCE build).
+- **App data:** `~/Library/Application Support/Leviathan/`. It holds `NAM/`, `IRs/GodsCab/{44.1,48}/`, `IRs/Library/`, `Captures/`, `Signing/` (the Mac certificate's keychain and password, and the Android release keystore and its password), and `Leviathan.settings` (JUCE build).
+- **Android:** app data in `/data/user/0/local.leviathan.ampsuite/Leviathan/` (settings, NAM, IRs); recordings in `/storage/emulated/0/Android/data/local.leviathan.ampsuite/files/Music/Leviathan/Sessions/`. Uninstalling the app deletes both.
 - **Mac preferences:** `defaults read local.leviathan.ampsuite`.
 
 ## Code map (quick)

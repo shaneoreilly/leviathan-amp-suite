@@ -1,4 +1,5 @@
 #include "Root.h"
+#include "NativeMenus.h"
 #include "../Sessions.h"
 #include "../Updater.h"
 #include "Markdown.h"
@@ -15,6 +16,7 @@ juce::TextButton* sizeButton(juce::TextButton& b, int extra = 24) {
 }
 
 void askText(const juce::String& title, const juce::String& initial, const juce::String& okText, std::function<void(juce::String)> done) {
+    if (nativeAskText(title, initial, okText, done)) return;   // Android: the system's own text prompt
     auto* w = new juce::AlertWindow(title, {}, juce::MessageBoxIconType::NoIcon);
     w->addTextEditor("name", initial, "Name");
     w->addButton(okText, 1, juce::KeyPress(juce::KeyPress::returnKey));
@@ -184,37 +186,75 @@ struct TopBar : juce::Component {
         save.setEnabled(m.presetModified()); undoB.setEnabled(m.canUndo());
         wave.setVisible(m.sessions->recording);
         for (auto* o : { &tunerLearn, &metroLearn, &prevLearn, &nextLearn }) o->sync();
+        // a longer or shorter preset name can switch between one and two rows: the window lays out again
+        if (heightFor(getWidth()) != getHeight()) { if (auto* p = getParentComponent()) p->resized(); }
         resized(); repaint();
     }
+    static constexpr int rowH = 64, compactRowH = 50;
+    int presetW() const { return juce::jlimit(140, 300, juce::GlyphArrangement::getStringWidthInt(theme::font(10), presetMenu.getButtonText()) + 40); }
+    /// One row when everything fits, else two (a phone, a narrow window): see resized().
+    bool twoRows(int width) const {
+        const int left = 64 + 196 + 80 + 10 + 170 + 10 + 100;   // logo and title, power, meters, latency
+        const int right = 80 + 60 + 34 + 26 + presetW() + 26 + 60 + 66 + 50 + 54 + 34 + 84 + 12 * 10 + 14;
+        return width < left + right;
+    }
+    int heightFor(int width) const { return twoRows(width) ? 2 * compactRowH : rowH; }
     void resized() override {
+        compact = twoRows(getWidth());
+        const int h1 = compact ? compactRowH : rowH;
         int x = 70;
-        auto place = [&](juce::Component& c, int w, int h = 28) { c.setBounds(x, (getHeight() - h) / 2, w, h); x += w + 10; };
-        x = 64 + 196;
-        place(power, 80); place(meters, 170, 36); x += 100;   // latency text
-        wave.setBounds(x, (getHeight() - 34) / 2, 200, 34);
+        auto place = [&](juce::Component& c, int w, int h = 28, int top = 0, int rowHeight = 0) {
+            const int rh = rowHeight > 0 ? rowHeight : h1;
+            c.setBounds(x, top + (rh - h) / 2, w, h); x += w + 10;
+        };
         int r = getWidth() - 14;
-        auto placeR = [&](juce::Component& c, int w, int h = 28) { r -= w; c.setBounds(r, (getHeight() - h) / 2, w, h); r -= 10; };
-        placeR(saveAs, 80);
-        placeR(save, 60);
-        placeR(undoB, 34);
-        placeR(next, 26); nextLearn.setBounds(next.getBounds());
-        placeR(presetMenu, juce::jlimit(140, 300, juce::GlyphArrangement::getStringWidthInt(theme::font(10), presetMenu.getButtonText()) + 40));
-        placeR(prev, 26); prevLearn.setBounds(prev.getBounds());
-        placeR(midi, 60); placeR(tuner, 66); tunerLearn.setBounds(tuner.getBounds());
-        placeR(tap, 50); placeR(bpm, 54); placeR(metro, 34); metroLearn.setBounds(metro.getBounds());
-        placeR(rec, 84);
-        latencyX = x - 100;
+        auto placeR = [&](juce::Component& c, int w, int h = 28) { r -= w; c.setBounds(r, (h1 - h) / 2, w, h); r -= 10; };
+        if (!compact) {
+            x = 64 + 196;
+            place(power, 80); place(meters, 170, 36); x += 100;   // latency text
+            wave.setBounds(x, (h1 - 34) / 2, 200, 34);
+            placeR(saveAs, 80);
+            placeR(save, 60);
+            placeR(undoB, 34);
+            placeR(next, 26); nextLearn.setBounds(next.getBounds());
+            placeR(presetMenu, presetW());
+            placeR(prev, 26); prevLearn.setBounds(prev.getBounds());
+            placeR(midi, 60); placeR(tuner, 66); tunerLearn.setBounds(tuner.getBounds());
+            placeR(tap, 50); placeR(bpm, 54); placeR(metro, 34); metroLearn.setBounds(metro.getBounds());
+            placeR(rec, 84);
+            latencyX = x - 100;
+            return;
+        }
+        // Two rows. 1: logo, power, meters, latency | undo, save, save as. 2: preset picker, then the performance
+        // buttons (record, metronome, tempo, tuner, MIDI learn), with the recording's waveform after them.
+        x = 64;
+        place(power, 80); place(meters, 170, 36); latencyX = x; x += 100;
+        placeR(saveAs, 80); placeR(save, 60); placeR(undoB, 34);
+        x = 14;
+        const int top = compactRowH;
+        place(prev, 26, 28, top); prevLearn.setBounds(prev.getBounds());
+        place(presetMenu, presetW(), 28, top);
+        place(next, 26, 28, top); nextLearn.setBounds(next.getBounds());
+        x += 10;
+        place(rec, 84, 28, top); place(metro, 34, 28, top); metroLearn.setBounds(metro.getBounds());
+        place(bpm, 54, 28, top); place(tap, 50, 28, top);
+        place(tuner, 66, 28, top); tunerLearn.setBounds(tuner.getBounds()); place(midi, 60, 28, top);
+        wave.setBounds(x, top + (compactRowH - 34) / 2, std::max(0, std::min(200, getWidth() - 14 - x)), 34);
     }
     void paint(juce::Graphics& g) override {
         g.fillAll(theme::bar);
         g.setColour(theme::line); g.fillRect(0, getHeight() - 1, getWidth(), 1);
-        drawLogo(g, juce::Rectangle<float>(14, (float) getHeight() / 2 - 20, 40, 40), model.accent());
-        g.setColour(theme::text); g.setFont(theme::font(15, true, 4)); g.drawText("LEVIATHAN", 64, 10, 190, 26, juce::Justification::left);
-        g.setColour(theme::secondary); g.setFont(theme::font(9, false, 1.5f)); g.drawText("OPEN GUITAR RIG", 64, 36, 160, 16, juce::Justification::left);
+        const int h1 = compact ? compactRowH : rowH;
+        const float logo = compact ? 34.0f : 40.0f;
+        drawLogo(g, juce::Rectangle<float>(14, (float) h1 / 2 - logo / 2, logo, logo), model.accent());
+        if (!compact) {   // two rows: the logo alone, to leave room for the controls
+            g.setColour(theme::text); g.setFont(theme::font(15, true, 4)); g.drawText("LEVIATHAN", 64, 10, 190, 26, juce::Justification::left);
+            g.setColour(theme::secondary); g.setFont(theme::font(9, false, 1.5f)); g.drawText("OPEN GUITAR RIG", 64, 36, 160, 16, juce::Justification::left);
+        }
         if (model.running && model.info.sampleRate > 0) {
             const double total = model.info.latencyMs() + model.params.pitchLatencyMs.load();
             g.setColour(total > 15 ? juce::Colours::orange : theme::secondary); g.setFont(theme::font(10));
-            g.drawText(juce::String::fromUTF8("~") + juce::String(total, 1) + " ms", latencyX, 0, 96, getHeight(), juce::Justification::centredLeft);
+            g.drawText(juce::String::fromUTF8("~") + juce::String(total, 1) + " ms", latencyX, 0, 96, h1, juce::Justification::centredLeft);
         }
     }
     void showPresetMenu() {
@@ -254,7 +294,7 @@ struct TopBar : juce::Component {
                 for (int i = 1; i <= 12; ++i) beats.addItem(juce::String(i), i);
                 beats.setSelectedId(m.beatsPerBar, juce::dontSendNotification); beats.onChange = [this] { model.setBeatsPerBar(beats.getSelectedId()); };
                 vol.setRange(-40, 0, 0.5); vol.setValue(m.metroVol, juce::dontSendNotification); vol.setTextValueSuffix(" dB");
-                vol.setTextBoxStyle(juce::Slider::TextBoxRight, false, 60, 22); vol.onValueChange = [this] { model.setMetroVol(vol.getValue()); };
+                vol.setTextBoxStyle(juce::Slider::TextBoxRight, false, 60, 22); vol.setViewportIgnoreDragFlag(true); vol.onValueChange = [this] { model.setMetroVol(vol.getValue()); };
                 clockT.setButtonText("Follow incoming MIDI clock"); clockT.setToggleState(m.midi->followClock, juce::dontSendNotification);
                 clockT.onClick = [this] { model.midi->setFollowClock(clockT.getToggleState()); };
                 for (auto* c : std::initializer_list<juce::Component*> { &bpmS, &tapB, &metroT, &beats, &vol, &clockT }) addAndMakeVisible(c);
@@ -280,6 +320,7 @@ struct TopBar : juce::Component {
     Meters meters;
     LearnOverlay tunerLearn, metroLearn, prevLearn, nextLearn;
     int latencyX = 0;
+    bool compact = false;
     LiveWave wave { model };
     HoverExplainer hover { model };
     ~TopBar() override { hover.detach(); }
@@ -413,7 +454,7 @@ struct PresetsScreen : Screen_, juce::FileDragAndDropTarget {
 /// Min/max waveform with a seconds ruler. Click to play from that point; drag across it to select a part
 /// (model.sessions->selection), whose yellow edges can then be dragged.
 struct Waveform : juce::Component {
-    explicit Waveform(Model& m) : model(m) {}
+    explicit Waveform(Model& m) : model(m) { setViewportIgnoreDragFlag(true); }   // drags select and trim, never scroll
     void paint(juce::Graphics& g) override {
         auto& s = *model.sessions;
         const auto* cur = s.current();
@@ -506,7 +547,7 @@ struct RecordingsScreen : Screen_ {
         for (auto* c : std::initializer_list<juce::Component*> { &listView, &wave, &prevB, &playB, &nextB, &nameEd, &folderB, &trashB, &liveB, &reampB, &originalB, &progress, &importB })
             addAndMakeVisible(c);
         listView.setViewedComponent(&listInner, false); listView.setScrollBarsShown(true, false);
-        prevB.setTooltip("Previous recording"); nextB.setTooltip("Next recording"); folderB.setTooltip("Show in Explorer"); trashB.setTooltip("Move to Recycle Bin");
+        prevB.setTooltip("Previous recording"); nextB.setTooltip("Next recording"); folderB.setTooltip("Show in Explorer"); trashB.setTooltip(canRevealFiles ? "Move to Recycle Bin" : "Delete");
         nameEd.setFont(theme::font(20, true)); nameEd.setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
         nameEd.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
         nameEd.onReturnKey = [this] { model.sessions->rename(nameEd.getText()); };
@@ -519,15 +560,25 @@ struct RecordingsScreen : Screen_ {
         trimB.onClick = [this] { if (auto* c = model.sessions->current()) { model.sessions->selection = std::make_pair(0.0, c->duration); refresh(); } };
         restoreB.setButtonText("Restore untrimmed"); restoreB.setTooltip("Put back the take as it was before trimming");
         restoreB.onClick = [&m] { m.sessions->restoreUntrimmed(); };
+        cutB.setButtonText("Trim selection"); cutB.setTooltip("Cut the selected part out of this take (the original is kept, so you can restore it)");
+        cutB.onClick = [this] { auto& s = *model.sessions; if (s.selection) { const auto sel = *s.selection; s.selection.reset(); s.cut(sel.first, sel.second); } refresh(); };
+        shareB.setButtonText(juce::String::fromUTF8("Share\xe2\x80\xa6")); shareB.setTooltip("Send this take to another app");
+        shareB.onClick = [this] {
+            juce::PopupMenu menu;
+            menu.addItem("Amped, for messages (M4A)", [this] { model.sessions->share(Sessions::ShareKind::ampedForMessages); });
+            menu.addItem("Amped, full quality (WAV)", [this] { model.sessions->share(Sessions::ShareKind::ampedWav); });
+            menu.addItem("Raw guitar, for re-amping (WAV)", [this] { model.sessions->share(Sessions::ShareKind::rawWav); });
+            menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&shareB));
+        };
         applyB.setButtonText("Trim to selection"); applyB.setToggleState(true, juce::dontSendNotification);
         applyB.setTooltip("Keep only the selected part of this take (the original is kept, so you can restore it)");
         applyB.onClick = [this] { auto& s = *model.sessions; if (s.selection) { const auto sel = *s.selection; s.selection.reset(); s.trim(sel.first, sel.second); } refresh(); };
         cancelB.setButtonText("Clear"); cancelB.onClick = [this] { model.sessions->selection.reset(); refresh(); };
         playSelB.setButtonText("Play selection"); playSelB.onClick = [this] { auto& s = *model.sessions; if (s.selection) s.play(s.selection->first, s.selection->second); };
-        for (auto* c : std::initializer_list<juce::Component*> { &trimB, &restoreB, &applyB, &cancelB, &playSelB }) addChildComponent(c);
+        for (auto* c : std::initializer_list<juce::Component*> { &trimB, &restoreB, &applyB, &cutB, &cancelB, &playSelB, &shareB }) addChildComponent(c);
         wave.onChange = [this] { refresh(); };
     }
-    juce::TextButton trimB, restoreB, applyB, cancelB, playSelB;
+    juce::TextButton trimB, restoreB, applyB, cutB, cancelB, playSelB, shareB;
     juce::Rectangle<int> trimText;
     bool trimCuts() const {
         auto& s = *model.sessions; auto* c = s.current();
@@ -555,6 +606,7 @@ struct RecordingsScreen : Screen_ {
         const auto* cur = s.current();
         const bool has = cur != nullptr;
         for (auto* c : std::initializer_list<juce::Component*> { &wave, &prevB, &playB, &nextB, &nameEd, &folderB, &trashB, &liveB, &reampB }) c->setVisible(has);
+        folderB.setVisible(has && canRevealFiles);
         playB.icon = s.playing ? IconButton::pause : IconButton::play;
         liveB.setButtonText(s.liveReamp ? "Stop live re-amp" : "Live re-amp");
         reampB.setVisible(has && !s.rendering); progress.setVisible(has && s.rendering.has_value());
@@ -565,8 +617,9 @@ struct RecordingsScreen : Screen_ {
         const bool sel = has && s.selection.has_value();
         trimB.setVisible(has); trimB.setEnabled(!sel);
         restoreB.setVisible(has && s.canRestoreUntrimmed());
-        for (auto* c : std::initializer_list<juce::Component*> { &applyB, &cancelB, &playSelB }) c->setVisible(sel);
-        applyB.setEnabled(trimCuts());
+        for (auto* c : std::initializer_list<juce::Component*> { &applyB, &cutB, &cancelB, &playSelB }) c->setVisible(sel);
+        applyB.setEnabled(trimCuts()); cutB.setEnabled(trimCuts());
+        shareB.setVisible(has && Sessions::canShare);
         resized(); repaint(); wave.repaint();
     }
     juce::Rectangle<int> detail() const { return getLocalBounds().withTrimmedLeft(300); }
@@ -579,6 +632,7 @@ struct RecordingsScreen : Screen_ {
         if (model.sessions->selection) {
             auto bar = d.removeFromTop(44).reduced(14, 7);
             applyB.setBounds(bar.removeFromRight(150)); bar.removeFromRight(8);
+            cutB.setBounds(bar.removeFromRight(130)); bar.removeFromRight(8);
             cancelB.setBounds(bar.removeFromRight(70)); bar.removeFromRight(8);
             playSelB.setBounds(bar.removeFromRight(130));
             trimText = bar;
@@ -587,7 +641,8 @@ struct RecordingsScreen : Screen_ {
         playB.setBounds(transport.withSizeKeepingCentre(40, 32)); prevB.setBounds(playB.getBounds().translated(-48, 0)); nextB.setBounds(playB.getBounds().translated(48, 0));
         d.reduce(18, 18);
         auto nameRow = d.removeFromTop(40);
-        trashB.setBounds(nameRow.removeFromRight(32)); folderB.setBounds(nameRow.removeFromRight(32));
+        trashB.setBounds(nameRow.removeFromRight(32)); if (canRevealFiles) folderB.setBounds(nameRow.removeFromRight(32));
+        if (shareB.isVisible()) { shareB.setBounds(nameRow.removeFromRight(90).reduced(0, 5)); nameRow.removeFromRight(6); }
         trimB.setBounds(nameRow.removeFromRight(80).reduced(0, 5)); nameRow.removeFromRight(6);
         if (restoreB.isVisible()) { restoreB.setBounds(nameRow.removeFromRight(150).reduced(0, 5)); nameRow.removeFromRight(6); }
         nameEd.setBounds(nameRow);
@@ -654,9 +709,11 @@ struct RecordingsScreen : Screen_ {
         void mouseUp(const juce::MouseEvent& e) override {
             if (e.mods.isPopupMenu()) {
                 juce::PopupMenu menu;
-                menu.addItem("Show in Explorer", [this] { dir.getChildFile("wet.wav").revealToUser(); });
-                menu.addSeparator();
-                menu.addItem("Move to Recycle Bin", [this] { model.sessions->remove(dir); });
+                if (canRevealFiles) {
+                    menu.addItem("Show in Explorer", [this] { dir.getChildFile("wet.wav").revealToUser(); });
+                    menu.addSeparator();
+                }
+                menu.addItem(canRevealFiles ? "Move to Recycle Bin" : "Delete", [this] { model.sessions->remove(dir); });
                 menu.showMenuAsync({});
                 return;
             }
@@ -712,6 +769,17 @@ struct Group : juce::Component {
     static int place(int y, std::initializer_list<std::pair<juce::Component*, int>> items, int x = settingsLayout::ctrlX) {
         for (auto& [c, w] : items) { c->setBounds(x, y + (settingsLayout::rowH - 28) / 2, w, 28); x += w + 8; }
         return x;
+    }
+    using Items = std::vector<std::pair<juce::Component*, int>>;
+    static int place(int y, const Items& items, int x = settingsLayout::ctrlX) {
+        for (auto& [c, w] : items) { c->setBounds(x, y + (settingsLayout::rowH - 28) / 2, w, 28); x += w + 8; }
+        return x;
+    }
+    /// `before`, then an "Open folder" button where the system can show folders (not Android), then `after`.
+    static Items withOpen(Items before, juce::Component* open, int w, const Items& after = {}) {
+        if (canRevealFiles) before.push_back({ open, w });
+        before.insert(before.end(), after.begin(), after.end());
+        return before;
     }
     struct Hover : juce::MouseListener {
         Group* owner = nullptr; juce::String shown;
@@ -819,8 +887,24 @@ struct SettingsScreen : Screen_ {
         openCap.setButtonText("Open folder"); openCap.onClick = [] { Capture::dir().createDirectory(); Capture::dir().startAsProcess(); };
         rescan.setButtonText("Rescan"); rescan.onClick = [this] { model.reloadCaptures(); };
         openIR.setButtonText("Open folder"); openIR.onClick = [] { IRLibrary::root().createDirectory(); IRLibrary::root().startAsProcess(); };
+        if (!canRevealFiles) {   // Android: no folder to open, so God's Cab is added from a picked folder instead
+            openIR.setButtonText("Add" + ellipsis);
+            openIR.onClick = [this] {
+                auto chooser = std::make_shared<juce::FileChooser>("Choose the God's Cab folder (the one holding 44.1 and 48)", juce::File());
+                chooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories, [this, chooser](const juce::FileChooser& fc) {
+                    const auto picked = pickedFiles(fc);
+                    if (picked.isEmpty()) return;
+                    const int n = IRLibrary::importPack(picked);
+                    model.irLib = IRLibrary(); model.irLib.scan(model.engineRate()); model.updateIR();
+                    model.status = n == 0 ? juce::String("No God's Cab \"44.1\" or \"48\" folders found there.")
+                                          : "Added " + juce::String(n) + " God's Cab IRs.";
+                    model.changed();
+                });
+            };
+        }
         for (auto* c : std::initializer_list<juce::Component*> { &importRec, &openRec, &addNam, &openNam, &rescanNam, &addIRs, &openIRs, &rescanIRs, &openCap, &rescan, &openIR })
             lib.addAndMakeVisible(c);
+        if (!canRevealFiles) for (auto* c : { &openRec, &openNam, &openIRs, &openCap }) c->setVisible(false);
 
         // appearance
         static const juce::Colour swatches[] = { juce::Colour::fromFloatRGBA(1, 0.3f, 0.3f, 1), juce::Colour::fromFloatRGBA(0.91f, 0.57f, 0.23f, 1),
@@ -864,6 +948,10 @@ struct SettingsScreen : Screen_ {
     struct Watch : juce::ChangeListener { std::function<void()> fn; void changeListenerCallback(juce::ChangeBroadcaster*) override { if (fn) fn(); } } audioWatch;
 
     void refresh() override {
+        if (model.settingsJump.isNotEmpty()) {   // "Click to resolve" on a banner: open the section that fixes it
+            section = current(model.settingsJump); model.settingsJump = {};
+            nav.repaint(); resized(); viewport.setViewPosition(0, 0);
+        }
         auto& m = model;
         juce::StringArray sig;
         if (auto* d = m.devices.getCurrentAudioDevice()) sig.add(d->getName() + juce::String(d->getInputChannelNames().size()));
@@ -987,10 +1075,10 @@ struct SettingsScreen : Screen_ {
         // LIBRARY
         {
             Group::Lay lay { lib };
-            Group::place(lay.row("Recordings", "settings:recordings"), { { &importRec, 140 }, { &openRec, 110 } });
-            const int ny = lay.row("NAM captures", "settings:nam"), nx = Group::place(ny, { { &addNam, 80 }, { &openNam, 110 }, { &rescanNam, 80 } });
-            const int iy = lay.row("Cab IRs", "settings:cabIRs"), ix = Group::place(iy, { { &addIRs, 80 }, { &openIRs, 110 }, { &rescanIRs, 80 } });
-            const int cy = lay.row("Your captures", "settings:captures"), cx = Group::place(cy, { { &openCap, 110 }, { &rescan, 80 } });
+            Group::place(lay.row("Recordings", "settings:recordings"), Group::withOpen({ { &importRec, 140 } }, &openRec, 110));
+            const int ny = lay.row("NAM captures", "settings:nam"), nx = Group::place(ny, Group::withOpen({ { &addNam, 80 } }, &openNam, 110, { { &rescanNam, 80 } }));
+            const int iy = lay.row("Cab IRs", "settings:cabIRs"), ix = Group::place(iy, Group::withOpen({ { &addIRs, 80 } }, &openIRs, 110, { { &rescanIRs, 80 } }));
+            const int cy = lay.row("Your captures", "settings:captures"), cx = Group::place(cy, Group::withOpen({}, &openCap, 110, { { &rescan, 80 } }));
             const int gy = lay.row("God's Cab", "settings:godsCab"), gx = Group::place(gy, { { &openIR, 110 } });
             lib.extra = [this, ny, nx, iy, ix, cy, cx, gy, gx](juce::Graphics& g) {
                 g.setColour(theme::secondary); g.setFont(theme::font(11));
@@ -1187,6 +1275,9 @@ struct GroupText : juce::Component {};
 
 // MARK: - banners
 
+/// The button on an error banner that goes to the setting that fixes it ("Tap" on touch screens).
+const juce::String resolveLabel = onAndroid ? "Tap to resolve" : "Click to resolve";
+
 struct Banner : juce::Component {
     using Actions = std::vector<std::pair<juce::String, std::function<void()>>>;
     /// close: the ✕ (none when empty). actions: buttons at the right, the last one highlighted.
@@ -1297,6 +1388,7 @@ Root::Root(Model& m) : model(m) {
     sidebar = std::make_unique<Sidebar>(m); addAndMakeVisible(*sidebar);
     topbar = std::make_unique<TopBar>(m); addAndMakeVisible(*topbar);
     rig = std::make_unique<RigView>(m); addChildComponent(*rig);
+    rig->onScroll = [this] { if (onAndroid && model.screen == Screen::rig) resized(); };   // the top bar follows the scroll
     presets = std::make_unique<PresetsScreen>(m); addChildComponent(*presets);
     recordings = std::make_unique<RecordingsScreen>(m); addChildComponent(*recordings);
     settings = std::make_unique<SettingsScreen>(m); addChildComponent(*settings);
@@ -1320,7 +1412,7 @@ void Root::rebuildBanners() {
     if (ph == Updater::Phase::downloading) updSig = "dl" + juce::String((int) (m.updater->progressValue * 100));
     if (ph == Updater::Phase::installing) updSig = "inst";
     if (ph == Updater::Phase::failed) updSig = "fail" + m.updater->error;
-    juce::StringArray sig { updSig, m.status, m.sessions->message, (m.midi->learning && m.screen == Screen::rig) ? "learn" + (m.midi->armed ? m.midi->armed->key : juce::String()) : juce::String() };
+    juce::StringArray sig { updSig, m.status, m.currentFix(), m.sessions->message, m.sessions->currentFix(), (m.midi->learning && m.screen == Screen::rig) ? "learn" + (m.midi->armed ? m.midi->armed->key : juce::String()) : juce::String() };
     if (sig.joinIntoString("|") == bannerSig) return;
     bannerSig = sig.joinIntoString("|");
     banners.clear();
@@ -1339,9 +1431,15 @@ void Root::rebuildBanners() {
     } else if (ph == Updater::Phase::installing)
         banners.add(new Banner(juce::String::fromUTF8("Installing the update. Leviathan will reopen in a moment\xe2\x80\xa6"), updBg, theme::text, {}));
     else if (ph == Updater::Phase::failed && m.updater->error.isNotEmpty())
-        banners.add(new Banner(m.updater->error, warnBg, warnFg, [&m] { m.updater->phase = Updater::Phase::idle; m.changed(); }));
-    if (m.status.isNotEmpty()) banners.add(new Banner(m.status, warnBg, warnFg, [&m] { m.status = {}; m.changed(); }));
-    if (m.sessions->message.isNotEmpty()) banners.add(new Banner(m.sessions->message, warnBg, warnFg, [&m] { m.sessions->message = {}; m.changed(); }));
+        banners.add(new Banner(m.updater->error, warnBg, warnFg, [&m] { m.updater->phase = Updater::Phase::idle; m.changed(); },
+                               { { resolveLabel, [&m] { m.resolve("About"); } } }));
+    // an error that a setting fixes gets a button that goes there
+    auto resolveIn = [&m](const juce::String& where) {
+        return where.isEmpty() ? Banner::Actions() : Banner::Actions { { resolveLabel, [&m, where] { m.resolve(where); } } };
+    };
+    if (m.status.isNotEmpty()) banners.add(new Banner(m.status, warnBg, warnFg, [&m] { m.status = {}; m.changed(); }, resolveIn(m.currentFix())));
+    if (m.sessions->message.isNotEmpty())
+        banners.add(new Banner(m.sessions->message, warnBg, warnFg, [&m] { m.sessions->message = {}; m.changed(); }, resolveIn(m.sessions->currentFix())));
     if (m.midi->learning && m.screen == Screen::rig) {
         const auto t = m.midi->armed ? "Move a knob, pedal or switch on your MIDI device to assign it to " + m.midi->armed->name + "."
                                      : juce::String("MIDI learn: click a knob or an ON/OFF switch, then move a control on your MIDI device.")
@@ -1377,10 +1475,29 @@ void Root::changeListenerCallback(juce::ChangeBroadcaster*) {
 
 void Root::resized() {
     auto r = getLocalBounds();
+   #if JUCE_ANDROID
+    // keep clear of the camera cutout and rounded corners (the system bars are hidden)
+    if (auto* d = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay()) r = d->safeAreaInsets.subtractedFrom(r);
+   #endif
     sidebar->setBounds(r.removeFromLeft(92));
-    topbar->setBounds(r.removeFromTop(64));
-    for (auto* b : banners) b->setBounds(r.removeFromTop(40));
-    for (auto* s : std::initializer_list<juce::Component*> { rig.get(), presets.get(), recordings.get(), settings.get() }) s->setBounds(r);
+    const int topH = static_cast<TopBar*>(topbar.get())->heightFor(r.getWidth()), headH = topH + 40 * banners.size();
+    // Phones: on the rig the bar (and any banners) sit over the top of the scrolling rig and scroll away with it,
+    // leaving the whole screen to the rig; scrolling back to the top brings them back. Elsewhere they stay put.
+    const bool scrollAway = onAndroid && model.screen == Screen::rig;
+    const int off = scrollAway ? std::min(rig->scrollY(), headH) : 0;
+    auto head = r.withHeight(headH).translated(0, -off);
+    topbar->setBounds(head.removeFromTop(topH));
+    for (auto* b : banners) b->setBounds(head.removeFromTop(40));
+    if (scrollAway) {
+        rig->setTopInset(headH);
+        rig->setBounds(r);
+        topbar->toFront(false); for (auto* b : banners) b->toFront(false);
+    } else {
+        rig->setTopInset(0);
+        r.removeFromTop(headH);
+        rig->setBounds(r);
+    }
+    for (auto* s : std::initializer_list<juce::Component*> { presets.get(), recordings.get(), settings.get() }) s->setBounds(r.withTop(r.getY() + (scrollAway ? headH : 0)));
     if (whatsNew) { whatsNew->setBounds(getLocalBounds()); whatsNew->toFront(false); }
 }
 

@@ -474,6 +474,22 @@ final class Model: ObservableObject {
     }
     @Published var running = false
     @Published var status = ""
+    /// Where the current status message gets fixed: a Settings section ("Audio", "Library", "About"), "amp:on" to
+    /// switch the amp on, or "privacy:microphone" (macOS's own settings). Only errors have one. It belongs to the
+    /// message it was set for (statusFixFor), so a later message never inherits it. Windows: Model::statusFix.
+    var statusFix = "", statusFixFor = ""
+    func fixIn(_ where_: String) { statusFix = where_; statusFixFor = status }
+    var currentFix: String { !status.isEmpty && status == statusFixFor ? statusFix : "" }
+    /// Goes to a fix ("Click to resolve" on a banner).
+    func resolve(_ where_: String) {
+        switch where_ {
+        case "": return
+        case "amp:on": start()
+        case "privacy:microphone":
+            if let u = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") { NSWorkspace.shared.open(u) }
+        default: SettingsUI.shared.section = where_; screen = .settings
+        }
+    }
     @Published var info: HALEngine.Info?
     let meters = Meters()   // fast-changing values live apart so they don't redraw the whole rig
     @Published var savingPreset = false
@@ -721,7 +737,7 @@ final class Model: ObservableObject {
             return
         default: denied(); return
         }
-        guard let o = output else { status = "Pick an output device in Settings → Audio."; return }
+        guard let o = output else { status = "Pick an output device in Settings → Audio."; fixIn("Audio"); return }
         let i = input
         do {
             info = try engine.start(input: i, output: o, buffer: bufferSize)
@@ -764,6 +780,7 @@ final class Model: ObservableObject {
 
     private func denied() {
         status = "Microphone access is off. Enable Leviathan in System Settings → Privacy & Security → Microphone."
+        fixIn("privacy:microphone")
     }
 
     private func restartIfRunning() { if running { start() } }
@@ -791,10 +808,12 @@ final class Model: ObservableObject {
         // keep dropouts from going on: step the buffer up (it restarts the engine), up to 256 samples
         if let bigger = [16, 32, 64, 128, 256].first(where: { $0 > bufferSize }) {
             status = "Audio was dropping out (crackles), so the buffer is now \(bigger) samples (Settings → Audio)." + why
+            fixIn("Audio")
             DispatchQueue.main.async { [weak self] in self?.bufferSize = bigger }
         } else if adviseOverloads {
             adviseOverloads = false
             status = "Audio is still dropping out at the largest buffer." + why
+            fixIn("Audio")
         }
     }
 
@@ -807,6 +826,7 @@ final class Model: ObservableObject {
         rateRestarts = rateRestarts.filter { $0.timeIntervalSinceNow > -10 }
         guard rateRestarts.count < 3 else {
             status = "Another app keeps changing the audio device's sample rate. Leviathan will keep running, possibly with a little extra latency."
+            fixIn("Audio")
             return
         }
         rateRestartPending = true
@@ -884,7 +904,7 @@ final class Model: ObservableObject {
         guard let dsp = engine.dsp else { return }
         namHost.select(s.nam, rate: Double(dsp.sr), calibration: namCalibration, dsp: dsp) { [weak self] err in
             guard let self else { return }
-            if let err { self.status = err }
+            if let err { self.status = err; self.fixIn("Library") }
             self.applyAll(); self.objectWillChange.send()
         }
     }
@@ -894,7 +914,7 @@ final class Model: ObservableObject {
         guard let dsp = engine.dsp else { return }
         namHostB.select(s.ampBNam, rate: Double(dsp.sr), calibration: namCalibration, dsp: dsp) { [weak self] err in
             guard let self else { return }
-            if let err { self.status = "Amp B: " + err }
+            if let err { self.status = "Amp B: " + err; self.fixIn("Library") }
             self.objectWillChange.send()
         }
     }
@@ -1021,6 +1041,7 @@ final class Model: ObservableObject {
             updateIR()
         } catch {
             status = "Could not read IR: \(error.localizedDescription)"
+            fixIn("Library")
         }
     }
 
@@ -1203,6 +1224,7 @@ final class Model: ObservableObject {
         guard !clipWarned, clipTimes.count >= 3 else { return }
         clipWarned = true
         status = "Your interface\u{2019}s input is clipping (\(input?.name ?? "input") hits full scale before Leviathan). That makes every tone harsh and fizzy. Turn the gain knob on the interface down until your hardest playing stays out of the red, then use Input Gain here if you need more level."
+        fixIn("Audio")
     }
 
     private func runTuner() {

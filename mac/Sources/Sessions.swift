@@ -67,6 +67,10 @@ final class Sessions: ObservableObject {
     @Published var rendering: Double? = nil      // progress 0...1 while an offline re-amp runs
     @Published var waveform: [Float] = []        // min/max pairs
     @Published var message = ""
+    /// As Model.statusFix, for message.
+    var messageFix = "", messageFixFor = ""
+    func fixIn(_ where_: String) { messageFix = where_; messageFixFor = message }
+    var currentFix: String { !message.isEmpty && message == messageFixFor ? messageFix : "" }
 
     private var dryFile: AVAudioFile?, wetFile: AVAudioFile?, recDir: URL?, recRate = 48000.0, recStart = Date()
     private let tmp = (0..<3).map { _ in UnsafeMutablePointer<Float>.allocate(capacity: 1 << 18) }
@@ -151,7 +155,7 @@ final class Sessions: ObservableObject {
 
     func startRecording() {
         guard !recording else { return }
-        guard m.running, let dsp = m.engine.dsp else { message = "Turn the amp on to record."; return }
+        guard m.running, let dsp = m.engine.dsp else { message = "Turn the amp on to record."; fixIn("amp:on"); return }
         stopPlayback()
         let sr = Double(dsp.sr)
         let stamp = DateFormatter.folder.string(from: Date())
@@ -163,7 +167,7 @@ final class Sessions: ObservableObject {
             wetFile = try AVAudioFile(forWriting: dir.appendingPathComponent("wet.wav"), settings: wavSettings(sr, 2),
                                       commonFormat: .pcmFormatFloat32, interleaved: false)
         } catch {
-            message = "Could not start recording: \(error.localizedDescription)"; return
+            message = "Could not start recording: \(error.localizedDescription)"; fixIn("Library"); return
         }
         recDir = dir; recRate = sr; recStart = Date(); recSeconds = 0
         liveWave.reset(); liveBin = (0, 0, 0)
@@ -283,7 +287,7 @@ final class Sessions: ObservableObject {
 
     func startLiveReamp() {
         guard let s = current else { return }
-        guard m.running, let dsp = m.engine.dsp else { message = "Turn the amp on to re-amp."; return }
+        guard m.running, let dsp = m.engine.dsp else { message = "Turn the amp on to re-amp."; fixIn("amp:on"); return }
         stopPlayback()
         guard let ch = try? loadAudio(s.dry, rate: Double(dsp.sr)), let x = ch.first else { message = "This session has no dry take."; return }
         let p = m.params
@@ -387,6 +391,42 @@ final class Sessions: ObservableObject {
     }
 
     func reveal() { if let s = current { NSWorkspace.shared.activateFileViewerSelecting([s.wet]) } }
+
+    /// The take to share, named after it ("Riff (amped).wav", not wet.wav): as 16-bit WAV (takes are 32-bit float,
+    /// which many players can't play), or for messages as AAC (.m4a), since chat apps like WhatsApp play no WAV.
+    /// Made once per take version (cached on the file's modification date). Windows/Android: Sessions::share.
+    private var shareCache: [String: URL] = [:]
+    func shareURL(_ s: Session, amped: Bool, m4a: Bool = false) -> URL? {
+        let src = amped ? s.wet : s.dry
+        let fm = FileManager.default
+        guard let attrs = try? fm.attributesOfItem(atPath: src.path), let modified = attrs[.modificationDate] as? Date else { return nil }
+        let base = s.meta.name.isEmpty ? "Leviathan take" : s.meta.name.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
+        let key = "\(src.path)|\(modified.timeIntervalSince1970)|\(base)|\(m4a)"
+        if let u = shareCache[key], fm.fileExists(atPath: u.path) { return u }
+        let dir = fm.temporaryDirectory.appendingPathComponent("Share/\(abs(key.hashValue))", isDirectory: true)
+        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        let out = dir.appendingPathComponent(base + (amped ? " (amped)" : " (raw)") + (m4a ? ".m4a" : ".wav"))
+        try? fm.removeItem(at: out)
+        do {
+            let inF = try AVAudioFile(forReading: src)
+            let fmt = inF.processingFormat
+            let settings: [String: Any] = m4a
+                ? [AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: fmt.sampleRate,
+                   AVNumberOfChannelsKey: min(fmt.channelCount, 2), AVEncoderBitRateKey: 192_000]
+                : [AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: fmt.sampleRate,
+                   AVNumberOfChannelsKey: fmt.channelCount, AVLinearPCMBitDepthKey: 16,
+                   AVLinearPCMIsFloatKey: false, AVLinearPCMIsBigEndianKey: false]
+            let outF = try AVAudioFile(forWriting: out, settings: settings, commonFormat: fmt.commonFormat, interleaved: fmt.isInterleaved)
+            guard let buf = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: 1 << 16) else { return src }
+            while inF.framePosition < inF.length {
+                try inF.read(into: buf, frameCount: buf.frameCapacity)
+                if buf.frameLength == 0 { break }
+                try outF.write(from: buf)
+            }
+        } catch { return src }
+        shareCache[key] = out
+        return out
+    }
 
     /// Import WAV (or AIFF/CAF) recordings, picked as files or folders. Files named as a pair
     /// (`Dry_<name>` + `Wet_<name>`, or `<name> dry` + `<name> wet`) become one take; any other file becomes a
@@ -492,12 +532,16 @@ final class Sessions: ObservableObject {
     func untrimmedDir(_ s: Session) -> URL { s.id.appendingPathComponent("untrimmed") }
     var canRestoreUntrimmed: Bool { current.map { FileManager.default.fileExists(atPath: untrimmedDir($0).path) } ?? false }
 
-    /// Cuts the take (dry, wet and any wet-original) to `start...end` seconds.
-    func trim(_ start: Double, _ end: Double) {
+    /// Cuts the take (dry, wet and any wet-original) to `start...end` seconds ("Trim to selection").
+    func trim(_ start: Double, _ end: Double) { trimTake(start, end, keep: true) }
+    /// Cuts `start...end` out of the take, joining what's either side with a 5 ms crossfade ("Trim selection").
+    func cut(_ start: Double, _ end: Double) { trimTake(start, end, keep: false) }
+
+    private func trimTake(_ start: Double, _ end: Double, keep: Bool) {
         guard var s = current, end - start >= 0.05 else { return }
         stopPlayback(); stopLiveReamp()
         do {
-            if let length = try Sessions.trimFiles(in: s.id, start: start, end: end) { s.meta.duration = length }
+            if let length = try Sessions.trimFiles(in: s.id, start: start, end: end, keep: keep) { s.meta.duration = length }
             save(s)
         } catch {
             message = "Couldn't trim this recording: \(error.localizedDescription)"
@@ -509,7 +553,8 @@ final class Sessions: ObservableObject {
 
     /// Cuts a session folder's dry.wav, wet.wav and wet-original.wav to `start...end` seconds, keeping the untouched
     /// audio in untrimmed/ on the first trim. Returns the new length (from wet.wav when there is one).
-    nonisolated static func trimFiles(in dir: URL, start: Double, end: Double) throws -> Double? {
+    /// keep: leave only `start...end`; otherwise remove it (Windows: Sessions::trimFiles, same order of operations).
+    nonisolated static func trimFiles(in dir: URL, start: Double, end: Double, keep: Bool = true) throws -> Double? {
         let fm = FileManager.default, backup = dir.appendingPathComponent("untrimmed")
         let files = ["dry.wav", "wet.wav", "wet-original.wav"].map { dir.appendingPathComponent($0) }.filter { fm.fileExists(atPath: $0.path) }
         if !fm.fileExists(atPath: backup.path) {
@@ -524,14 +569,36 @@ final class Sessions: ObservableObject {
             do {
                 let inF = try AVAudioFile(forReading: f)
                 sr = inF.processingFormat.sampleRate
-                let a = max(AVAudioFramePosition(start * sr), 0), b = min(AVAudioFramePosition(end * sr), inF.length)
-                frames = max(b - a, 0)
-                guard frames > 0, let buf = AVAudioPCMBuffer(pcmFormat: inF.processingFormat, frameCapacity: AVAudioFrameCount(frames)) else { continue }
-                inF.framePosition = a
-                try inF.read(into: buf, frameCount: AVAudioFrameCount(frames))
+                let total = inF.length
+                let a = min(max(AVAudioFramePosition(start * sr), 0), total), b = min(max(AVAudioFramePosition(end * sr), a), total)
+                guard b > a else { continue }
                 let out = try AVAudioFile(forWriting: tmpURL, settings: inF.fileFormat.settings,
                                           commonFormat: inF.processingFormat.commonFormat, interleaved: inF.processingFormat.isInterleaved)
-                try out.write(from: buf)
+                if keep {
+                    frames = b - a
+                    guard let buf = AVAudioPCMBuffer(pcmFormat: inF.processingFormat, frameCapacity: AVAudioFrameCount(frames)) else { continue }
+                    inF.framePosition = a
+                    try inF.read(into: buf, frameCount: AVAudioFrameCount(frames))
+                    try out.write(from: buf)
+                } else {
+                    // before a, then after b, crossfaded over xf frames so the join doesn't click
+                    let xf = min(AVAudioFramePosition(0.005 * sr), a, total - b)
+                    frames = a + (total - b) - xf
+                    guard frames > 0,
+                          let all = AVAudioPCMBuffer(pcmFormat: inF.processingFormat, frameCapacity: AVAudioFrameCount(total)),
+                          let buf = AVAudioPCMBuffer(pcmFormat: inF.processingFormat, frameCapacity: AVAudioFrameCount(frames)) else { continue }
+                    try inF.read(into: all, frameCount: AVAudioFrameCount(total))
+                    guard let src = all.floatChannelData, let dst = buf.floatChannelData else { continue }
+                    let A = Int(a), B = Int(b), X = Int(xf), N = Int(total)
+                    for c in 0..<Int(inF.processingFormat.channelCount) {
+                        let i = src[c], o = dst[c]
+                        for k in 0..<(A - X) { o[k] = i[k] }
+                        for k in 0..<X { let t = Float(k + 1) / Float(X + 1); o[A - X + k] = i[A - X + k] * (1 - t) + i[B + k] * t }
+                        for k in (B + X)..<N { o[A + k - B - X] = i[k] }
+                    }
+                    buf.frameLength = AVAudioFrameCount(frames)
+                    try out.write(from: buf)
+                }
             }   // both files close here
             _ = try fm.replaceItemAt(f, withItemAt: tmpURL)
             if f.lastPathComponent == "wet.wav" || length == nil { length = Double(frames) / sr }

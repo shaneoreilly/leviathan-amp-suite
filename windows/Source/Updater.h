@@ -1,5 +1,6 @@
-// Self-update from GitHub releases (Windows): finds the installer on the latest release, checks it against the
-// release's .sha256, runs it silently (it closes Leviathan, installs over it and reopens it).
+// Self-update from GitHub releases. Windows: finds the installer on the latest release, checks it against the
+// release's .sha256, runs it silently (it closes Leviathan, installs over it and reopens it). Android: the same for
+// the release's .apk, handed to Android's installer, which asks you to confirm the update.
 #pragma once
 #include <JuceHeader.h>
 

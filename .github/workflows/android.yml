@@ -1,0 +1,84 @@
+# Builds Leviathan for Android (the same JUCE sources as Windows, via android/build.sh) and its release APK.
+# Runs on pushes that touch android/, windows/ or shared/, by hand, and from release.yml (which publishes the APK).
+#
+# Release builds are signed with Leviathan's permanent Android key (Android only installs an update signed with the
+# same key as the installed app). Repository secrets:
+#   LEVIATHAN_ANDROID_KEYSTORE_BASE64    base64 of android-release.jks
+#   LEVIATHAN_ANDROID_KEYSTORE_PASSWORD  its password (store and key)
+# A release without them fails rather than publish an APK that can't update the installed app. Push builds without
+# them fall back to a throwaway debug key (good enough to check that it builds).
+name: Android
+
+on:
+  push:
+    paths: ["android/**", "windows/**", "shared/**", ".github/workflows/android.yml"]
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      HAS_KEY: ${{ secrets.LEVIATHAN_ANDROID_KEYSTORE_BASE64 != '' }}
+      RELEASE: ${{ inputs.version != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version
+        run: |
+          V="${{ inputs.version }}"
+          [ -z "$V" ] && V="$(tr -d '[:space:]' < windows/VERSION)"
+          V="${V#v}"
+          printf '%s' "$V" > windows/VERSION
+          echo "VERSION=$V" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Android SDK, NDK and CMake
+        run: |
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKM" --licenses > /dev/null || true
+          "$SDKM" "platforms;android-35" "build-tools;35.0.0" "ndk;28.1.13356709" "cmake;3.31.6" > /dev/null
+
+      - name: Linux packages (to build JUCE's Projucer, which generates the Gradle project)
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q ninja-build xvfb libasound2-dev libfreetype-dev libfontconfig1-dev libx11-dev \
+            libxcomposite-dev libxcursor-dev libxext-dev libxinerama-dev libxrandr-dev libxrender-dev \
+            libcurl4-openssl-dev libgtk-3-dev
+
+      - name: Release key
+        env:
+          KEYSTORE: ${{ secrets.LEVIATHAN_ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.LEVIATHAN_ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          if [ "$HAS_KEY" != true ]; then
+            if [ "$RELEASE" = true ]; then echo "LEVIATHAN_ANDROID_KEYSTORE_* secrets missing: refusing to publish an unsigned-for-update APK"; exit 1; fi
+            echo "No release key: this check build uses a debug key."; exit 0
+          fi
+          echo "$KEYSTORE" | base64 --decode > "$RUNNER_TEMP/android-release.jks"
+          echo "LEV_ANDROID_KEYSTORE=$RUNNER_TEMP/android-release.jks" >> "$GITHUB_ENV"
+          echo "::add-mask::$KEYSTORE_PASSWORD"
+          echo "LEV_ANDROID_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+
+      - name: Build
+        run: xvfb-run -a android/build.sh
+
+      - name: Remove the key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/android-release.jks"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: |
+            android/dist/*.apk
+            android/dist/*.sha256
+          if-no-files-found: error

@@ -45,7 +45,7 @@ Model::Model() {
     namCalibrate = p.getBoolValue("namCalibrate", false); interfaceLevel = p.getDoubleValue("interfaceLevel", 12);
     bpm = p.getDoubleValue("bpm", 120); beatsPerBar = p.getIntValue("beatsPerBar", 4); metroVol = p.getDoubleValue("metroVol", -12);
     if (p.containsKey("accent")) accentPick = juce::Colour::fromString(p.getValue("accent"));
-    zoom = p.getDoubleValue("zoom", 1.0);
+    zoom = p.getDoubleValue("zoom", onAndroid ? 0.8 : 1.0);   // a phone is narrower than the smallest desktop window
     explainOnHover = p.getBoolValue("explainOnHover", true);
     {
         auto saved = juce::StringArray::fromTokens(p.getValue("panelOrder2"), ",", "");
@@ -91,8 +91,21 @@ Model::Model() {
         }
         auto setup = devices.getAudioDeviceSetup();
         setup.bufferSize = 128;
+       #if JUCE_ANDROID
+        setup.sampleRate = 48000;   // the bundled captures and God's Cab's main set are 48 kHz
+       #endif
         devices.setAudioDeviceSetup(setup, true);
     }
+   #if JUCE_ANDROID
+    // Phones: the lowest buffer the device offers, until you pick one in Settings > Audio; from then on yours is
+    // kept (saveState notes the choice). Leviathan never changes it by itself there.
+    if (!p.getBoolValue("bufferChosen"))
+        if (auto* d = devices.getCurrentAudioDevice(); d != nullptr && !d->getAvailableBufferSizes().isEmpty()) {
+            auto setup = devices.getAudioDeviceSetup();
+            setup.bufferSize = d->getAvailableBufferSizes()[0];
+            devices.setAudioDeviceSetup(setup, true);
+        }
+   #endif
     ensureInputs();
     syncMute();
     midi->start();
@@ -204,6 +217,10 @@ void Model::saveState() {
         p.setValue("presetSortReversed", presetSortReversed);
     }
     if (auto xml = devices.createStateXml()) p.setValue("audioState", xml->toString());
+    // Android starts on the lowest buffer and never changes it itself, so any other size is one you picked
+    if (auto* d = devices.getCurrentAudioDevice(); onAndroid && d != nullptr && !d->getAvailableBufferSizes().isEmpty()
+                                                   && d->getCurrentBufferSizeSamples() != d->getAvailableBufferSizes()[0])
+        p.setValue("bufferChosen", true);
     p.saveIfNeeded();
 }
 
@@ -234,7 +251,7 @@ void Model::start() {
     if (devices.getCurrentAudioDevice() == nullptr) {
         const auto err = devices.initialise(8, 2, nullptr, true);
         if (devices.getCurrentAudioDevice() == nullptr) {
-            status = err.isNotEmpty() ? err : juce::String("Pick an input and output device in Settings.");
+            status = err.isNotEmpty() ? err : juce::String("Pick an input and output device in Settings."); fixIn("Audio");
             changed(); return;
         }
         ensureInputs();
@@ -253,6 +270,23 @@ void Model::stop() {
     running = false;
     params.inPeak.store(0); params.outPeak.store(0);
     changed();
+}
+
+void Model::enterBackground() {
+    if (pausedForBackground || sessions->recording || sessions->liveReamp) return;
+    pausedForBackground = true;
+    wasRunningBeforeBackground = running;
+    saveState();
+    stop();
+    devices.closeAudioDevice();
+}
+
+void Model::enterForeground() {
+    if (!pausedForBackground) return;
+    pausedForBackground = false;
+    devices.restartLastAudioDevice();
+    if (wasRunningBeforeBackground) start();
+    refreshInfo(); changed();
 }
 
 void Model::restartAudio() {
@@ -292,7 +326,7 @@ void Model::audioDeviceStopped() {
 }
 
 void Model::audioDeviceError(const juce::String& msg) {
-    juce::MessageManager::callAsync([this, msg] { status = "Audio device error: " + msg; changed(); });
+    juce::MessageManager::callAsync([this, msg] { status = "Audio device error: " + msg; fixIn("Audio"); changed(); });
 }
 
 void Model::audioDeviceIOCallbackWithContext(const float* const* in, int numIn, float* const* out, int numOut, int n,
@@ -310,6 +344,14 @@ void Model::audioDeviceIOCallbackWithContext(const float* const* in, int numIn, 
     for (int c = 2; c < numOut; ++c) if (out[c]) juce::FloatVectorOperations::clear(out[c], n);
 }
 
+void Model::resolve(const juce::String& where) {
+    if (where == "amp:on") { start(); return; }
+    if (where.isEmpty()) return;
+    props().setValue("settingsSection", where);
+    settingsJump = where;
+    setScreen(Screen::settings);
+}
+
 void Model::overloaded() {
     const double now = juce::Time::getMillisecondCounterHiRes() / 1000.0;
     if (now - startedAt < 3) return;   // the first seconds after a start settle on their own
@@ -319,11 +361,20 @@ void Model::overloaded() {
     if (recentOverloads.size() < 4) return;
     recentOverloads.clear();
     juce::String why;
-    if (info.type.isNotEmpty() && info.type != "ASIO")
+    if (!onAndroid && info.type.isNotEmpty() && info.type != "ASIO")
         why << " An ASIO driver for your interface (or \"Windows Audio (Exclusive Mode)\") is usually much more stable at low latency.";
     if (info.inName.isNotEmpty() && info.outName.isNotEmpty() && info.inName != info.outName)
         why << " Input (" << info.inName << ") and output (" << info.outName << ") are separate devices with separate clocks; one interface for both is most stable.";
-    // keep dropouts from going on: step the buffer up to the next size the driver offers, up to 1024 samples
+    // keep dropouts from going on: step the buffer up to the next size the driver offers, up to 1024 samples.
+    // Not on Android: there the buffer only changes when you change it, so say so and point at the setting.
+    if (onAndroid) {
+        if (adviseOverloads) {
+            adviseOverloads = false;
+            status = "Audio is dropping out (crackles). A bigger buffer in Settings > Audio stops it, at a little more latency." + why;
+            fixIn("Audio"); changed();
+        }
+        return;
+    }
     if (auto* d = devices.getCurrentAudioDevice()) {
         const int cur = d->getCurrentBufferSizeSamples();
         int bigger = 0;
@@ -333,11 +384,12 @@ void Model::overloaded() {
             setup.bufferSize = bigger;
             juce::MessageManager::callAsync([this, setup] { devices.setAudioDeviceSetup(setup, true); startedAt = juce::Time::getMillisecondCounterHiRes() / 1000.0; refreshInfo(); saveState(); changed(); });
             status = "Audio was dropping out (crackles), so the buffer is now " + juce::String(bigger) + " samples (Settings > Audio)." + why;
+            fixIn("Audio");
             changed();
             return;
         }
     }
-    if (adviseOverloads) { adviseOverloads = false; status = "Audio is still dropping out at the largest buffer." + why; changed(); }
+    if (adviseOverloads) { adviseOverloads = false; status = "Audio is still dropping out at the largest buffer." + why; fixIn("Audio"); changed(); }
 }
 
 void Model::timerCallback() {
@@ -367,6 +419,7 @@ void Model::checkInputClipping() {
     clipWarned = true;
     status = juce::String::fromUTF8("Your interface\xe2\x80\x99s input is clipping (") + (info.inName.isNotEmpty() ? info.inName : juce::String("input"))
              + " hits full scale before Leviathan). That makes every tone harsh and fizzy. Turn the gain knob on the interface down until your hardest playing stays out of the red, then use Input Gain here if you need more level.";
+    fixIn("Audio");
     changed();
 }
 
@@ -532,10 +585,8 @@ void Model::exportPreset(const juce::String& name) {
         juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile(fileNameFor(name)), "*.leviathan");
     chooser->launchAsync(juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::warnAboutOverwriting,
         [this, chooser, name](const juce::FileChooser& fc) {
-            auto f = fc.getResult();
-            if (f == juce::File()) return;
-            if (!f.hasFileExtension(presetExt)) f = f.withFileExtension(presetExt);
-            if (!f.replaceWithText(presetFileData(name))) { status = "Couldn't export \"" + name + "\"."; changed(); }
+            const auto ok = writePicked(fc, presetFileData(name), presetExt);
+            if (ok.has_value() && !*ok) { status = "Couldn't export \"" + name + "\"."; changed(); }
         });
 }
 
@@ -544,14 +595,14 @@ void Model::exportAllPresets() {
         juce::File::getSpecialLocation(juce::File::userDocumentsDirectory));
     chooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
         [this, chooser](const juce::FileChooser& fc) {
-            const auto dir = fc.getResult();
-            if (dir == juce::File()) return;
+            const auto dir = pickedFolder(fc);
+            if (!dir) return;
             juce::StringArray failed;
             const auto order = presetOrder();
-            for (const auto& n : order) if (!dir.getChildFile(fileNameFor(n)).replaceWithText(presetFileData(n))) failed.add(n);
-            status = failed.isEmpty() ? "Exported " + juce::String(order.size()) + " presets to " + dir.getFileName() + "."
+            for (const auto& n : order) if (!dir->write(fileNameFor(n), presetFileData(n))) failed.add(n);
+            status = failed.isEmpty() ? "Exported " + juce::String(order.size()) + " presets to " + dir->name + "."
                                       : "Couldn't export: " + failed.joinIntoString(", ");
-            if (failed.isEmpty()) dir.revealToUser();
+            if (failed.isEmpty()) dir->reveal();
             changed();
         });
 }
@@ -560,7 +611,7 @@ void Model::importPresetsDialog() {
     auto chooser = std::make_shared<juce::FileChooser>("Choose .leviathan preset files",
         juce::File::getSpecialLocation(juce::File::userDocumentsDirectory), "*.leviathan;*.json");
     chooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::canSelectMultipleItems,
-        [this, chooser](const juce::FileChooser& fc) { if (!fc.getResults().isEmpty()) importPresets(fc.getResults()); });
+        [this, chooser](const juce::FileChooser& fc) { const auto files = pickedFiles(fc); if (!files.isEmpty()) importPresets(files); });
 }
 
 void Model::importPresets(const juce::Array<juce::File>& files) {
@@ -706,10 +757,11 @@ void Model::reloadCaptures() { captures = Capture::loadAll(); applyAll(); update
 void Model::loadIR() {
     auto chooser = std::make_shared<juce::FileChooser>("Choose a cabinet impulse response (.wav)", juce::File(), "*.wav;*.aif;*.aiff;*.flac");
     chooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles, [this, chooser](const juce::FileChooser& fc) {
-        const auto f = fc.getResult();
-        if (f == juce::File()) return;
+        const auto picked = pickedFiles(fc);
+        if (picked.isEmpty()) return;
+        const auto f = picked[0];
         auto w = readAudio(f);
-        if (w.rate <= 0 || w.channels.empty()) { status = "Could not read IR: " + f.getFileName(); changed(); return; }
+        if (w.rate <= 0 || w.channels.empty()) { status = "Could not read IR: " + f.getFileName(); fixIn("Library"); changed(); return; }
         userIR = std::make_pair(w.channels[0], w.rate);
         userIRName = f.getFileNameWithoutExtension();
         if (settings.i("cabModel") == CAB_USER) updateIR(); else set("cabModel", CAB_USER);
@@ -777,7 +829,26 @@ std::unique_ptr<OfflineRig> Model::offlineRig(double sr) {
 // MARK: - NAM captures
 
 juce::File Model::namBundledDir() {
-#if JUCE_MAC
+#if JUCE_ANDROID
+    // No folder ships next to an Android app: the captures are packed in as binary data and unpacked once per version
+    static const juce::File dir = [] {
+        const auto d = appDataDir().getChildFile("NAM-bundled");
+        const auto stamp = d.getChildFile(".version");
+        if (stamp.loadFileAsString() != LEVIATHAN_VERSION) {
+            d.deleteRecursively(); d.createDirectory();
+            for (int i = 0; i < BinaryData::namedResourceListSize; ++i) {
+                int size = 0;
+                const char* res = BinaryData::namedResourceList[i];
+                const char* data = BinaryData::getNamedResource(res, size);
+                const juce::String file = BinaryData::getNamedResourceOriginalFilename(res);
+                if (data != nullptr && file.endsWithIgnoreCase(".nam")) d.getChildFile(file).replaceWithData(data, (size_t) size);
+            }
+            stamp.replaceWithText(LEVIATHAN_VERSION);
+        }
+        return d;
+    }();
+    return dir;
+#elif JUCE_MAC
     return juce::File::getSpecialLocation(juce::File::currentApplicationFile).getChildFile("Contents/Resources/NAM");
 #else
     return juce::File::getSpecialLocation(juce::File::currentExecutableFile).getParentDirectory().getChildFile("NAM");
@@ -840,7 +911,7 @@ void Model::updateNam() {
     const auto file = namFile(name);
     if (!file.existsAsFile()) {
         setEngineNam(nullptr, 1); namLoaded = {};
-        status = "NAM capture \"" + name + "\" isn't in the NAM folder."; applyAll(); changed(); return;
+        status = "NAM capture \"" + name + "\" isn't in the NAM folder."; fixIn("Library"); applyAll(); changed(); return;
     }
     const double rate = dspRate;
     auto aliveFlag = alive;
@@ -848,13 +919,14 @@ void Model::updateNam() {
         auto o = openNam(file, rate, cal);
         juce::MessageManager::callAsync([this, aliveFlag, o, name, rate, gen, cal] {
             if (!aliveFlag->load() || gen != namGen) { lev_nam_free(o.m); return; }   // superseded
-            if (!o.m) { setEngineNam(nullptr, 1); namLoaded = {}; status = "Couldn't load NAM capture \"" + name + "\"."; applyAll(); changed(); return; }
+            if (!o.m) { setEngineNam(nullptr, 1); namLoaded = {}; status = "Couldn't load NAM capture \"" + name + "\"."; fixIn("Library"); applyAll(); changed(); return; }
             namLoaded = name; namRate = rate; namExpectedRate = o.expected; namLoudness = o.loudness;
             setEngineNam(o.m, o.gain, o.input);
             namInputLevel = o.inputLevel; namTrim = o.trim; namCal = cal;
             if (o.expected > 0 && std::abs(o.expected - rate) > 1)
                 status = "\"" + name + "\" was captured at " + juce::String(o.expected / 1000, 1) + " kHz but the engine runs at "
                          + juce::String(rate / 1000, 1) + " kHz, so it won't sound quite right.";
+                fixIn("Audio");   // the device's sample rate
             applyAll(); changed();
         });
     });
@@ -882,14 +954,14 @@ void Model::updateNamB() {
     const auto cal = namCalibration();
     if (name == namLoadedB && namRateB == dspRate && cal == namCalB && namModelB) { setEngineNamB(namModelB, namGainB, namInB); changed(); return; }
     const auto file = namFile(name);
-    if (!file.existsAsFile()) { setEngineNamB(nullptr, 1); namLoadedB = {}; status = "Amp B: NAM capture \"" + name + "\" isn't in the NAM folder."; changed(); return; }
+    if (!file.existsAsFile()) { setEngineNamB(nullptr, 1); namLoadedB = {}; status = "Amp B: NAM capture \"" + name + "\" isn't in the NAM folder."; fixIn("Library"); changed(); return; }
     const double rate = dspRate;
     auto aliveFlag = alive;
     juce::Thread::launch([this, aliveFlag, file, name, rate, gen, cal] {
         auto o = openNam(file, rate, cal);
         juce::MessageManager::callAsync([this, aliveFlag, o, name, rate, gen, cal] {
             if (!aliveFlag->load() || gen != namGenB) { lev_nam_free(o.m); return; }   // superseded
-            if (!o.m) { setEngineNamB(nullptr, 1); namLoadedB = {}; status = "Amp B: couldn't load NAM capture \"" + name + "\"."; changed(); return; }
+            if (!o.m) { setEngineNamB(nullptr, 1); namLoadedB = {}; status = "Amp B: couldn't load NAM capture \"" + name + "\"."; fixIn("Library"); changed(); return; }
             namLoadedB = name; namRateB = rate;
             setEngineNamB(o.m, o.gain, o.input);
             namInputLevelB = o.inputLevel; namTrimB = o.trim; namCalB = cal;
@@ -911,7 +983,7 @@ void Model::importNamDialog() {
     chooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::canSelectMultipleItems,
         [this, chooser](const juce::FileChooser& fc) {
             juce::String first;
-            for (const auto& f : fc.getResults()) {
+            for (const auto& f : pickedFiles(fc)) {
                 if (!f.hasFileExtension("nam")) continue;
                 if (f.copyFileTo(namDir().getChildFile(f.getFileName())) && first.isEmpty()) first = f.getFileNameWithoutExtension();
             }
@@ -925,7 +997,7 @@ void Model::importCabIRsDialog() {
     chooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::canSelectDirectories
                              | juce::FileBrowserComponent::canSelectMultipleItems,
         [this, chooser](const juce::FileChooser& fc) {
-            const auto items = fc.getResults();
+            const auto items = pickedFiles(fc);
             if (items.isEmpty()) return;
             const int n = cabIRs.importItems(items);
             status = n == 0 ? juce::String("No WAV impulse responses found there.")
@@ -1000,7 +1072,7 @@ void Model::setOutputDevice(const juce::String& name) {
     if (auto* t = devices.getCurrentDeviceTypeObject(); t && !t->hasSeparateInputsAndOutputs()) setup.inputDeviceName = name;   // ASIO: one device
     setup.useDefaultOutputChannels = true;
     const auto err = devices.setAudioDeviceSetup(setup, true);
-    if (err.isNotEmpty()) status = "Couldn't open " + name + ": " + err;
+    if (err.isNotEmpty()) { status = "Couldn't open " + name + ": " + err; fixIn("Audio"); }
     restartAudio();
     changed();
 }
@@ -1026,7 +1098,7 @@ void Model::setInputDevice(const juce::String& name) {
     if (auto* t = devices.getCurrentDeviceTypeObject(); t && !t->hasSeparateInputsAndOutputs()) setup.outputDeviceName = name;   // ASIO: one device
     setup.useDefaultInputChannels = true;
     const auto err = devices.setAudioDeviceSetup(setup, true);
-    if (err.isNotEmpty()) status = "Couldn't open " + name + ": " + err;
+    if (err.isNotEmpty()) { status = "Couldn't open " + name + ": " + err; fixIn("Audio"); }
     restartAudio();
     changed();
 }

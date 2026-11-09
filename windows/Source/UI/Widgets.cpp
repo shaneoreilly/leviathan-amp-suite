@@ -142,6 +142,7 @@ Knob::Knob(Model& m, juce::String l, juce::String k, double low, double high, do
     : model(m), label(std::move(l)), key(std::move(k)), scope(scope), lo(low), hi(high), def(d), fmt(std::move(f)),
       overlay(m, MidiArmed { key, scope + juce::String::fromUTF8(" \xc2\xb7 ") + label, low, high, false }, 10) {
     if (!fmt) fmt = [](double v) { return juce::String(v * 10, 1); };
+    setViewportIgnoreDragFlag(true);   // a drag on a dial turns the dial; it never scrolls the page (touch screens)
     addAndMakeVisible(overlay);
     overlay.sync();
     setPref(*this, (int) (60 * theme::W), 120);
@@ -243,7 +244,7 @@ void Footswitch::mouseUp(const juce::MouseEvent& e) {
 
 // MARK: - fader
 
-Fader::Fader(Model& m, int b) : model(m), band(b) { setPref(*this, 26, 165); setTooltip(juce::String::fromUTF8("Click or drag \xc2\xb7 double-click resets to 0 dB")); }
+Fader::Fader(Model& m, int b) : model(m), band(b) { setPref(*this, 26, 165); setViewportIgnoreDragFlag(true); setTooltip(juce::String::fromUTF8("Click or drag \xc2\xb7 double-click resets to 0 dB")); }
 
 void Fader::mouseEnter(const juce::MouseEvent&) {
     static const char* freqs[] = { "80 Hz", "160 Hz", "320 Hz", "640 Hz", "1.2 kHz", "2.5 kHz", "5 kHz", "10 kHz" };
@@ -335,7 +336,7 @@ void IconButton::paintButton(juce::Graphics& g, bool over, bool down) {
 namespace {
 /// The drag handle: starts a drag of its panel.
 struct Grip : juce::Component, juce::SettableTooltipClient {
-    explicit Grip(juce::String id) : dragId(std::move(id)) { setPref(*this, 18, 18); setMouseCursor(juce::MouseCursor::DraggingHandCursor); setTooltip("Drag to reorder"); }
+    explicit Grip(juce::String id) : dragId(std::move(id)) { setPref(*this, 18, 18); setMouseCursor(juce::MouseCursor::DraggingHandCursor); setTooltip("Drag to reorder"); setViewportIgnoreDragFlag(true); }
     void paint(juce::Graphics& g) override {
         g.setColour(theme::secondary);
         g.strokePath(IconButton::pathFor(IconButton::grip, getLocalBounds().toFloat().reduced(2)), juce::PathStrokeType(1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
