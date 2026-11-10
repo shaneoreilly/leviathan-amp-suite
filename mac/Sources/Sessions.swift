@@ -45,8 +45,86 @@ struct Session: Identifiable, Hashable {
 /// Playback and live re-amp reuse the engine's backing-track and reamp-source slots.
 @MainActor
 final class Sessions: ObservableObject {
-    static let root = FileManager.default.urls(for: .musicDirectory, in: .userDomainMask)[0]
+    static let defaultRoot = FileManager.default.urls(for: .musicDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("Leviathan/Sessions")
+    /// The folder chosen in Settings > Library ("recordingsFolder"; nil = the default). A cloud drive works:
+    /// Google Drive, Dropbox and iCloud Drive mount as folders. Windows: Sessions::chosen.
+    static var chosen: URL? {
+        get { UserDefaults.standard.string(forKey: "recordingsFolder").flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0, isDirectory: true) } }
+        set { UserDefaults.standard.set(newValue?.path ?? "", forKey: "recordingsFolder") }
+    }
+    private static func isFolder(_ u: URL) -> Bool { var d: ObjCBool = false; return FileManager.default.fileExists(atPath: u.path, isDirectory: &d) && d.boolValue }
+    /// A chosen folder that isn't there right now (the drive isn't running): takes go to the default meanwhile.
+    static var chosenMissing: Bool { chosen.map { !isFolder($0) } ?? false }
+    /// Where takes are recorded.
+    static var root: URL { if let c = chosen, isFolder(c) { return c }; return defaultRoot }
+    @Published var moving = false
+
+    var countTakes: Int {
+        let dirs = (try? FileManager.default.contentsOfDirectory(at: Sessions.root, includingPropertiesForKeys: nil)) ?? []
+        return dirs.filter { FileManager.default.fileExists(atPath: $0.appendingPathComponent("session.json").path) }.count
+    }
+
+    /// Records into `to` (nil: the default) from now on. moveExisting: each take is copied, checked (every file the
+    /// same size), then removed from the old folder, and the old folder is deleted once it's empty.
+    func changeRoot(to: URL?, moveExisting: Bool) {
+        guard !recording, !moving else { message = recording ? "Stop recording before changing the recordings folder." : "Recordings are still being moved."; return }
+        let from = Sessions.root, target = to ?? Sessions.defaultRoot
+        guard target.standardizedFileURL != from.standardizedFileURL else { return }
+        stopPlayback(); stopLiveReamp()
+        try? FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+        let commit = { [weak self] in
+            Sessions.chosen = (to == nil || to!.standardizedFileURL == Sessions.defaultRoot.standardizedFileURL) ? nil : to
+            self?.selected = nil; self?.loaded = nil
+            self?.refresh()
+        }
+        guard moveExisting else {
+            commit()
+            message = "New recordings go to \(target.path). Earlier ones stay in \(from.path)."
+            return
+        }
+        let takes = ((try? FileManager.default.contentsOfDirectory(at: from, includingPropertiesForKeys: [.isDirectoryKey])) ?? [])
+            .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
+        moving = true
+        message = "Moving recordings\u{2026}"
+        Task.detached {
+            let fm = FileManager.default
+            func sameTree(_ a: URL, _ b: URL) -> Bool {
+                guard let e = fm.enumerator(at: a, includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey]) else { return false }
+                for case let f as URL in e where (try? f.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true {
+                    let rel = String(f.path.dropFirst(a.path.count))
+                    let s1 = (try? f.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? -1
+                    let s2 = (try? b.appendingPathComponent(rel).resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? -2
+                    if s1 != s2 { return false }
+                }
+                return true
+            }
+            var moved = 0, failed: [String] = []
+            for (i, d) in takes.enumerated() {
+                await MainActor.run { self.message = "Moving recordings: \(i + 1) of \(takes.count)\u{2026}" }
+                var dest = target.appendingPathComponent(d.lastPathComponent)
+                var k = 2
+                while fm.fileExists(atPath: dest.path) { dest = target.appendingPathComponent("\(d.lastPathComponent) \(k)"); k += 1 }
+                let copied = (try? fm.copyItem(at: d, to: dest)) != nil && sameTree(d, dest)
+                if copied, (try? fm.removeItem(at: d)) != nil { moved += 1 }
+                else { if !copied { try? fm.removeItem(at: dest) }; failed.append(d.lastPathComponent) }
+            }
+            // clean up: the old folder goes once nothing of Leviathan's is left in it (system clutter aside)
+            var removedOld = false
+            if failed.isEmpty {
+                for junk in [".DS_Store", "desktop.ini", "Thumbs.db"] { try? fm.removeItem(at: from.appendingPathComponent(junk)) }
+                let left = (try? fm.contentsOfDirectory(atPath: from.path))?.filter { !$0.hasPrefix(".") } ?? ["?"]
+                if left.isEmpty { removedOld = (try? fm.removeItem(at: from)) != nil }
+            }
+            let summary = "Moved \(moved) recording\(moved == 1 ? "" : "s") to \(target.path)." + (removedOld ? " The old folder was removed." : "")
+                + (failed.isEmpty ? "" : " Couldn't move: \(failed.joined(separator: ", ")) (still in \(from.path)).")
+            await MainActor.run {
+                self.moving = false
+                commit()
+                self.message = summary
+            }
+        }
+    }
 
     unowned let m: Model
     @Published var list: [Session] = []
@@ -80,6 +158,10 @@ final class Sessions: ObservableObject {
         m = model
         try? FileManager.default.createDirectory(at: Sessions.root, withIntermediateDirectories: true)
         refresh()
+        if Sessions.chosenMissing, let c = Sessions.chosen {   // e.g. a cloud drive that isn't running: record locally for now
+            model.status = "Your recordings folder (\(c.path)) isn't available, so new recordings go to \(Sessions.defaultRoot.path) for now. Is the drive connected?"
+            model.fixIn("Library")
+        }
         // quitting mid-take: finish the recording properly instead of leaving it unfinished
         NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { if self?.recording == true { self?.stopRecording() } }
@@ -155,6 +237,7 @@ final class Sessions: ObservableObject {
 
     func startRecording() {
         guard !recording else { return }
+        guard !moving else { message = "Wait for the recordings to finish moving, then record."; return }
         guard m.running, let dsp = m.engine.dsp else { message = "Turn the amp on to record."; fixIn("amp:on"); return }
         stopPlayback()
         let sr = Double(dsp.sr)

@@ -3,6 +3,7 @@
 #include "Sessions.h"
 #include "Midi.h"
 #include "Updater.h"
+#include "DebugLog.h"
 
 namespace lev {
 
@@ -69,7 +70,15 @@ Model::Model() {
         settings.set("cabModel", CAB_LIB); settings.set("cabHighCut", 10000.0); p.setValue("godsCabIntro", true);
     }
 
+    debuglog::setEnabled(p.getBoolValue("debugLog"));
+    Sessions::chosen = juce::File(p.getValue("recordingsFolder"));
     sessions = std::make_unique<Sessions>(*this);
+    if (Sessions::chosenMissing()) {   // e.g. a cloud drive that isn't running: record locally for now, and say so
+        status = "Your recordings folder (" + Sessions::chosen.getFullPathName() + ") isn't available, so new recordings go to "
+               + Sessions::defaultRoot().getFullPathName() + " for now. "
+               + (onAndroid && !hasAllFilesAccess() ? "Leviathan needs All files access for it." : "Is the drive connected?");
+        fixIn("Library");
+    }
     midi = std::make_unique<Midi>(*this);
     updater = std::make_unique<Updater>(*this);
 
@@ -113,7 +122,10 @@ Model::Model() {
     // LEVIATHAN_SCREEN=presets|recordings|settings: open on that screen (UI testing)
     const auto scr = juce::SystemStats::getEnvironmentVariable("LEVIATHAN_SCREEN", {});
     if (scr == "presets") screen = Screen::presets; else if (scr == "recordings") screen = Screen::recordings; else if (scr == "settings") screen = Screen::settings;
-    start();
+    // Android opens with the amp off (nothing plays until you tap Start) and the device released while it's off;
+    // the device setup is kept and reopened by start(). Desktop starts playing straight away.
+    if (onAndroid) devices.closeAudioDevice();
+    else start();
     startTimerHz(30);
 }
 
@@ -248,6 +260,7 @@ void Model::ensureInputs() {
 
 void Model::start() {
     if (running) return;
+    if (devices.getCurrentAudioDevice() == nullptr) devices.restartLastAudioDevice();   // closed while off (Android)
     if (devices.getCurrentAudioDevice() == nullptr) {
         const auto err = devices.initialise(8, 2, nullptr, true);
         if (devices.getCurrentAudioDevice() == nullptr) {
@@ -258,6 +271,7 @@ void Model::start() {
     }
     devices.addAudioCallback(this);
     running = true;
+    debuglog::write("audio", "started");
     adviseOverloads = true; recentOverloads.clear(); startedAt = juce::Time::getMillisecondCounterHiRes() / 1000.0;
     lastXRuns = devices.getXRunCount();
     refreshInfo();
@@ -268,12 +282,23 @@ void Model::stop() {
     if (!running) return;
     devices.removeAudioCallback(this);
     running = false;
+    debuglog::write("audio", "stopped");
     params.inPeak.store(0); params.outPeak.store(0);
+    // Android: off means the audio device is released too (its exclusive streams would hold up other apps' sound)
+    if (onAndroid) { saveState(); devices.closeAudioDevice(); }
+    changed();
+}
+
+void Model::setDebugLog(bool on) {
+    props().setValue("debugLog", on);
+    debuglog::setEnabled(on);
+    if (on) { loggedDevice = {}; refreshInfo(); debuglog::write("audio", running ? "running" : "off"); }
     changed();
 }
 
 void Model::enterBackground() {
     if (pausedForBackground || sessions->recording || sessions->liveReamp) return;
+    debuglog::write("app", "to the background: audio released");
     pausedForBackground = true;
     wasRunningBeforeBackground = running;
     saveState();
@@ -283,6 +308,7 @@ void Model::enterBackground() {
 
 void Model::enterForeground() {
     if (!pausedForBackground) return;
+    debuglog::write("app", "back in front");
     pausedForBackground = false;
     devices.restartLastAudioDevice();
     if (wasRunningBeforeBackground) start();
@@ -306,6 +332,10 @@ void Model::refreshInfo() {
         info.type = d->getTypeName(); info.inName = devices.getAudioDeviceSetup().inputDeviceName;
         info.outName = devices.getAudioDeviceSetup().outputDeviceName;
     }
+    const auto line = info.type + ": in \"" + info.inName + "\", out \"" + info.outName + "\", " + juce::String(juce::roundToInt(info.sampleRate)) + " Hz, buffer "
+                    + juce::String(info.buffer) + " (" + juce::String(info.bufferMs, 1) + " ms); latency in " + juce::String(info.inMs, 1) + " + out "
+                    + juce::String(info.outMs, 1) + " = " + juce::String(info.latencyMs(), 1) + " ms";
+    if (line != loggedDevice) { loggedDevice = line; debuglog::write("audio", line); }
 }
 
 void Model::audioDeviceAboutToStart(juce::AudioIODevice* d) {
@@ -331,6 +361,15 @@ void Model::audioDeviceError(const juce::String& msg) {
 
 void Model::audioDeviceIOCallbackWithContext(const float* const* in, int numIn, float* const* out, int numOut, int n,
                                              const juce::AudioIODeviceCallbackContext&) {
+    const auto t0 = juce::Time::getHighResolutionTicks();
+    struct Peak {   // this callback's share of its time budget, for the diagnostic log (a max, read and reset by the timer)
+        Model& m; juce::int64 t0; int n;
+        ~Peak() {
+            const double used = juce::Time::highResolutionTicksToSeconds(juce::Time::getHighResolutionTicks() - t0), budget = n / std::max(m.dspRate, 1.0);
+            const float load = (float) (used / budget);
+            if (load > m.callbackPeak.load(std::memory_order_relaxed)) m.callbackPeak.store(load, std::memory_order_relaxed);
+        }
+    } peak { *this, t0, n };
     DSP* d = dsp.get();
     if (d == nullptr || numOut == 0) { for (int c = 0; c < numOut; ++c) if (out[c]) juce::FloatVectorOperations::clear(out[c], n); return; }
     const int ch = juce::jlimit(0, std::max(numIn - 1, 0), params.inputChannel);
@@ -396,7 +435,18 @@ void Model::timerCallback() {
     if (saveCountdown > 0 && --saveCountdown == 0) { saveState(); saveCountdown = -1; }
     sessions->tick();
     if (onTick) onTick();
+    if (status != loggedStatus) { loggedStatus = status; if (status.isNotEmpty()) debuglog::write("message", status); }
+    if (sessions->message != loggedMessage) { loggedMessage = sessions->message; if (loggedMessage.isNotEmpty()) debuglog::write("message", loggedMessage); }
     if (!running) return;
+    if (++perfTick % 60 == 0 && debuglog::enabled()) {   // every 2 s at 30 Hz
+        const double now = juce::Time::getMillisecondCounterHiRes() / 1000.0, nam = params.namSeconds.load();
+        const double span = std::max(now - perfAt, 1e-3);
+        const int xr = devices.getXRunCount();
+        debuglog::write("perf", "load avg " + juce::String(juce::roundToInt(devices.getCpuUsage() * 100)) + "%, peak " + juce::String(juce::roundToInt(callbackPeak.exchange(0) * 100))
+                                + "%; NAM " + juce::String(juce::roundToInt((nam - perfNam) / span * 100)) + "% of real time; dropouts +" + juce::String(xr - perfXRuns)
+                                + " (" + juce::String(xr) + " total); \"" + presetName + "\", amp " + (settings.s("nam").isNotEmpty() ? "NAM \"" + settings.s("nam") + "\"" : juce::String("built-in")));
+        perfAt = now; perfNam = nam; perfXRuns = xr;
+    }
     const int x = devices.getXRunCount();
     if (x > lastXRuns) { dropouts += x - lastXRuns; lastXRuns = x; refreshInfo(); overloaded(); }
     if (++tunerTick % 15 == 0) cpu = (float) devices.getCpuUsage();
@@ -916,17 +966,22 @@ void Model::updateNam() {
     const double rate = dspRate;
     auto aliveFlag = alive;
     juce::Thread::launch([this, aliveFlag, file, name, rate, gen, cal] {
+        const auto t0 = juce::Time::getMillisecondCounterHiRes();
         auto o = openNam(file, rate, cal);
-        juce::MessageManager::callAsync([this, aliveFlag, o, name, rate, gen, cal] {
+        const double ms = juce::Time::getMillisecondCounterHiRes() - t0;
+        juce::MessageManager::callAsync([this, aliveFlag, o, name, rate, gen, cal, ms, file] {
             if (!aliveFlag->load() || gen != namGen) { lev_nam_free(o.m); return; }   // superseded
             if (!o.m) { setEngineNam(nullptr, 1); namLoaded = {}; status = "Couldn't load NAM capture \"" + name + "\"."; fixIn("Library"); applyAll(); changed(); return; }
+            debuglog::write("nam", "\"" + name + "\" loaded in " + juce::String(juce::roundToInt(ms)) + " ms (" + juce::String(file.getSize() / 1024) + " KB, made at "
+                                   + (o.expected > 0 ? juce::String(juce::roundToInt(o.expected)) + " Hz" : juce::String("unknown rate")) + ", engine " + juce::String(juce::roundToInt(rate)) + " Hz)");
             namLoaded = name; namRate = rate; namExpectedRate = o.expected; namLoudness = o.loudness;
             setEngineNam(o.m, o.gain, o.input);
             namInputLevel = o.inputLevel; namTrim = o.trim; namCal = cal;
-            if (o.expected > 0 && std::abs(o.expected - rate) > 1)
+            if (o.expected > 0 && std::abs(o.expected - rate) > 1) {
                 status = "\"" + name + "\" was captured at " + juce::String(o.expected / 1000, 1) + " kHz but the engine runs at "
                          + juce::String(rate / 1000, 1) + " kHz, so it won't sound quite right.";
                 fixIn("Audio");   // the device's sample rate
+            }
             applyAll(); changed();
         });
     });

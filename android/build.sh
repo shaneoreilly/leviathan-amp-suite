@@ -197,7 +197,10 @@ if target == "app":
                f'LEVIATHAN_VERSION=&quot;{version}&quot;')
     iconAttr = f' bigIcon="{fid(icon)}"'
     # in-app updates: the downloaded APK goes to Android's installer through androidx FileProvider
-    manifest = ('<manifest><uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/><application>'
+    # REQUEST_INSTALL_PACKAGES: in-app updates. MANAGE_EXTERNAL_STORAGE: "All files access", asked for only when you
+    # choose a recordings folder on the phone's storage (Settings > Library > Recordings folder)
+    manifest = ('<manifest><uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>'
+                '<uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/><application>'
                 '<provider android:name="androidx.core.content.FileProvider" android:authorities="local.leviathan.ampsuite.updates" '
                 'android:exported="false" android:grantUriPermissions="true"><meta-data android:name="android.support.FILE_PROVIDER_PATHS" '
                 'android:resource="@xml/lev_update_paths"/></provider></application></manifest>')

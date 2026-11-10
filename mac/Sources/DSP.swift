@@ -53,6 +53,8 @@ struct Smooth {
 
 final class Params: @unchecked Sendable {
     var version = 0
+    /// Time spent inside NAM (amp A + B), for the diagnostic log.
+    var namSeconds: Double = 0
     var inGain: Float = 0, inputChannel = 0, muted = false
     var gateOn = true, gateThresh: Float = -60, gateRelease: Float = 60, gateDepth: Float = -60
     var pitchOn = false, pitchSemis: Float = 0, pitchCents: Float = 0, pitchMix: Float = 1
@@ -707,7 +709,9 @@ final class DSP {
         if let nm {
             let k = namCal
             for i in 0..<n { namBuf[i] = a[i] * namInG.next(c) * k }
+            let t0 = DispatchTime.now().uptimeNanoseconds
             lev_nam_process(nm, namBuf, namBuf, Int32(n))
+            p.namSeconds += Double(DispatchTime.now().uptimeNanoseconds - t0) / 1e9
             let g = namGain
             for i in 0..<n {
                 let m = ampMix.next(c), x = a[i]
@@ -756,7 +760,9 @@ final class DSP {
 
         // Amp B: mid = blend of A and B, side = (A - B) / 2 x Spread; side goes through its own EQ and cab
         if sideOn, let nb {
+            let t0 = DispatchTime.now().uptimeNanoseconds
             lev_nam_process(nb, bBuf, bBuf, Int32(n))
+            p.namSeconds += Double(DispatchTime.now().uptimeNanoseconds - t0) / 1e9
             let g = namBGain
             for i in 0..<n {
                 let m = bMix.next(c), A = a[i], B = bBuf[i] * g * bLvl.next(c)

@@ -4,7 +4,77 @@
 
 namespace lev {
 
-juce::File Sessions::root() { return musicDir().getChildFile("Sessions"); }
+juce::File Sessions::defaultRoot() { return musicDir().getChildFile("Sessions"); }
+juce::File Sessions::root() { return chosenUsable() ? chosen : defaultRoot(); }
+
+int Sessions::countTakes() const {
+    int n = 0;
+    for (const auto& e : juce::RangedDirectoryIterator(root(), false, "*", juce::File::findDirectories))
+        if (e.getFile().getChildFile("session.json").existsAsFile()) ++n;
+    return n;
+}
+
+/// Every file under `a` is under `b` at the same relative path, with the same size: a copy that can replace it.
+static bool sameTree(const juce::File& a, const juce::File& b) {
+    for (const auto& e : juce::RangedDirectoryIterator(a, true, "*", juce::File::findFiles))
+        if (b.getChildFile(e.getFile().getRelativePathFrom(a)).getSize() != e.getFile().getSize()) return false;
+    return true;
+}
+
+void Sessions::changeRoot(const juce::File& to, bool moveExisting) {
+    if (recording || moving) { message = recording ? "Stop recording before changing the recordings folder." : "Recordings are still being moved."; m.changed(); return; }
+    const auto from = root();
+    const auto target = to == juce::File() ? defaultRoot() : to;
+    if (target == from) return;
+    stopPlayback(); stopLiveReamp();
+    target.createDirectory();
+    auto commit = [this, to] {
+        chosen = to == defaultRoot() ? juce::File() : to;
+        m.props().setValue("recordingsFolder", chosen.getFullPathName());
+        m.props().saveIfNeeded();
+        selected = juce::File(); loadedFile = juce::File();
+        refresh(); m.changed();
+    };
+    if (!moveExisting) {
+        commit();
+        message = "New recordings go to " + target.getFullPathName() + ". Earlier ones stay in " + from.getFullPathName() + ".";
+        m.changed();
+        return;
+    }
+    juce::Array<juce::File> takes;
+    for (const auto& e : juce::RangedDirectoryIterator(from, false, "*", juce::File::findDirectories)) takes.add(e.getFile());
+    moving = true;
+    message = juce::String::fromUTF8("Moving recordings\xe2\x80\xa6"); m.changed();
+    juce::Thread::launch([this, from, target, takes, commit, flag = alive] {
+        int moved = 0; juce::StringArray failed;
+        for (int i = 0; i < takes.size(); ++i) {
+            const auto d = takes[i];
+            juce::MessageManager::callAsync([this, flag, i, n = takes.size()] {
+                if (flag->load()) { message = "Moving recordings: " + juce::String(i + 1) + " of " + juce::String(n) + juce::String::fromUTF8("\xe2\x80\xa6"); m.changed(); }
+            });
+            auto dest = target.getChildFile(d.getFileName());
+            if (dest.exists()) dest = target.getNonexistentChildFile(d.getFileName(), {}, true);
+            const bool copied = d.copyDirectoryTo(dest) && sameTree(d, dest);
+            if (copied && d.deleteRecursively()) ++moved;
+            else { if (!copied) dest.deleteRecursively(); failed.add(d.getFileName()); }
+        }
+        // clean up: the old folder goes once nothing of Leviathan's is left in it (system clutter aside)
+        bool removedOld = false;
+        if (failed.isEmpty()) {
+            for (auto* junk : { ".DS_Store", "desktop.ini", "Thumbs.db" }) from.getChildFile(junk).deleteFile();
+            removedOld = from.getNumberOfChildFiles(juce::File::findFilesAndDirectories | juce::File::ignoreHiddenFiles) == 0 && from.deleteRecursively();
+        }
+        juce::MessageManager::callAsync([this, flag, moved, failed, removedOld, from, target, commit] {
+            if (!flag->load()) return;
+            moving = false;
+            commit();
+            message = "Moved " + juce::String(moved) + " recording" + (moved == 1 ? "" : "s") + " to " + target.getFullPathName() + "."
+                    + (removedOld ? " The old folder was removed." : "")
+                    + (failed.isEmpty() ? juce::String() : " Couldn't move: " + failed.joinIntoString(", ") + " (still in " + from.getFullPathName() + ").");
+            m.changed();
+        });
+    });
+}
 
 Sessions::Sessions(Model& model) : m(model) {
     for (auto& t : tmp) t.resize(1 << 18);
@@ -139,6 +209,7 @@ std::unique_ptr<juce::AudioFormatWriter> Sessions::openWriter(const juce::File& 
 
 void Sessions::startRecording() {
     if (recording) return;
+    if (moving) { message = "Wait for the recordings to finish moving, then record."; m.changed(); return; }
     if (!m.running || m.engineRate() <= 0) { message = "Turn the amp on to record."; fixIn("amp:on"); m.changed(); return; }
     stopPlayback();
     const double sr = m.engineRate();

@@ -473,7 +473,7 @@ final class Model: ObservableObject {
         didSet { UserDefaults.standard.set(bufferSize, forKey: "buffer"); restartIfRunning() }
     }
     @Published var running = false
-    @Published var status = ""
+    @Published var status = "" { didSet { if status != oldValue && !status.isEmpty { DebugLog.write("message", status) } } }
     /// Where the current status message gets fixed: a Settings section ("Audio", "Library", "About"), "amp:on" to
     /// switch the amp on, or "privacy:microphone" (macOS's own settings). Only errors have one. It belongs to the
     /// message it was set for (statusFixFor), so a later message never inherits it. Windows: Model::statusFix.
@@ -490,7 +490,23 @@ final class Model: ObservableObject {
         default: SettingsUI.shared.section = where_; screen = .settings
         }
     }
-    @Published var info: HALEngine.Info?
+    @Published var info: HALEngine.Info? {
+        didSet {
+            guard let i = info else { return }
+            let line = String(format: "CoreAudio: in \"%@\", out \"%@\", %.0f Hz, buffer %d (%.1f ms); latency in %.1f + out %.1f = %.1f ms",
+                              input?.name ?? "", output?.name ?? "", i.sampleRate, i.buffer, i.bufferMs, i.inMs, i.outMs, i.latencyMs)
+            if line != loggedDevice { loggedDevice = line; DebugLog.write("audio", line) }
+        }
+    }
+    /// Diagnostic log (DebugLog): what was last written, and the counters behind the 2-second perf line.
+    private var loggedDevice = "", loggedMessage = "", perfTick = 0, perfAt = Date(), perfNam = 0.0, perfDropouts = 0
+    private var perfPeak: Float = 0
+    func setDebugLog(_ on: Bool) {
+        UserDefaults.standard.set(on, forKey: "debugLog")
+        DebugLog.setEnabled(on)
+        if on { loggedDevice = ""; let i = info; info = i; DebugLog.write("audio", running ? "running" : "off") }
+        objectWillChange.send()
+    }
     let meters = Meters()   // fast-changing values live apart so they don't redraw the whole rig
     @Published var savingPreset = false
     @Published var newPresetName = ""
@@ -684,6 +700,7 @@ final class Model: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
             if let self, !self.running { self.start() }
         }
+        DebugLog.setEnabled(UserDefaults.standard.bool(forKey: "debugLog"))
         timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
         }
@@ -742,6 +759,7 @@ final class Model: ObservableObject {
         do {
             info = try engine.start(input: i, output: o, buffer: bufferSize)
             running = true
+            DebugLog.write("audio", "started")
             adviseOverloads = true; recentOverloads = []; startedAt = Date()
             status = i.map { latencyAdvice($0, o) }
                 ?? (inputUID == Model.noInput ? "" : "Your input isn\u{2019}t connected, so Leviathan is running without one. Plug it in, or pick another in the Input panel.")
@@ -764,7 +782,7 @@ final class Model: ObservableObject {
             : "Leviathan couldn\u{2019}t start \(o.name). Pick another output, or unplug it and plug it back in." + detail
     }
 
-    func stop() { engine.stop(); running = false; info = nil }
+    func stop() { engine.stop(); running = false; info = nil; DebugLog.write("audio", "stopped") }
 
     /// Hardware advice: most of the round trip is the devices, not the app.
     func latencyAdvice(_ i: AudioDevice, _ o: AudioDevice) -> String {
@@ -902,8 +920,12 @@ final class Model: ObservableObject {
     /// Load the selected NAM capture into the running engine (at its rate); unloads when none is selected.
     func updateNam() {
         guard let dsp = engine.dsp else { return }
+        let t0 = Date(), name = s.nam, rate = Double(dsp.sr)
         namHost.select(s.nam, rate: Double(dsp.sr), calibration: namCalibration, dsp: dsp) { [weak self] err in
             guard let self else { return }
+            if !name.isEmpty, err == nil {
+                DebugLog.write("nam", String(format: "\"%@\" ready in %.0f ms (engine %.0f Hz)", name, Date().timeIntervalSince(t0) * 1000, rate))
+            }
             if let err { self.status = err; self.fixIn("Library") }
             self.applyAll(); self.objectWillChange.send()
         }
@@ -1209,7 +1231,16 @@ final class Model: ObservableObject {
         checkInputClipping()
         if meters.beat != params.metroBeat { meters.beat = params.metroBeat }
         tunerTick += 1
-        if tunerTick % 15 == 0 { meters.load = engine.loadPeak; engine.loadPeak = 0 }
+        if tunerTick % 15 == 0 { meters.load = engine.loadPeak; engine.loadPeak = 0; perfPeak = max(perfPeak, meters.load) }
+        if sessions.message != loggedMessage { loggedMessage = sessions.message; if !loggedMessage.isEmpty { DebugLog.write("message", loggedMessage) } }
+        perfTick += 1
+        if perfTick % 60 == 0, DebugLog.enabled {   // every 2 s at 30 Hz
+            let now = Date(), span = max(now.timeIntervalSince(perfAt), 1e-3), nam = params.namSeconds, d = engine.overloads
+            DebugLog.write("perf", String(format: "peak load %.0f%%; NAM %.0f%% of real time; dropouts +%d (%d total); \"%@\", amp %@",
+                                          perfPeak * 100, (nam - perfNam) / span * 100, d - perfDropouts, d, presetName,
+                                          s.nam.isEmpty ? "built-in" : "NAM \"\(s.nam)\""))
+            perfAt = now; perfNam = nam; perfDropouts = d; perfPeak = 0
+        }
         if tunerOn && tunerTick % 2 == 0 { runTuner() }
     }
 

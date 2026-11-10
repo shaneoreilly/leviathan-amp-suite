@@ -763,10 +763,43 @@ struct SettingsView: View {
 
     // MARK: Library
 
+    /// Where takes are recorded: any folder, a cloud drive's included (Google Drive, Dropbox, iCloud Drive).
+    func chooseRecordingsFolder() {
+        let p = NSOpenPanel()
+        p.canChooseDirectories = true; p.canChooseFiles = false; p.canCreateDirectories = true; p.allowsMultipleSelection = false
+        p.directoryURL = Sessions.root
+        p.message = "Choose where to keep your recordings (any folder, Google Drive or Dropbox included)"
+        p.prompt = "Use This Folder"
+        if p.runModal() == .OK, let u = p.url { askMoveRecordings(to: u) }
+    }
+
+    /// Asks whether to bring the existing takes along, then switches folders (Sessions.changeRoot).
+    func askMoveRecordings(to: URL?) {
+        let target = to ?? Sessions.defaultRoot
+        guard target.standardizedFileURL != Sessions.root.standardizedFileURL else { return }
+        let n = rec.countTakes
+        guard n > 0 else { rec.changeRoot(to: to, moveExisting: false); return }
+        let a = NSAlert()
+        a.messageText = "Move your \(n) recording\(n == 1 ? "" : "s")?"
+        a.informativeText = "New recordings will go to \(target.path).\n\nMoving copies each take there, checks the copy, then removes it from \(Sessions.root.path) (and that folder once it's empty). Takes you leave behind stay where they are, but Leviathan only lists the new folder."
+        a.addButton(withTitle: "Move Recordings"); a.addButton(withTitle: "Leave Them"); a.addButton(withTitle: "Cancel")
+        switch a.runModal() {
+        case .alertFirstButtonReturn: rec.changeRoot(to: to, moveExisting: true)
+        case .alertSecondButtonReturn: rec.changeRoot(to: to, moveExisting: false)
+        default: break
+        }
+    }
+
     @ViewBuilder var library: some View {
         SettingsRow("Recordings", explain: "settings:recordings") {
             Button("Import WAV\u{2026}") { rec.importRecordings(); m.screen = .recordings }
             Button("Open folder") { NSWorkspace.shared.open(Sessions.root) }
+        }
+        SettingsRow("Recordings folder", explain: "settings:recordingsFolder") {
+            Button("Change folder\u{2026}") { chooseRecordingsFolder() }.disabled(rec.moving || rec.recording)
+            if Sessions.chosen != nil { Button("Use default") { askMoveRecordings(to: nil) }.disabled(rec.moving || rec.recording) }
+            Text(Sessions.chosenMissing ? "\(Sessions.chosen?.path ?? "") (not available: using the default for now)" : Sessions.root.path)
+                .foregroundStyle(Sessions.chosenMissing ? Color.orange : Color.secondary).lineLimit(1).truncationMode(.middle)
         }
         SettingsRow("NAM captures", explain: "settings:nam") {
             Button("Add\u{2026}") { m.importNam() }

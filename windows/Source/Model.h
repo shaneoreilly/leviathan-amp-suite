@@ -67,6 +67,11 @@ public:
     void enterBackground();
     void enterForeground();
     bool pausedForBackground = false, wasRunningBeforeBackground = false;
+    /// Diagnostic log (debuglog): the worst callback since the last perf line, and what was last written.
+    std::atomic<float> callbackPeak { 0 };
+    juce::String loggedDevice, loggedStatus, loggedMessage;
+    int perfTick = 0, perfXRuns = 0; double perfAt = 0, perfNam = 0;
+    void setDebugLog(bool on);
     void toggle() { running ? stop() : start(); }
     void restartAudio();
     bool hasInput() const;

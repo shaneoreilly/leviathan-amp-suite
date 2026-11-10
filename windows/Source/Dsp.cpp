@@ -1,5 +1,6 @@
 // Port of mac/Sources/DSP.swift. Keep the two in step: tools/dsp_render.cpp checks they render the same.
 #include "Dsp.h"
+#include <chrono>
 #include <algorithm>
 #include <cstring>
 
@@ -512,7 +513,9 @@ void DSP::process(const float* input, float* outL, float* outR, int frames) {
     if (nm) {
         const float k = namCal.load();
         for (int i = 0; i < n; ++i) namBuf[(size_t) i] = a[(size_t) i] * namInG.next(c) * k;
+        const auto t0 = std::chrono::steady_clock::now();
         lev_nam_process(nm, namBuf.data(), namBuf.data(), n);
+        p.namSeconds.store(p.namSeconds.load(std::memory_order_relaxed) + std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count(), std::memory_order_relaxed);
         const float g = namGain.load();
         for (int i = 0; i < n; ++i) {
             const float m = ampMix.next(c), x = a[(size_t) i];
@@ -561,7 +564,9 @@ void DSP::process(const float* input, float* outL, float* outR, int frames) {
 
     // Amp B: mid = blend of A and B, side = (A - B) / 2 x Spread; side goes through its own EQ and cab
     if (sideOn) {
+        const auto t0 = std::chrono::steady_clock::now();
         lev_nam_process(nb, bBuf.data(), bBuf.data(), n);
+        p.namSeconds.store(p.namSeconds.load(std::memory_order_relaxed) + std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count(), std::memory_order_relaxed);
         const float g = namBGain.load();
         for (int i = 0; i < n; ++i) {
             const float m = bMix.next(c), A = a[(size_t) i], B = bBuf[(size_t) i] * g * bLvl.next(c);

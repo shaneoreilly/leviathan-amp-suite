@@ -119,6 +119,8 @@
   "settings:programChange": "Program 1, 2, 3… from your MIDI device loads the 1st, 2nd, 3rd… preset in the Presets list.",
   "settings:midiAssign": "Click Learn, click a knob or ON/OFF switch on the rig, then move a control on your MIDI device. An expression pedal on Wah Position makes a real wah.",
   "settings:recordings": "Your takes, each with the dry guitar and the sound you heard. Import adds WAV files from elsewhere so you can re-amp them.",
+  "settings:debugLog": "A diagnostic log of your setup, the audio device, amp captures and, every few seconds while playing, how hard the engine works and any dropouts. Turn it on, reproduce the problem, then share or copy the log into a bug report. Off by default; the last 5 logs are kept.",
+  "settings:recordingsFolder": "Where new takes are saved. Pick any folder, including Google Drive, Dropbox or iCloud Drive (their desktop apps show up as folders). You can move your existing takes there too; the old folder is removed once it's empty.",
   "settings:nam": "Neural Amp Modeler captures of real amps and pedals. Add .nam files and they appear in the Amp panel under Real amps. Free captures at tone3000.com.",
   "settings:cabIRs": "Impulse responses of real speaker cabinets. Add WAV files or folders and pick them in the Cabinet panel. Free packs at tone3000.com.",
   "settings:captures": "Amp captures made with Leviathan's own capture tool, from the folder shown.",

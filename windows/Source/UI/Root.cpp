@@ -2,6 +2,7 @@
 #include "NativeMenus.h"
 #include "../Sessions.h"
 #include "../Updater.h"
+#include "../DebugLog.h"
 #include "Markdown.h"
 
 namespace lev {
@@ -878,6 +879,9 @@ struct SettingsScreen : Screen_ {
         // library
         importRec.setButtonText("Import WAV" + ellipsis); importRec.onClick = [this] { model.sessions->importRecordings(); };
         openRec.setButtonText("Open folder"); openRec.onClick = [] { Sessions::root().createDirectory(); Sessions::root().startAsProcess(); };
+        // where takes are recorded: any folder, a cloud drive's included (Google Drive, Dropbox and iCloud mount as one)
+        changeRec.setButtonText("Change folder" + ellipsis); changeRec.onClick = [this] { chooseRecordingsFolder(); };
+        resetRec.setButtonText("Use default"); resetRec.onClick = [this] { askMoveRecordings(Sessions::defaultRoot()); };
         addNam.setButtonText("Add" + ellipsis); addNam.onClick = [this] { model.importNamDialog(); };
         openNam.setButtonText("Open folder"); openNam.onClick = [] { Model::namDir().createDirectory(); Model::namDir().startAsProcess(); };
         rescanNam.setButtonText("Rescan"); rescanNam.onClick = [this] { model.rescanNam(); };
@@ -902,7 +906,7 @@ struct SettingsScreen : Screen_ {
                 });
             };
         }
-        for (auto* c : std::initializer_list<juce::Component*> { &importRec, &openRec, &addNam, &openNam, &rescanNam, &addIRs, &openIRs, &rescanIRs, &openCap, &rescan, &openIR })
+        for (auto* c : std::initializer_list<juce::Component*> { &importRec, &openRec, &changeRec, &resetRec, &addNam, &openNam, &rescanNam, &addIRs, &openIRs, &rescanIRs, &openCap, &rescan, &openIR })
             lib.addAndMakeVisible(c);
         if (!canRevealFiles) for (auto* c : { &openRec, &openNam, &openIRs, &openCap }) c->setVisible(false);
 
@@ -929,7 +933,24 @@ struct SettingsScreen : Screen_ {
         licB.setButtonText("License"); licB.onClick = [site] { juce::URL(site + "/blob/main/LICENSE").launchInDefaultBrowser(); };
         noticeB.setButtonText("Notice & credits"); noticeB.onClick = [site] { juce::URL(site + "/blob/main/NOTICE.md").launchInDefaultBrowser(); };
         srcB.setButtonText("Source code"); srcB.onClick = [site] { juce::URL(site).launchInDefaultBrowser(); };
-        for (auto* c : std::initializer_list<juce::Component*> { &checkNow, &updProgress, &autoUpd, &newsB, &installB, &pageB, &bugB, &featB, &licB, &noticeB, &srcB })
+        // diagnostic log: off by default; shared to attach to a bug report
+        debugT.setButtonText("Record a diagnostic log");
+        debugT.onClick = [this] { model.setDebugLog(debugT.getToggleState()); };
+        shareLogB.setButtonText(onAndroid ? "Share log" + ellipsis : juce::String("Show log"));
+        shareLogB.onClick = [this] {
+            const auto f = debuglog::latest();
+            if (f == juce::File()) { model.status = "There's no diagnostic log yet: turn on \"Record a diagnostic log\" first."; model.changed(); return; }
+            if (onAndroid) logShare = juce::ContentSharer::shareFilesScoped({ juce::URL(f) }, [](bool, const juce::String&) {});
+            else f.revealToUser();
+        };
+        copyLogB.setButtonText("Copy log");
+        copyLogB.onClick = [this] {
+            const auto f = debuglog::latest();
+            if (f == juce::File()) return;
+            juce::SystemClipboard::copyTextToClipboard(f.loadFileAsString());
+            model.status = "The diagnostic log is on the clipboard: paste it into a bug report or a message."; model.changed();
+        };
+        for (auto* c : std::initializer_list<juce::Component*> { &checkNow, &updProgress, &autoUpd, &newsB, &installB, &pageB, &bugB, &featB, &licB, &noticeB, &srcB, &debugT, &shareLogB, &copyLogB })
             about.addAndMakeVisible(c);
         refresh();
     }
@@ -1076,12 +1097,22 @@ struct SettingsScreen : Screen_ {
         {
             Group::Lay lay { lib };
             Group::place(lay.row("Recordings", "settings:recordings"), Group::withOpen({ { &importRec, 140 } }, &openRec, 110));
+            const int fy = lay.row("Recordings folder", "settings:recordingsFolder");
+            const int fx = Group::place(fy, Sessions::chosen != juce::File() ? Group::Items { { &changeRec, 140 }, { &resetRec, 110 } } : Group::Items { { &changeRec, 140 } });
+            resetRec.setVisible(Sessions::chosen != juce::File());
             const int ny = lay.row("NAM captures", "settings:nam"), nx = Group::place(ny, Group::withOpen({ { &addNam, 80 } }, &openNam, 110, { { &rescanNam, 80 } }));
             const int iy = lay.row("Cab IRs", "settings:cabIRs"), ix = Group::place(iy, Group::withOpen({ { &addIRs, 80 } }, &openIRs, 110, { { &rescanIRs, 80 } }));
             const int cy = lay.row("Your captures", "settings:captures"), cx = Group::place(cy, Group::withOpen({}, &openCap, 110, { { &rescan, 80 } }));
             const int gy = lay.row("God's Cab", "settings:godsCab"), gx = Group::place(gy, { { &openIR, 110 } });
-            lib.extra = [this, ny, nx, iy, ix, cy, cx, gy, gx](juce::Graphics& g) {
+            lib.extra = [this, ny, nx, iy, ix, cy, cx, gy, gx, fy, fx](juce::Graphics& g) {
                 g.setColour(theme::secondary); g.setFont(theme::font(11));
+                if (fy >= 0) {
+                    const auto path = Sessions::chosenMissing() ? Sessions::chosen.getFullPathName() + " (not available: using the default for now)"
+                                                                : Sessions::root().getFullPathName();
+                    g.setColour(Sessions::chosenMissing() ? juce::Colours::orange : theme::secondary);
+                    g.drawFittedText(path, fx + 4, fy, std::max(100, lib.getWidth() - fx - 24), rowH, juce::Justification::centredLeft, 1, 0.8f);
+                    g.setColour(theme::secondary);
+                }
                 g.drawText(juce::String(model.namFiles.size()) + " loaded", nx + 4, ny, 300, rowH, juce::Justification::centredLeft);
                 g.drawText(juce::String(model.cabIRs.all().size()) + " in the library", ix + 4, iy, 300, rowH, juce::Justification::centredLeft);
                 g.drawText(juce::String((int) model.captures.size()) + " loaded", cx + 4, cy, 300, rowH, juce::Justification::centredLeft);
@@ -1119,6 +1150,10 @@ struct SettingsScreen : Screen_ {
             if (avail) { ry = lay.row("Available", "settings:version"); Group::place(ry, { { &newsB, 120 }, { &installB, 120 }, { &pageB, 140 } }, ctrlX + 150); }
             lay.heading("Feedback");
             Group::place(lay.row("GitHub", "settings:feedback"), { { &bugB, 150 }, { &featB, 170 } });
+            debugT.setToggleState(debuglog::enabled(), juce::dontSendNotification);
+            Group::place(lay.row("Debug log", "settings:debugLog"),
+                         onAndroid ? Group::Items { { &debugT, 230 }, { &shareLogB, 110 } } : Group::Items { { &debugT, 230 }, { &shareLogB, 100 }, { &copyLogB, 100 } });
+            copyLogB.setVisible(!onAndroid);
             lay.heading("License");
             const int ly = lay.row("Leviathan", "settings:license");
             Group::place(lay.row("", "settings:license"), { { &licB, 90 }, { &noticeB, 140 }, { &srcB, 120 } });
@@ -1157,6 +1192,45 @@ struct SettingsScreen : Screen_ {
         const auto r = nav.getBounds().toFloat().reduced(0.5f);
         g.setColour(theme::bar); g.fillRoundedRectangle(r, 12);
         g.setColour(theme::line); g.drawRoundedRectangle(r, 12, 1);
+    }
+
+    void chooseRecordingsFolder() {
+        if (!hasAllFilesAccess()) {   // Android 11+: recording into a folder on the phone's storage needs All files access
+            auto opts = juce::MessageBoxOptions().withIconType(juce::MessageBoxIconType::InfoIcon)
+                .withTitle("Allow access to your phone's storage")
+                .withMessage("To record into a folder on your phone's storage, Leviathan needs Android's \"All files access\". "
+                             "Turn it on for Leviathan on the next screen, come back, and tap Change folder again.")
+                .withButton("Open settings", 1).withButton("Cancel", 0);
+            juce::AlertWindow::showAsync(opts, [](int r) { if (r == 1) requestAllFilesAccess(); });
+            return;
+        }
+        auto chooser = std::make_shared<juce::FileChooser>(onAndroid ? juce::String("Choose a folder on your phone for your recordings")
+                                                                     : juce::String("Choose where to keep your recordings (any folder, Google Drive or Dropbox included)"),
+                                                            Sessions::root());
+        chooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories, [this, chooser](const juce::FileChooser& fc) {
+            if (fc.getURLResults().isEmpty() && fc.getResults().isEmpty()) return;   // cancelled
+            const auto dir = pickedDirectoryPath(fc);
+            if (dir == juce::File()) {
+                model.status = "Leviathan can only record into a folder on the phone's own storage (or SD card). Pick one there; "
+                               "to get takes into Google Drive, use Share, or a sync app on that folder.";
+                model.changed(); return;
+            }
+            askMoveRecordings(dir);
+        });
+    }
+    /// Asks whether to bring the existing takes along, then switches folders (Sessions::changeRoot).
+    void askMoveRecordings(const juce::File& to) {
+        auto& s = *model.sessions;
+        if (to == Sessions::root()) return;
+        const int n = s.countTakes();
+        if (n == 0) { s.changeRoot(to, false); return; }
+        auto opts = juce::MessageBoxOptions().withIconType(juce::MessageBoxIconType::QuestionIcon)
+            .withTitle("Move your " + juce::String(n) + " recording" + (n == 1 ? "" : "s") + "?")
+            .withMessage("New recordings will go to " + to.getFullPathName() + ".\n\nMoving copies each take there, checks the copy, then removes it from "
+                         + Sessions::root().getFullPathName() + " (and that folder once it's empty). Takes you leave behind stay where they are, "
+                         "but Leviathan only lists the new folder.")
+            .withButton("Move recordings", 1).withButton("Leave them", 2).withButton("Cancel", 0);
+        juce::AlertWindow::showAsync(opts, [this, to](int r) { if (r != 0) model.sessions->changeRoot(to, r == 1); });
     }
 
     /// Left-hand navigation (same sections as the Mac app); the last one opened is remembered.
@@ -1261,7 +1335,8 @@ struct SettingsScreen : Screen_ {
     }
     juce::ToggleButton pcT; juce::TextButton learnB, clearB;
     std::vector<std::unique_ptr<MapRow>> mapRows;
-    juce::TextButton importRec, openRec, addNam, openNam, rescanNam, addIRs, openIRs, rescanIRs, openCap, rescan, openIR;
+    juce::ToggleButton debugT; juce::TextButton shareLogB, copyLogB; juce::ScopedMessageBox logShare;
+    juce::TextButton importRec, openRec, changeRec, resetRec, addNam, openNam, rescanNam, addIRs, openIRs, rescanIRs, openCap, rescan, openIR;
     std::vector<std::unique_ptr<Swatch>> swatchButtons;
     juce::TextButton followAmp, zoomMinus, zoomPlus;
     juce::ToggleButton explain;

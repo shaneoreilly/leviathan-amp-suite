@@ -34,6 +34,15 @@ struct PickedFolder {
     std::function<void()> reveal;
 };
 std::optional<PickedFolder> pickedFolder(const juce::FileChooser& fc);
+/// A folder picked in a folder dialog, as an ordinary folder to work in directly. Desktop: the folder. Android: the
+/// picked folder's path on the phone's own storage (internal or SD card); nothing for other places (e.g. Google
+/// Drive), which only exist behind Android's picker.
+juce::File pickedDirectoryPath(const juce::FileChooser& fc);
+/// Android 11+: "All files access", which recording into a folder on the phone's storage needs. Always true on desktop
+/// and on older Android.
+bool hasAllFilesAccess();
+/// Android: opens the system page where you turn All files access on for Leviathan.
+void requestAllFilesAccess();
 
 struct WavData { std::vector<std::vector<float>> channels; double rate = 0; };
 /// Reads WAV/AIFF/FLAC as float channels (up to maxFrames). Returns rate 0 on failure.

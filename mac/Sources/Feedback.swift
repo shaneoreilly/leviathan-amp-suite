@@ -31,6 +31,18 @@ struct FeedbackSettings: View {
             Button("Report a bug\u{2026}") { Feedback.open("bug_report.yml", model: m) }
             Button("Request a feature\u{2026}") { Feedback.open("feature_request.yml", model: m) }
         }
+        SettingsRow("Debug log", explain: "settings:debugLog") {
+            Toggle("Record a diagnostic log", isOn: Binding(get: { DebugLog.enabled }, set: { m.setDebugLog($0) }))
+            if let u = DebugLog.latest() {
+                ShareLink("Share log\u{2026}", item: u)
+                Button("Show log") { NSWorkspace.shared.activateFileViewerSelecting([u]) }
+                Button("Copy log") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString((try? String(contentsOf: u, encoding: .utf8)) ?? "", forType: .string)
+                    m.status = "The diagnostic log is on the clipboard: paste it into a bug report or a message."
+                }
+            }
+        }
     }
 }
 

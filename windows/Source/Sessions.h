@@ -23,7 +23,19 @@ class Sessions {
 public:
     explicit Sessions(Model& m);
     ~Sessions();
+    /// Where takes are recorded: the folder chosen in Settings > Library (a cloud drive such as Google Drive works
+    /// on desktop, since it mounts as a folder), else Music/Leviathan/Sessions. A chosen folder that isn't there right
+    /// now (the drive isn't running) falls back to the default, so a take never lands somewhere odd.
     static juce::File root();
+    static juce::File defaultRoot();
+    static inline juce::File chosen;   // empty: the default (stored as "recordingsFolder")
+    static bool chosenUsable() { return chosen != juce::File() && chosen.isDirectory() && hasAllFilesAccess(); }
+    static bool chosenMissing() { return chosen != juce::File() && !chosenUsable(); }
+    /// Records into `to` from now on. moveExisting: each take is copied, checked, then removed from the old folder,
+    /// and the old folder is deleted once it's empty. Off the message thread; progress shows in `message`.
+    void changeRoot(const juce::File& to, bool moveExisting);
+    int countTakes() const;
+    bool moving = false;
 
     std::vector<Session> list;
     juce::File selected;

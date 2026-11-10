@@ -106,6 +106,57 @@ std::optional<bool> writePicked(const juce::FileChooser& fc, const juce::String&
 #endif
 }
 
+juce::File pickedDirectoryPath(const juce::FileChooser& fc) {
+#if JUCE_ANDROID
+    // content://com.android.externalstorage.documents/tree/primary%3AMusic%2FLeviathan -> /storage/emulated/0/Music/Leviathan
+    const auto s = fc.getURLResult().toString(false);
+    if (!s.startsWith("content://com.android.externalstorage.documents/tree/")) return {};
+    const auto id = juce::URL::removeEscapeChars(s.fromFirstOccurrenceOf("/tree/", false, false).upToFirstOccurrenceOf("/", false, false));
+    const auto volume = id.upToFirstOccurrenceOf(":", false, false), rel = id.fromFirstOccurrenceOf(":", false, false);
+    if (volume.isEmpty()) return {};
+    const juce::File base(volume == "primary" ? juce::String("/storage/emulated/0") : "/storage/" + volume);
+    return rel.isEmpty() ? base : base.getChildFile(rel);
+#else
+    return fc.getResult();
+#endif
+}
+
+#if JUCE_ANDROID
+static int androidSdk() {
+    auto* env = juce::getEnv();
+    const juce::LocalRef<jclass> v { env->FindClass("android/os/Build$VERSION") };
+    return env->GetStaticIntField(v.get(), env->GetStaticFieldID(v.get(), "SDK_INT", "I"));
+}
+#endif
+
+bool hasAllFilesAccess() {
+#if JUCE_ANDROID
+    if (androidSdk() < 30) return true;
+    auto* env = juce::getEnv();
+    const juce::LocalRef<jclass> e { env->FindClass("android/os/Environment") };
+    return env->CallStaticBooleanMethod(e.get(), env->GetStaticMethodID(e.get(), "isExternalStorageManager", "()Z"));
+#else
+    return true;
+#endif
+}
+
+void requestAllFilesAccess() {
+#if JUCE_ANDROID
+    auto* env = juce::getEnv();
+    const auto ctx = juce::getAppContext();
+    const juce::LocalRef<jclass> uriC { env->FindClass("android/net/Uri") };
+    const juce::LocalRef<jobject> uri { env->CallStaticObjectMethod(uriC.get(), env->GetStaticMethodID(uriC.get(), "parse", "(Ljava/lang/String;)Landroid/net/Uri;"),
+                                                                     juce::javaString("package:local.leviathan.ampsuite").get()) };
+    const juce::LocalRef<jclass> intentC { env->FindClass("android/content/Intent") };
+    const juce::LocalRef<jobject> intent { env->NewObject(intentC.get(), env->GetMethodID(intentC.get(), "<init>", "(Ljava/lang/String;Landroid/net/Uri;)V"),
+                                                          juce::javaString("android.settings.MANAGE_APP_ALL_FILES_ACCESS_PERMISSION").get(), uri.get()) };
+    const juce::LocalRef<jobject> r { env->CallObjectMethod(intent.get(), env->GetMethodID(intentC.get(), "addFlags", "(I)Landroid/content/Intent;"), (jint) 0x10000000) };
+    const juce::LocalRef<jclass> ctxC { env->GetObjectClass(ctx.get()) };
+    env->CallVoidMethod(ctx.get(), env->GetMethodID(ctxC.get(), "startActivity", "(Landroid/content/Intent;)V"), intent.get());
+    if (env->ExceptionCheck()) env->ExceptionClear();
+#endif
+}
+
 std::optional<PickedFolder> pickedFolder(const juce::FileChooser& fc) {
 #if JUCE_ANDROID
     const auto url = fc.getURLResult();

@@ -49,7 +49,7 @@ Plug in your guitar, pick a sound, play. Real amp tones, pedals, cabinets, a tun
 - If the interface doesn't come on, the phone may not be able to power it: use a hub with its own power supply.
 - When it's connected properly, the phone's **USB preferences** show *USB controlled by: This device*.
 
-Leviathan runs full screen in landscape and keeps the screen on while it's open. The back gesture returns to the rig rather than closing the app, so a stray swipe mid-song won't cut your sound. When you switch to another app, Leviathan stops playing so it doesn't get in the way of other apps' sound. Recording carries on if you were recording.
+Leviathan opens with the sound off: tap **Start** at the top when you're ready to play. It runs full screen in landscape and keeps the screen on while it's open. The back gesture returns to the rig rather than closing the app, so a stray swipe mid-song won't cut your sound. When you switch to another app, Leviathan stops playing so it doesn't get in the way of other apps' sound. Recording carries on if you were recording.
 
 ### Updates
 
@@ -171,6 +171,8 @@ On a computer:
 | God's Cab pack | `~/Library/Application Support/Leviathan/IRs/GodsCab/` | `%APPDATA%\Leviathan\IRs\GodsCab\` |
 | Settings and presets | `~/Library/Preferences/local.leviathan.ampsuite.plist` | `%APPDATA%\Leviathan\Leviathan.settings` |
 
+**Keeping recordings somewhere else** (another drive, Google Drive, Dropbox, iCloud Drive): go to **Settings → Library → Recordings folder** and click **Change folder…**. Cloud drives work when their desktop app is installed, because it shows up as a folder. Leviathan offers to move your existing takes too: each one is copied, checked, then removed from the old folder, and the old folder is deleted once it's empty. **Use default** goes back to the standard folder. If the folder isn't available when Leviathan starts (for example, the drive isn't running), new takes go to the standard folder until it's back.
+
 **Opening these folders:**
 - **Mac:** in Finder, press **⇧⌘G** and paste the path.
 - **Windows:** paste the path into the File Explorer address bar.
@@ -178,9 +180,13 @@ On a computer:
 
 **On Android,** Leviathan keeps your amps, cabinets, presets and settings inside the app. Add files with the **Add…** buttons (**Amp**, **Cabinet**, or **Settings → Library**, including **God's Cab**), and send takes elsewhere with **Share**. Recordings are in `Android/data/local.leviathan.ampsuite/files/Music/Leviathan/Sessions/`, which you can open from a computer over a USB cable (choose **File transfer** on the phone). **Uninstalling Leviathan deletes everything it keeps, recordings included,** so share or copy off any takes you want first.
 
+To keep recordings in a folder of your own on the phone (for example `Music/Leviathan`), use **Settings → Library → Recordings folder → Change folder…**. Android asks you once to turn on **All files access** for Leviathan. Takes in your own folder show up in file managers and sync apps, and stay when you uninstall Leviathan. Google Drive folders can't be recorded into directly on a phone: use **Share**, or a sync app on your folder.
+
 ## Help and feedback
 
-Found a problem or have an idea? In Leviathan, go to **Settings → About** and click **Report a bug** or **Request a feature**. It opens a form with your setup already filled in. You can also [open an issue on GitHub](https://github.com/shaneoreilly/leviathan-amp-suite/issues/new/choose).
+Found a problem or have an idea? In Leviathan, go to **Settings → About** and click **Report a bug** or **Request a feature**. It opens a form with your setup already filled in.
+
+**Crackles, dropouts or something odd?** Turn on **Settings → About → Debug log → Record a diagnostic log**, play until the problem happens, then use **Share log…** (Mac and Android) or **Copy log** (Mac and Windows) and attach or paste it into your bug report. The log records your computer or phone, the audio device and how hard Leviathan is working (including how much the amp capture takes), never your playing. It's off until you turn it on. You can also [open an issue on GitHub](https://github.com/shaneoreilly/leviathan-amp-suite/issues/new/choose).
 
 ## Credits and license
 

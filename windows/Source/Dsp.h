@@ -117,6 +117,7 @@ struct Params {
 
     // written by audio thread, read by UI
     std::atomic<float> inPeak { 0 }, outPeak { 0 }, pitchLatencyMs { 0 };
+    std::atomic<double> namSeconds { 0 };   // time spent inside NAM (amp A + B), for the diagnostic log
     std::atomic<bool> gateOpen { false };
     std::atomic<int> inClips { 0 };   // raw input samples at full scale (the interface clipping), ever-increasing
     std::atomic<int> metroBeat { -1 };

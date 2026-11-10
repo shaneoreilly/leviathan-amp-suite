@@ -79,15 +79,24 @@ How it works:
 - **Signing:** release builds are signed with Leviathan's permanent Android key, because Android only installs an update signed with the same key as the installed app. The key is `~/Library/Application Support/Leviathan/Signing/android-release.jks` with its password in `android-keystore-password` next to it (override with `LEV_ANDROID_KEYSTORE` and `LEV_ANDROID_KEYSTORE_PASSWORD`). Without it, `build.sh` warns and falls back to the machine's debug key; such a build can't update, or be updated by, a released one.
 - **Differences from desktop** (all behind `JUCE_ANDROID` / `onAndroid`):
   - Full screen, landscape, the screen kept on; the back gesture returns to the rig and never closes the app.
-  - Leaving the app releases the audio device (it would otherwise starve other apps' audio), unless it's recording or live re-amping.
+  - It opens with the amp off, and off releases the audio device (`Model::stop` closes it; `start` reopens the saved setup). Leaving the app does the same, unless it's recording or live re-amping: the device's exclusive streams would otherwise starve other apps' audio.
   - The buffer starts at the lowest the phone offers and only changes when you change it (no automatic step-up; dropouts show a "Tap to resolve" banner).
-  - Recordings live in the app's own Music folder (`Android/data/local.leviathan.ampsuite/files/Music/Leviathan`); the bundled captures are unpacked from the app on first launch.
+  - Recordings live in the app's own Music folder (`Android/data/local.leviathan.ampsuite/files/Music/Leviathan`), unless a recordings folder is chosen. The bundled captures are unpacked from the app on first launch.
+  - Recordings folder: the folder picker returns a document-tree link; `pickedDirectoryPath()` turns links into the phone's own storage (`com.android.externalstorage.documents`, internal or SD card) into ordinary paths and refuses anything else (Google Drive has no path). Recording there needs "All files access" (`MANAGE_EXTERNAL_STORAGE`, asked for only then; `hasAllFilesAccess()` / `requestAllFilesAccess()`). Without it the chosen folder counts as unavailable and takes go to the app's folder.
   - File pickers return `content://` links: `pickedFiles()`, `writePicked()` and `pickedFolder()` in `Library.cpp` copy them to and from ordinary files. "Open folder" and "Show in Explorer" are hidden; deleting a take asks, since there's no Recycle Bin.
   - Share (recordings) uses the system share sheet; "for messages" is AAC in an `.m4a` written by `writeM4A` (the phone's encoder, Leviathan's own MP4 writer).
   - Menus, drop-downs and name prompts are native Android dialogs; the top bar wraps to two rows and scrolls away with the rig.
 - **Updates:** the in-app updater downloads the release's `.apk`, checks it against its `.sha256` and hands it to Android's installer through an androidx `FileProvider` (`android/res/xml/lev_update_paths.xml`). Android asks to confirm, and the first time to allow installs from Leviathan.
 
 **Testing on a phone:** enable USB or Wi-Fi debugging and `adb` can install, launch and read the log (`adb logcat`). Android 17 relaunches an updated app by itself; `build.sh install` only launches it when it isn't already running (a second launch makes a JUCE app quit).
+
+## Recordings folder
+
+Both apps record into `Music/Leviathan/Sessions` unless Settings → Library → Recordings folder picks another one (Mac: `UserDefaults` `recordingsFolder`; JUCE: `recordingsFolder` in `Leviathan.settings`). Cloud drives work on desktop because their apps mount as folders. A chosen folder that isn't there at launch (the drive isn't running) isn't created: takes go to the default folder and the yellow bar says so. Moving copies each session folder, checks every file's size, then deletes the original, and deletes the old folder once nothing but system clutter (`.DS_Store`, `desktop.ini`, `Thumbs.db`) is left. Recording is refused while a move runs. Code: `Sessions::changeRoot` (C++) and `Sessions.changeRoot` (Swift).
+
+## Diagnostic log
+
+Settings → About → Debug log (`debugLog` setting; off by default) writes `Logs/Leviathan-<date>.log` next to the app data, one per launch, the last 5 kept, each capped at 2 MB: the system and CPU (with its vector extensions), the audio device and latency on every change, start/stop, NAM loads, every yellow-bar message and, every 2 s while running, callback load (average and peak), NAM's share of real time and dropouts. Code: `windows/Source/DebugLog.cpp` and `mac/Sources/DebugLog.swift` (same format). The engine only adds the time spent in `lev_nam_process` to `Params::namSeconds`; the model writes the lines on the message thread.
 
 ## Checks
 
