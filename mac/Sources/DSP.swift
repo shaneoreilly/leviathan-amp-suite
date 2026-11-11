@@ -1122,6 +1122,40 @@ let CABS: [CabModel] = [
     },
 ]
 
+/// Cabinet Size / Length / Tone (the CABINET panel), applied to whatever IR the cab gives, once when it changes
+/// (never per sample). Size stretches it in time (bigger cab: longer, lower resonances), Tone tilts it around the mids,
+/// Length keeps that share of its tail with a fade; the energy is then put back, so the knobs don't change loudness.
+/// size 0.8...1.25, length 0.2...1, tone -6...+6 dB. Windows: shapeIR in Dsp.cpp, the same steps in the same order.
+func shapeIR(_ h: [Float], sr: Double, size: Double, length: Double, tone: Double) -> [Float] {
+    if h.isEmpty || (abs(size - 1) < 1e-6 && length >= 0.9999 && abs(tone) < 1e-6) { return h }
+    var e0 = 0.0
+    for x in h { e0 += Double(x) * Double(x) }
+    var y = h
+    if abs(size - 1) >= 1e-6 {
+        let n = max(1, Int((Double(h.count) * size).rounded()))
+        y = [Float](repeating: 0, count: n)
+        for i in 0..<n {
+            let p = Double(i) / size, j = Int(p), f = Float(p - Double(j))
+            let a: Float = j < h.count ? h[j] : 0, b: Float = j + 1 < h.count ? h[j + 1] : 0
+            y[i] = a + (b - a) * f
+        }
+    }
+    if abs(tone) >= 1e-6 {
+        let lo = Biquad(.lowShelf, 500, sr, db: -tone / 2), hi = Biquad(.highShelf, 2000, sr, db: tone / 2)
+        for i in 0..<y.count { y[i] = hi.run(lo.run(y[i])) }
+    }
+    let keep = min(max(64, Int((Double(y.count) * min(length, 1)).rounded())), DSP.maxIR, y.count)
+    if keep < y.count {
+        y.removeLast(y.count - keep)
+        let fade = max(16, keep / 5)
+        for k in 0..<fade { y[keep - fade + k] *= Float(0.5 * (1 + cos(Double.pi * Double(k + 1) / Double(fade)))) }
+    }
+    var e1 = 0.0
+    for x in y { e1 += Double(x) * Double(x) }
+    if e0 > 0, e1 > 0 { let g = Float((e0 / e1).squareRoot()); for i in 0..<y.count { y[i] *= g } }
+    return y
+}
+
 /// Energy-normalised IR so switching cabs doesn't jump in volume.
 func normaliseIR(_ h: [Float]) -> [Float] {
     var e: Float = 0

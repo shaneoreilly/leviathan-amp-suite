@@ -307,6 +307,9 @@ constexpr int kCabCount = 3;
 constexpr int CAB_USER = kCabCount, CAB_LIB = kCabCount + 1, CAB_IRLIB = kCabCount + 2;
 
 std::vector<float> normaliseIR(std::vector<float> h);
+/// Cabinet Size / Length / Tone (the CABINET panel), applied to whatever IR the cab gives, once when it changes
+/// (never per sample). Mac: shapeIR in DSP.swift, the same steps in the same order.
+std::vector<float> shapeIR(const std::vector<float>& h, double sr, double size, double length, double tone);
 std::vector<float> renderCab(const CabModel& model, double mic, double sr, int length = 2048);
 std::vector<float> resample(const std::vector<float>& x, double from, double to);
 std::optional<double> detectPitch(const std::vector<float>& x, double sr);

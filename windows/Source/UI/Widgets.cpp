@@ -31,6 +31,49 @@ juce::Font theme::font(float pt, bool bold, float tracking) {
     return f;
 }
 
+/// "Helga B 5150 BlockLetter - NoBoost" -> "5150 BlockLetter - NoBoost  (Helga B)" (same rule as the Mac app's namTitle).
+juce::String namTitle(juce::String n) {
+    n = n.replaceCharacter('_', ' ');
+    if (const int e = n.indexOfIgnoreCase("ESR"); e > 0) {   // drop the training error suffix ("-ESR0,003", " ESR_0.0115")
+        int s = e; while (s > 0 && juce::String("-_ ").containsChar(n[s - 1])) --s;
+        int t = e + 3; while (t < n.length() && juce::String("-_ 0123456789.,").containsChar(n[t])) ++t;
+        n = n.substring(0, s) + n.substring(t);
+    }
+    juce::StringArray w; w.addTokens(n, " ", ""); w.removeEmptyStrings();
+    if (w.size() > 2 && w[1].length() == 1 && juce::CharacterFunctions::isUpperCase(w[1][0])) {
+        const auto who = w[0] + " " + w[1]; w.removeRange(0, 2);
+        return w.joinIntoString(" ") + "  (" + who + ")";
+    }
+    return w.joinIntoString(" ");
+}
+
+SourceButton::SourceButton(std::function<juce::String()> b, std::function<juce::String()> n, std::function<juce::String()> d, std::function<void(SourceButton&)> open)
+    : badge(std::move(b)), name(std::move(n)), detail(std::move(d)), onOpen(std::move(open)) {
+    setPref(*this, (int) (210 * theme::W), 40);
+    setMouseCursor(juce::MouseCursor::PointingHandCursor);
+}
+
+void SourceButton::paint(juce::Graphics& g) {
+    auto r = getLocalBounds().toFloat().reduced(0.5f);
+    g.setColour(juce::Colours::white.withAlpha(0.06f)); g.fillRoundedRectangle(r, 7);
+    g.setColour(juce::Colours::white.withAlpha(0.1f)); g.drawRoundedRectangle(r, 7, 1);
+    auto in = getLocalBounds().reduced(8, 3);
+    const auto bdg = badge();
+    const int bw = juce::GlyphArrangement::getStringWidthInt(theme::font(9, true), bdg) + 10;
+    const auto br = in.removeFromLeft(bw).withSizeKeepingCentre(bw, 18);
+    g.setColour(juce::Colours::white.withAlpha(0.08f)); g.fillRoundedRectangle(br.toFloat(), 4);
+    g.setColour(theme::secondary); g.setFont(theme::font(9, true)); g.drawText(bdg, br, juce::Justification::centred);
+    in.removeFromLeft(8);
+    const auto chev = in.removeFromRight(14);
+    g.strokePath(IconButton::pathFor(IconButton::chevronDown, chev.toFloat().withSizeKeepingCentre(10, 10)), juce::PathStrokeType(1.5f));
+    g.setColour(theme::text); g.setFont(theme::font(10.5f, true));
+    g.drawText(name(), in.removeFromTop(in.getHeight() / 2), juce::Justification::bottomLeft, true);
+    g.setColour(theme::secondary); g.setFont(theme::font(9));
+    g.drawText(detail(), in, juce::Justification::topLeft, true);
+}
+
+void SourceButton::mouseUp(const juce::MouseEvent& e) { if (getLocalBounds().contains(e.getPosition()) && onOpen) onOpen(*this); }
+
 // MARK: - look and feel
 
 LookAndFeel::LookAndFeel() {
@@ -177,9 +220,21 @@ juce::Rectangle<float> Knob::dial() const { return juce::Rectangle<float>((float
 
 void Knob::resized() { overlay.setBounds(dial().toNearestInt()); }
 
+double Knob::toPos(double v) const {
+    v = juce::jlimit(lo, hi, v);
+    if (std::isnan(mid)) return (v - lo) / (hi - lo);
+    return v < mid ? 0.5 * (v - lo) / (mid - lo) : 0.5 + 0.5 * (v - mid) / (hi - mid);
+}
+
+double Knob::fromPos(double t) const {
+    t = juce::jlimit(0.0, 1.0, t);
+    if (std::isnan(mid)) return lo + t * (hi - lo);
+    return t < 0.5 ? lo + (mid - lo) * t / 0.5 : mid + (hi - mid) * (t - 0.5) / 0.5;
+}
+
 void Knob::paint(juce::Graphics& g) {
     const auto acc = model.accent();
-    const double t = juce::jlimit(0.0, 1.0, (value() - lo) / (hi - lo));
+    const double t = toPos(value());
     const auto c = dial().getCentre();
     // face
     g.setColour(juce::Colours::black.withAlpha(0.6f)); g.fillEllipse(c.x - 22, c.y - 21, 44, 44);
@@ -208,7 +263,7 @@ void Knob::paint(juce::Graphics& g) {
     g.strokePath(IconButton::pathFor(IconButton::reset, resetArea().withSizeKeepingCentre(13, 13)), juce::PathStrokeType(1.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 }
 
-void Knob::mouseDown(const juce::MouseEvent& e) { dragStart = value(); onReset = resetArea().expanded(4).contains(e.position); }
+void Knob::mouseDown(const juce::MouseEvent& e) { dragStart = toPos(value()); onReset = resetArea().expanded(4).contains(e.position); }
 
 void Knob::mouseUp(const juce::MouseEvent& e) {
     if (onReset && !e.mouseWasDraggedSinceMouseDown() && resetArea().expanded(4).contains(e.position)) model.set(key, def);
@@ -229,14 +284,13 @@ void Knob::mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetai
     float d = std::abs(w.deltaY) >= std::abs(w.deltaX) ? w.deltaY : -w.deltaX;   // Shift + wheel scrolls sideways on some systems
     if (w.isReversed) d = -d;
     const double step = e.mods.isShiftDown() ? 0.05 : 0.25;   // a mouse-wheel notch (~0.1) moves ~2.5% of the range
-    model.set(key, juce::jlimit(lo, hi, value() + (double) d * step * (hi - lo)));
+    model.set(key, fromPos(toPos(value()) + (double) d * step));
 }
 
 void Knob::mouseDrag(const juce::MouseEvent& e) {
     if (onReset) return;
     const bool fine = e.mods.isShiftDown();
-    const double v = juce::jlimit(lo, hi, dragStart - e.getDistanceFromDragStartY() / (fine ? 800.0 : 180.0) * (hi - lo));
-    model.set(key, v);
+    model.set(key, fromPos(dragStart - e.getDistanceFromDragStartY() / (fine ? 800.0 : 180.0)));
 }
 
 void Knob::mouseDoubleClick(const juce::MouseEvent&) { model.set(key, def); }

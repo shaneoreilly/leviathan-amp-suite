@@ -17,13 +17,14 @@ void fillDefaults(juce::NamedValueSet& v) {
     put("bass", 0.5); put("mid", 0.55); put("treble", 0.55); put("presence", 0.55); put("depth", 0.55); put("ampVolume", 0.5);
     put("eqOn", true); put("eq", arr({ 0, 1, 0, 1, 1.5, 1, -1, -3 }));
     put("cabOn", true); put("cabModel", CAB_LIB); put("cabMic", 0.3); put("cabLowCut", 80.0); put("cabHighCut", 10000.0); put("cabLevel", 0.0);
+    put("cabSize", 1.0); put("cabLength", 1.0); put("cabTone", 0.0);   // shapeIR: reshape whichever cab is picked
     put("irA", "SM57/NO-TS/57_1_inch_edge_pres_3.wav"); put("irB", "MD421/NO-TS/MD421_1_inch_cone_near_pres_3.wav"); put("irBlend", 0.35);
     put("irFile", "");   // with cabModel == CAB_IRLIB: path inside the cab IR library
     put("delaySync", 0);
     put("delayOn", false); put("delayTime", 420.0); put("delayFeedback", 0.28); put("delayTone", 0.45); put("delayMix", 0.2);
     put("revOn", false); put("revSize", 0.45); put("revMix", 0.18);
     put("doublerOn", true); put("doublerWidth", 0.6); put("doublerTime", 20.0);
-    put("masterVol", -6.0);
+    put("masterVol", 0.0);
     put("chain", arrI({ (int) PedalKind::od }));
     put("compOn", true); put("compSustain", 0.5); put("compAttack", 10.0); put("compLevel", 0.0); put("compBlend", 1.0);
     put("wahOn", true); put("wahAuto", false); put("wahPos", 0.5); put("wahSens", 0.5); put("wahQ", 0.5);

@@ -836,6 +836,36 @@ std::vector<Biquad> cab2x12Open(double mic, double sr) {
 
 const CabModel CABS[3] = { { "4x12 Modern", cab4x12Modern }, { "4x12 Vintage", cab4x12Vintage }, { "2x12 Open Back", cab2x12Open } };
 
+std::vector<float> shapeIR(const std::vector<float>& h, double sr, double size, double length, double tone) {
+    if (h.empty() || (std::abs(size - 1) < 1e-6 && length >= 0.9999 && std::abs(tone) < 1e-6)) return h;
+    double e0 = 0;
+    for (float x : h) e0 += (double) x * (double) x;
+    std::vector<float> y = h;
+    if (std::abs(size - 1) >= 1e-6) {
+        const int n = std::max(1, (int) std::round((double) h.size() * size));
+        y.assign((size_t) n, 0.0f);
+        for (int i = 0; i < n; ++i) {
+            const double p = (double) i / size; const int j = (int) p; const float f = (float) (p - (double) j);
+            const float a = j < (int) h.size() ? h[(size_t) j] : 0.0f, b = j + 1 < (int) h.size() ? h[(size_t) j + 1] : 0.0f;
+            y[(size_t) i] = a + (b - a) * f;
+        }
+    }
+    if (std::abs(tone) >= 1e-6) {
+        Biquad lo, hi; lo.set(Biquad::lowShelf, 500, sr, 0.7071, -tone / 2); hi.set(Biquad::highShelf, 2000, sr, 0.7071, tone / 2);
+        for (auto& x : y) x = hi.run(lo.run(x));
+    }
+    const int keep = std::min({ std::max(64, (int) std::round((double) y.size() * std::min(length, 1.0))), DSP::maxIR, (int) y.size() });
+    if (keep < (int) y.size()) {
+        y.resize((size_t) keep);
+        const int fade = std::max(16, keep / 5);
+        for (int k = 0; k < fade; ++k) y[(size_t) (keep - fade + k)] *= (float) (0.5 * (1 + std::cos(3.14159265358979323846 * (double) (k + 1) / (double) fade)));
+    }
+    double e1 = 0;
+    for (float x : y) e1 += (double) x * (double) x;
+    if (e0 > 0 && e1 > 0) { const float g = (float) std::sqrt(e0 / e1); for (auto& x : y) x *= g; }
+    return y;
+}
+
 std::vector<float> normaliseIR(std::vector<float> h) {
     float e = 0;
     for (float x : h) e += x * x;

@@ -341,52 +341,14 @@ private:
     FolderRows folderRows { *this };
 };
 
-/// The panel's button: source badge, name, detail and a chevron; opens the browser.
-class Button : public juce::Component, public juce::SettableTooltipClient {
-public:
-    explicit Button(Model& m) : model(m) {
-        setPref(*this, (int) (230 * theme::W), 40);
-        setMouseCursor(juce::MouseCursor::PointingHandCursor);
-        setTooltip("Choose a cabinet");
-        live = this;
-        static bool shown = false;   // LEVIATHAN_SHOW_CAB=1: open the browser once on launch (UI testing)
-        if (!shown && juce::SystemStats::getEnvironmentVariable("LEVIATHAN_SHOW_CAB", {}).isNotEmpty()) {
-            shown = true;
-            juce::Timer::callAfterDelay(2500, [] { if (live && live->isShowing()) juce::CallOutBox::launchAsynchronously(std::make_unique<Browser>(live->model), live->getScreenBounds(), nullptr); });
-        }
-    }
-    void paint(juce::Graphics& g) override {
-        const auto id = currentId(model);
-        auto r = getLocalBounds().toFloat().reduced(0.5f);
-        g.setColour(juce::Colours::white.withAlpha(0.06f)); g.fillRoundedRectangle(r, 7);
-        g.setColour(juce::Colours::white.withAlpha(0.1f)); g.drawRoundedRectangle(r, 7, 1);
-        auto in = getLocalBounds().reduced(8, 3);
-        const auto badge = source(id);
-        g.setFont(theme::font(9, true));
-        const int bw = juce::GlyphArrangement::getStringWidthInt(theme::font(9, true), badge) + 10;
-        const auto br = in.removeFromLeft(bw).withSizeKeepingCentre(bw, 18);
-        g.setColour(juce::Colours::white.withAlpha(0.08f)); g.fillRoundedRectangle(br.toFloat(), 4);
-        g.setColour(theme::secondary); g.drawText(badge, br, juce::Justification::centred);
-        in.removeFromLeft(8);
-        const auto chev = in.removeFromRight(14);
-        g.strokePath(IconButton::pathFor(IconButton::chevronDown, chev.toFloat().withSizeKeepingCentre(10, 10)), juce::PathStrokeType(1.5f));
-        g.setColour(theme::text); g.setFont(theme::font(10.5f, true));
-        g.drawText(name(model, id), in.removeFromTop(in.getHeight() / 2), juce::Justification::bottomLeft, true);
-        g.setColour(theme::secondary); g.setFont(theme::font(9));
-        g.drawText(detail(model, id), in, juce::Justification::topLeft, true);
-    }
-    ~Button() override { if (live == this) live = nullptr; }
-    void parentHierarchyChanged() override { if (isShowing()) live = this; }
-    static inline Button* live = nullptr;   // the panel's current button (panels are rebuilt), for the test hook
-    void mouseUp(const juce::MouseEvent& e) override {
-        if (!getLocalBounds().contains(e.getPosition())) return;
-        juce::CallOutBox::launchAsynchronously(std::make_unique<Browser>(model), getScreenBounds(), nullptr);
-    }
-    Model& model;
-};
-
 } // namespace
 
-std::unique_ptr<juce::Component> makeButton(Model& m) { return std::make_unique<Button>(m); }
+std::unique_ptr<juce::Component> makeButton(Model& m) {
+    auto b = std::make_unique<SourceButton>([&m] { return source(currentId(m)); }, [&m] { return name(m, currentId(m)); },
+                                            [&m] { return detail(m, currentId(m)); },
+                                            [&m](SourceButton& self) { juce::CallOutBox::launchAsynchronously(std::make_unique<Browser>(m), self.getScreenBounds(), nullptr); });
+    b->setTooltip("Choose a cabinet");
+    return b;
+}
 
 } // namespace lev::cab

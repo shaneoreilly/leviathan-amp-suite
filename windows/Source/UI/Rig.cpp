@@ -1,5 +1,6 @@
 #include "Rig.h"
 #include "CabBrowser.h"
+#include "AmpBrowser.h"
 
 namespace lev {
 
@@ -61,22 +62,6 @@ struct Segments : juce::Component {
 };
 
 namespace {
-/// "Helga B 5150 BlockLetter - NoBoost" -> "5150 BlockLetter - NoBoost  (Helga B)" (same rule as the Mac app's namTitle).
-juce::String namTitle(juce::String n) {
-    n = n.replaceCharacter('_', ' ');
-    if (const int e = n.indexOfIgnoreCase("ESR"); e > 0) {   // drop the training error suffix ("-ESR0,003", " ESR_0.0115")
-        int s = e; while (s > 0 && juce::String("-_ ").containsChar(n[s - 1])) --s;
-        int t = e + 3; while (t < n.length() && juce::String("-_ 0123456789.,").containsChar(n[t])) ++t;
-        n = n.substring(0, s) + n.substring(t);
-    }
-    juce::StringArray w; w.addTokens(n, " ", ""); w.removeEmptyStrings();
-    if (w.size() > 2 && w[1].length() == 1 && juce::CharacterFunctions::isUpperCase(w[1][0])) {
-        const auto who = w[0] + " " + w[1]; w.removeRange(0, 2);
-        return w.joinIntoString(" ") + "  (" + who + ")";
-    }
-    return w.joinIntoString(" ");
-}
-
 /// "Open folder" for a library folder, or no action on Android (nothing there can show a folder).
 std::function<void()> openFolder(const juce::File& dir) {
     if (!canRevealFiles) return {};
@@ -326,21 +311,10 @@ std::unique_ptr<UnitBox> RigView::makePanel(const juce::String& id) {
     } else if (id == "amp") {
         auto c = col(10);
         auto r1 = row(6);
-        // ids: 1 = built-in voicings, 2.. = fitted captures, 1000.. = NAM captures
-        auto cap = std::make_unique<Picker>((int) (175 * theme::W), [&m] {
-            if (const auto nm = m.s().s("nam"); nm.isNotEmpty()) { const int k = m.namFiles.indexOf(nm); return k >= 0 ? 1000 + k : 1; }
-            const auto cur = m.s().s("capture"); if (cur.isEmpty()) return 1;
-            int i = 2; for (auto& [k, v] : m.captures) { if (k == cur) return i; i++; } return 1;
-        }, [&m](int i) {
-            if (i >= 1000) { m.useNam(m.namFiles[i - 1000]); return; }
-            if (i == 1) { m.useNam(""); m.useCapture(""); return; }
-            int k = 2; for (auto& [name, v] : m.captures) { if (k == i) { m.useCapture(name); return; } k++; }
-        });
-        cap->addSectionHeading("Leviathan");
-        cap->addItem(juce::String::fromUTF8("Leviathan amp (Clean \xc2\xb7 Rust \xc2\xb7 Hot)"), 1);
-        if (!m.namFiles.isEmpty()) { cap->addSectionHeading("Real amps (NAM)"); for (int i = 0; i < m.namFiles.size(); ++i) cap->addItem(namTitle(m.namFiles[i]), 1000 + i); }
-        if (!m.captures.empty()) { cap->addSectionHeading("Your captures"); int i = 2; for (auto& [k, v] : m.captures) cap->addItem(k, i++); }
-        r1->add(std::move(cap));
+        // ‹ [current amp] › ⋯, like the cabinet (UI/AmpBrowser.cpp)
+        r1->add(std::make_unique<IconButton>(IconButton::chevronLeft, [&m] { amp::step(m, -1, false); }, 12))->setTooltip("Previous amp");
+        r1->add(amp::makeButton(m, false));
+        r1->add(std::make_unique<IconButton>(IconButton::chevronRight, [&m] { amp::step(m, 1, false); }, 12))->setTooltip("Next amp");
         r1->add(moreButton({ { juce::String::fromUTF8("Add NAM captures (.nam)\xe2\x80\xa6"), [&m] { m.importNamDialog(); } },
                              { "Open NAM folder", openFolder(Model::namDir()) },
                              { "Rescan", [&m] { m.reloadCaptures(); m.rescanNam(); } } }, "Add or rescan amp captures"));
@@ -389,7 +363,9 @@ std::unique_ptr<UnitBox> RigView::makePanel(const juce::String& id) {
             pk->add(std::move(gap));
         }
         c->add(std::move(pk));
-        auto r = row(); r->add(knob("Output", "masterVol", -40, 12, -6, dbSigned, "MASTER"));
+        auto out = knob("Output", "masterVol", -40, 12, 0, dbSigned, "MASTER");
+        out->setMid(0);   // 0 dB at 12 o'clock
+        auto r = row(); r->add(std::move(out));
         c->add(std::move(r));
         box = std::make_unique<UnitBox>(m, "MASTER", std::move(c), "", "panel:master");
     } else if (id == "cab") {
@@ -401,8 +377,8 @@ std::unique_ptr<UnitBox> RigView::makePanel(const juce::String& id) {
         if (m.userIRName.isNotEmpty()) kinds.push_back(CAB_USER);
         auto block = [&](int) {   // the cab picker: current cab (opens the browser), previous / next, add IRs
             auto r1 = row(6);
-            r1->add(cab::makeButton(m));
             r1->add(std::make_unique<IconButton>(IconButton::chevronLeft, [&m] { cab::step(m, -1); }, 12))->setTooltip("Previous cabinet");
+            r1->add(cab::makeButton(m));
             r1->add(std::make_unique<IconButton>(IconButton::chevronRight, [&m] { cab::step(m, 1); }, 12))->setTooltip("Next cabinet");
             r1->add(moreButton({ { juce::String::fromUTF8("Add IRs to the library (files or a folder)\xe2\x80\xa6"), [&m] { m.importCabIRsDialog(); } },
                                  { juce::String::fromUTF8("Load a single IR file\xe2\x80\xa6"), [&m] { m.loadIR(); } },
@@ -417,6 +393,10 @@ std::unique_ptr<UnitBox> RigView::makePanel(const juce::String& id) {
             r->add(knob("Low Cut", "cabLowCut", 20, 300, 80, intUnit("Hz"), "CABINET"));
             r->add(knob("High Cut", "cabHighCut", 2500, 16000, 10000, [](double v) { return juce::String(v / 1000, 1) + "k"; }, "CABINET"));
             r->add(knob("Level", "cabLevel", -12, 12, 0, [](double v) { return juce::String::formatted("%+.1f", v); }, "CABINET"));
+            auto pctOf = [](double v) { return juce::String(juce::roundToInt(v * 100)) + "%"; };
+            auto size = knob("Size", "cabSize", 0.8, 1.25, 1, pctOf, "CABINET"); size->setMid(1); r->add(std::move(size));
+            r->add(knob("Length", "cabLength", 0.2, 1, 1, pctOf, "CABINET"));
+            r->add(knob("Tone", "cabTone", -6, 6, 0, [](double v) { return std::abs(v) < 0.05 ? juce::String("flat") : juce::String::formatted("%+.1f", v); }, "CABINET"));
             return r;
         };
         juce::Point<int> blockMax, knobsMax;
@@ -465,14 +445,11 @@ std::unique_ptr<UnitBox> RigView::makePanel(const juce::String& id) {
     } else if (id == "ampb") {
         // a second amp (any NAM capture) fed by the same pedals; Spread puts amp A left and amp B right
         auto c = col(8);
-        auto pick = std::make_unique<Picker>((int) (175 * theme::W), [&m] { const int k = m.namFiles.indexOf(m.s().s("ampBNam")); return k >= 0 ? k + 2 : 1; },
-            [&m](int i) { Settings n = m.s(); n.set("ampBNam", i >= 2 ? m.namFiles[i - 2] : juce::String()); if (i >= 2) n.set("ampBOn", true); m.setSettings(n); });
-        pick->addItem(juce::String::fromUTF8("Choose a second amp\xe2\x80\xa6"), 1);
-        for (int i = 0; i < m.namFiles.size(); ++i) pick->addItem(namTitle(m.namFiles[i]), i + 2);
-        pick->setTooltip(Model::explain("panel:ampb"));
-        // same picker width and ⋯ menu as the AMP panel, so the two panels are the same width
+        // same row as the AMP panel (‹ [amp] › ⋯), so the two panels are the same width
         auto r1 = row(6);
-        r1->add(std::move(pick));
+        r1->add(std::make_unique<IconButton>(IconButton::chevronLeft, [&m] { amp::step(m, -1, true); }, 12))->setTooltip("Previous amp");
+        r1->add(amp::makeButton(m, true));
+        r1->add(std::make_unique<IconButton>(IconButton::chevronRight, [&m] { amp::step(m, 1, true); }, 12))->setTooltip("Next amp");
         r1->add(moreButton({ { juce::String::fromUTF8("Add NAM captures (.nam)\xe2\x80\xa6"), [&m] { m.importNamDialog(); } },
                              { "Open NAM folder", openFolder(Model::namDir()) },
                              { "Rescan", [&m] { m.reloadCaptures(); m.rescanNam(); } } }, "Add or rescan amp captures"));

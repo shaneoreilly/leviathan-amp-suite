@@ -27,6 +27,7 @@ static float testInput(int i, double sr) {
 struct Scenario { const char* name; void (*setup)(Params&); std::vector<float> (*ir)(double sr); bool nam = false; bool namB = false; float cal = 1; };
 
 static std::vector<float> builtinCab(double sr) { return renderCab(CABS[0], 0.3, sr); }
+static std::vector<float> shapedCab(double sr) { return shapeIR(builtinCab(sr), sr, 1.18, 0.55, 3.5); }   // Size / Length / Tone
 
 static const Scenario scenarios[] = {
     { "hot_full", [](Params& p) {
@@ -110,6 +111,9 @@ static const Scenario scenarios[] = {
         p.ampOn = false; p.cabOn = false; p.eqOn = false; p.chainCount = 0; p.gateOn = false;
         p.metroOn = true; p.bpm = 133; p.beatsPerBar = 3; p.metroVol = -6;
     }, nullptr },
+    { "cab_shaped", [](Params& p) {   // the cab after shapeIR (bigger, shorter, brighter)
+        p.gateOn = false; p.ampOn = false; p.eqOn = false; p.chainCount = 0; p.cabOn = true; p.masterVol = 0;
+    }, shapedCab },
     { "output_eq", [](Params& p) {   // the per-output EQ after the recorder tap, with the click through it too
         p.ampOn = true; p.cabOn = true; p.eqOn = false; p.chainCount = 0; p.masterVol = -8;
         p.metroOn = true; p.bpm = 100; p.metroVol = -18;

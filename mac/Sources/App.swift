@@ -16,13 +16,14 @@ struct Settings: Codable, Equatable {
     var bass = 0.5, mid = 0.55, treble = 0.55, presence = 0.55, depth = 0.55, ampVolume = 0.5
     var eqOn = true, eq: [Double] = [0, 1, 0, 1, 1.5, 1, -1, -3]
     var cabOn = true, cabModel = CAB_LIB, cabMic = 0.3, cabLowCut = 80.0, cabHighCut = 10000.0, cabLevel = 0.0
+    var cabSize = 1.0, cabLength = 1.0, cabTone = 0.0   // shapeIR: reshape whichever cab is picked
     var irA = "SM57/NO-TS/57_1_inch_edge_pres_3.wav", irB = "MD421/NO-TS/MD421_1_inch_cone_near_pres_3.wav", irBlend = 0.35
     var irFile = ""   // with cabModel == CAB_IRLIB: path inside the cab IR library
     var delaySync = 0   // index into DELAY_DIVS; 0 = free time in ms
     var delayOn = false, delayTime = 420.0, delayFeedback = 0.28, delayTone = 0.45, delayMix = 0.2
     var revOn = false, revSize = 0.45, revMix = 0.18
     var doublerOn = true, doublerWidth = 0.6, doublerTime = 20.0
-    var masterVol = -6.0
+    var masterVol = 0.0
 
     // pedal chain (pre-amp, in order) and the extra pedals
     var chain: [Int] = [PedalKind.od.rawValue]
@@ -1040,7 +1041,8 @@ final class Model: ObservableObject {
         }
         applyAll()
         if s.cabModel != old.cabModel || s.cabMic != old.cabMic || s.irA != old.irA || s.irB != old.irB || s.irBlend != old.irBlend
-            || s.capture != old.capture || s.irFile != old.irFile { updateIR() }
+            || s.capture != old.capture || s.irFile != old.irFile
+            || s.cabSize != old.cabSize || s.cabLength != old.cabLength || s.cabTone != old.cabTone { updateIR() }
         if s.nam != old.nam { updateNam() }
         if s.ampBNam != old.ampBNam { updateNamB() }
         saveWork?.cancel()
@@ -1054,8 +1056,15 @@ final class Model: ObservableObject {
         dsp.setIR(currentIR(sr: Double(dsp.sr)))
     }
 
-    /// The cab impulse for the current settings at a given rate.
+    /// The cab impulse for the current settings at a given rate, with Size / Length / Tone applied (not to a fitted
+    /// capture's IR, which is the capture).
     func currentIR(sr: Double) -> [Float] {
+        let h = rawIR(sr: sr)
+        return activeCapture != nil ? h : shapeIR(h, sr: sr, size: s.cabSize, length: s.cabLength, tone: s.cabTone)
+    }
+
+    /// The cab impulse as its source gives it.
+    func rawIR(sr: Double) -> [Float] {
         irLib.scan(sampleRate: sr)
         if let c = activeCapture {
             // not normalised: the fitted IR carries the captured output level
@@ -1401,14 +1410,26 @@ struct Knob: View {
     var key: String? = nil
     let range: ClosedRange<Double>
     let def: Double
+    /// The value at 12 o'clock, when it isn't half way (Master: 0 dB between -40 and +12). Each half is linear.
+    var mid: Double? = nil
     var fmt: (Double) -> String = { String(format: "%.1f", $0 * 10) }
     var color: Color = .accentColor
     @StateObject private var drag = DragStart()
     @Environment(\.midiScope) private var scope
 
+    func toPos(_ v: Double) -> Double {
+        let lo = range.lowerBound, hi = range.upperBound, v = min(max(v, lo), hi)
+        guard let m = mid else { return (v - lo) / (hi - lo) }
+        return v < m ? 0.5 * (v - lo) / (m - lo) : 0.5 + 0.5 * (v - m) / (hi - m)
+    }
+    func fromPos(_ t: Double) -> Double {
+        let lo = range.lowerBound, hi = range.upperBound, t = min(max(t, 0), 1)
+        guard let m = mid else { return lo + t * (hi - lo) }
+        return t < 0.5 ? lo + (m - lo) * t / 0.5 : m + (hi - m) * (t - 0.5) / 0.5
+    }
+
     var body: some View {
-        let span = range.upperBound - range.lowerBound
-        let t = (value - range.lowerBound) / span
+        let t = toPos(value)
         VStack(spacing: 2) {
             ZStack {
                 Circle().fill(Color(white: 0.15)).frame(width: 44 * Z, height: 44 * Z)
@@ -1422,13 +1443,13 @@ struct Knob: View {
             .frame(width: 66 * Z, height: 66 * Z)
             .contentShape(Rectangle())
             .gesture(DragGesture(minimumDistance: 0).onChanged { g in
-                if drag.start == nil { drag.start = value }
+                if drag.start == nil { drag.start = toPos(value) }
                 let fine = NSEvent.modifierFlags.contains(.shift)
-                value = min(max(drag.start! - g.translation.height / (fine ? 800 : 180) * span, range.lowerBound), range.upperBound)
+                value = fromPos(drag.start! - g.translation.height / (fine ? 800 : 180))
             }.onEnded { _ in drag.start = nil })
             .simultaneousGesture(TapGesture(count: 2).onEnded { value = def })
             .background(ScrollCatcher { d, fine in
-                value = min(max(value + Double(d) / (fine ? 2400 : 480) * span, range.lowerBound), range.upperBound)
+                value = fromPos(toPos(value) + Double(d) / (fine ? 2400 : 480))
             })
             .onHover { inside in
                 if inside { HoverHelp.shared.show(id: "\(scope)·\(label)", title: scope.isEmpty ? label : "\(scope) · \(label)", text: key.flatMap { EXPLAIN[$0] }) }
@@ -1949,31 +1970,7 @@ struct ContentView: View {
     var amp: some View {
         UnitBox(title: "AMP", on: $m.s.ampOn, onKey: "ampOn", color: ch) {
             VStack(alignment: .center, spacing: 10) {
-                HStack(spacing: 6) {
-                    // tags: "" = built-in voicings, "cap:<name>" = fitted capture, "nam:<name>" = NAM capture
-                    Picker("", selection: Binding(get: { m.s.nam.isEmpty ? (m.s.capture.isEmpty ? "" : "cap:" + m.s.capture) : "nam:" + m.s.nam },
-                                                  set: { v in
-                                                      if v.hasPrefix("nam:") { m.useNam(String(v.dropFirst(4))) }
-                                                      else { var n = m.s; n.nam = ""; m.s = n; m.useCapture(v.hasPrefix("cap:") ? String(v.dropFirst(4)) : "") }
-                                                  })) {
-                        Section("Leviathan") { Text("Leviathan amp (Clean · Rust · Hot)").tag("") }
-                        if !m.namHost.files.isEmpty || !m.s.nam.isEmpty {
-                            Section("Real amps (NAM)") {
-                                ForEach(m.namHost.files, id: \.self) { n in Text(namTitle(n)).tag("nam:" + n) }
-                                if !m.s.nam.isEmpty && !m.namHost.files.contains(m.s.nam) { Text(namTitle(m.s.nam) + " (missing)").tag("nam:" + m.s.nam) }
-                            }
-                        }
-                        if !m.captures.isEmpty {
-                            Section("Your captures") { ForEach(m.captures.keys.sorted(), id: \.self) { n in Text(n).tag("cap:" + n) } }
-                        }
-                    }.labelsHidden().frame(width: 175 * W)
-                    Menu {
-                        Button("Add NAM captures (.nam)…") { m.importNam() }
-                        Button("Open NAM folder") { NSWorkspace.shared.open(NamHost.dir) }
-                        Button("Rescan") { m.reloadCaptures(); m.rescanNam() }
-                    } label: { Image(systemName: "ellipsis.circle") }
-                        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Add or rescan amp captures")
-                }
+                AmpPicker(secondAmp: false)
                 if !m.s.nam.isEmpty {
                     HStack(spacing: 2) {
                         Knob(label: "Input", value: $m.s.namInput, key: "namInput", range: -24...24, def: 0, fmt: { String(format: "%+.1f dB", $0) }, color: ch)
@@ -2011,16 +2008,7 @@ struct ContentView: View {
     }
 
     /// A NAM file name as a readable amp name: "Helga B 5150 BlockLetter - NoBoost" -> "5150 BlockLetter - NoBoost  (Helga B)".
-    func namTitle(_ file: String) -> String {
-        var n = file.replacingOccurrences(of: #"[-_ ]*ESR[-_ ]?[0-9.,]+"#, with: "", options: .regularExpression)
-        n = n.replacingOccurrences(of: "_", with: " ")
-        let words = n.split(separator: " ", omittingEmptySubsequences: true)
-        // community files start with the creator's first name and initial ("Tim R ...")
-        if words.count > 2, words[1].count == 1, words[1].first?.isUppercase == true {
-            return words.dropFirst(2).joined(separator: " ") + "  (" + words[0] + " " + words[1] + ")"
-        }
-        return words.joined(separator: " ")
-    }
+    func namTitle(_ file: String) -> String { namDisplayTitle(file) }
 
     /// Rate and loudness of the loaded NAM capture, and what the knobs do.
     var namDetail: String {
@@ -2064,6 +2052,9 @@ struct ContentView: View {
                     Knob(label: "Low Cut", value: $m.s.cabLowCut, key: "cabLowCut", range: 20...300, def: 80, fmt: { "\(Int($0)) Hz" }, color: ch)
                     Knob(label: "High Cut", value: $m.s.cabHighCut, key: "cabHighCut", range: 2500...16000, def: 10000, fmt: { String(format: "%.1fk", $0 / 1000) }, color: ch)
                     Knob(label: "Level", value: $m.s.cabLevel, key: "cabLevel", range: -12...12, def: 0, fmt: { String(format: "%+.1f", $0) }, color: ch)
+                    Knob(label: "Size", value: $m.s.cabSize, key: "cabSize", range: 0.8...1.25, def: 1, mid: 1, fmt: { String(format: "%.0f%%", $0 * 100) }, color: ch)
+                    Knob(label: "Length", value: $m.s.cabLength, key: "cabLength", range: 0.2...1, def: 1, fmt: { String(format: "%.0f%%", $0 * 100) }, color: ch)
+                    Knob(label: "Tone", value: $m.s.cabTone, key: "cabTone", range: -6...6, def: 0, fmt: { $0 == 0 ? "flat" : String(format: "%+.1f", $0) }, color: ch)
                 }
             }
         }
@@ -2072,25 +2063,9 @@ struct ContentView: View {
 
     /// A second amp (any NAM capture) fed by the same pedals; Spread puts amp A left and amp B right.
     var ampB: some View {
-        let pick = Binding(get: { m.s.ampBNam }, set: { v in var n = m.s; n.ampBNam = v; if !v.isEmpty { n.ampBOn = true }; m.s = n })
         return UnitBox(title: "AMP B", on: $m.s.ampBOn, onKey: "ampBOn", color: ch) {
             VStack(spacing: 8) {
-                // same picker width and ⋯ menu as the AMP panel, so the two panels are the same width
-                HStack(spacing: 6) {
-                    Picker("", selection: pick) {
-                        Text("Choose a second amp\u{2026}").tag("")
-                        ForEach(m.namHost.files, id: \.self) { Text(namTitle($0)).tag($0) }
-                        if !m.s.ampBNam.isEmpty && !m.namHost.files.contains(m.s.ampBNam) { Text(namTitle(m.s.ampBNam) + " (missing)").tag(m.s.ampBNam) }
-                    }
-                    .labelsHidden().frame(width: 175 * W)
-                    .explain("panel:ampb", "Amp B")
-                    Menu {
-                        Button("Add NAM captures (.nam)\u{2026}") { m.importNam() }
-                        Button("Open NAM folder") { NSWorkspace.shared.open(NamHost.dir) }
-                        Button("Rescan") { m.reloadCaptures(); m.rescanNam() }
-                    } label: { Image(systemName: "ellipsis.circle") }
-                        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Add or rescan amp captures")
-                }
+                AmpPicker(secondAmp: true).explain("panel:ampb", "Amp B")
                 HStack(spacing: 2) {
                     Knob(label: "Level", value: $m.s.ampBLevel, key: "ampBLevel", range: -12...12, def: 0, fmt: { String(format: "%+.1f dB", $0) }, color: ch)
                     Knob(label: "Spread", value: $m.s.ampBSpread, key: "ampBSpread", range: 0...1, def: 1, fmt: pct, color: ch)
@@ -2152,7 +2127,7 @@ struct ContentView: View {
                     // stands in for INPUT's channel picker, so the two device pickers sit level
                     Picker("", selection: .constant(0)) { Text("").tag(0) }.labelsHidden().frame(width: 120 * W).hidden()
                 }
-                Knob(label: "Output", value: $m.s.masterVol, key: "masterVol", range: -40...12, def: -6, fmt: { String(format: "%+.1f dB", $0) }, color: ch)
+                Knob(label: "Output", value: $m.s.masterVol, key: "masterVol", range: -40...12, def: 0, mid: 0, fmt: { String(format: "%+.1f dB", $0) }, color: ch)
             }
         }
     }

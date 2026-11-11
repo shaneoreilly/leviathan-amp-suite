@@ -80,8 +80,13 @@ public:
     void mouseExit(const juce::MouseEvent&) override;
     void mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
     void sync() { overlay.sync(); repaint(); }
+    /// The value at 12 o'clock, when it isn't half way (Master: 0 dB between -40 and +12). Each half is linear.
+    void setMid(double m) { mid = m; repaint(); }
 private:
+    double toPos(double v) const;
+    double fromPos(double t) const;
     Model& model; juce::String label, key, scope; double lo, hi, def; Fmt fmt; double dragStart = 0;
+    double mid = std::numeric_limits<double>::quiet_NaN();
     juce::uint32 enteredAt = 0;
     bool onReset = false;
     juce::Rectangle<float> resetArea() const { return { (float) getWidth() / 2 - 11, 102, 22, 16 }; }
@@ -127,6 +132,21 @@ private:
 };
 
 /// Small icon button drawn from a path (chevrons, x, reset, grip...).
+/// "Helga B 5150 BlockLetter - NoBoost" -> "5150 BlockLetter - NoBoost  (Helga B)" (the Mac app's namDisplayTitle).
+juce::String namTitle(juce::String n);
+
+/// The amp and cabinet pickers' button: a source badge, the name and a detail line, and a chevron; opens a browser.
+/// Laid out between ‹ › (Mac: SourceButtonRow in Amp.swift).
+class SourceButton : public juce::Component, public juce::SettableTooltipClient {
+public:
+    SourceButton(std::function<juce::String()> badge, std::function<juce::String()> name, std::function<juce::String()> detail,
+                 std::function<void(SourceButton&)> onOpen);
+    void paint(juce::Graphics&) override;
+    void mouseUp(const juce::MouseEvent&) override;
+    std::function<juce::String()> badge, name, detail;
+    std::function<void(SourceButton&)> onOpen;
+};
+
 class IconButton : public juce::Button {
 public:
     enum Icon { chevronLeft, chevronRight, chevronDown, cross, reset, refresh, plus, minus, star, starFilled, folder, trash, play, pause, prev, next, grip, metronome };

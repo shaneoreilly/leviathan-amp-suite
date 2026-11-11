@@ -91,36 +91,14 @@ struct CabPicker: View {
     @ObservedObject private var ui = CabUI.shared
     var body: some View {
         let id = m.cabID
-        HStack(spacing: 6) {
-            Button { ui.open.toggle() } label: {
-                HStack(spacing: 8) {
-                    Text(m.cabSource(id)).font(.inter(size: T(9) * UI, weight: .bold)).foregroundStyle(.secondary)
-                        .padding(.horizontal, 5).padding(.vertical, 2).background(RoundedRectangle(cornerRadius: 4).fill(Color.white.opacity(0.08)))
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(m.cabName(id)).font(.inter(size: T(10.5) * UI, weight: .semibold)).lineLimit(1)
-                        Text(m.cabDetail(id)).font(.inter(size: T(9) * UI)).foregroundStyle(.secondary).lineLimit(1)
-                    }
-                    Spacer(minLength: 4)
-                    Image(systemName: "chevron.down").foregroundStyle(.secondary)
-                }
-                .padding(.horizontal, 8).padding(.vertical, 5)
-                .frame(width: 230 * W)
-                .background(RoundedRectangle(cornerRadius: 7).fill(Color.white.opacity(0.06)))
-                .overlay(RoundedRectangle(cornerRadius: 7).stroke(ui.open ? Color.accentColor : Color.white.opacity(0.1)))
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .popover(isPresented: $ui.open, arrowEdge: .bottom) { CabBrowser().environmentObject(m) }
-            .help("Choose a cabinet")
-            Button { m.stepCab(-1) } label: { Image(systemName: "chevron.left") }.buttonStyle(.borderless).help("Previous cabinet")
-            Button { m.stepCab(1) } label: { Image(systemName: "chevron.right") }.buttonStyle(.borderless).help("Next cabinet")
-            Menu {
-                Button("Add IRs to the library (files or a folder)…") { m.importCabIRs() }
-                Button("Load a single IR file…") { m.loadIR() }
-                Button("Open IR library folder") { NSWorkspace.shared.open(CabIRLibrary.root) }
-            } label: { Image(systemName: "ellipsis.circle") }
-                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Add cabinet IRs")
-        }
+        SourceButtonRow(badge: m.cabSource(id), name: m.cabName(id), detail: m.cabDetail(id), help: "Choose a cabinet",
+                        open: $ui.open, prev: { m.stepCab(-1) }, next: { m.stepCab(1) },
+                        popover: { CabBrowser().environmentObject(m) },
+                        menu: {
+                            Button("Add IRs to the library (files or a folder)…") { m.importCabIRs() }
+                            Button("Load a single IR file…") { m.loadIR() }
+                            Button("Open IR library folder") { NSWorkspace.shared.open(CabIRLibrary.root) }
+                        })
     }
 }
 

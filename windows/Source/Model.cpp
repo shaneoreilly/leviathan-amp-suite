@@ -195,7 +195,8 @@ void Model::settingsChanged(const Settings& old) {
     if (settings.s("ampBNam") != old.s("ampBNam")) updateNamB();
     if (settings.i("cabModel") != old.i("cabModel") || settings.d("cabMic") != old.d("cabMic") || settings.s("irA") != old.s("irA")
         || settings.s("irB") != old.s("irB") || settings.d("irBlend") != old.d("irBlend") || settings.s("capture") != old.s("capture")
-        || settings.s("irFile") != old.s("irFile"))
+        || settings.s("irFile") != old.s("irFile") || settings.d("cabSize") != old.d("cabSize")
+        || settings.d("cabLength") != old.d("cabLength") || settings.d("cabTone") != old.d("cabTone"))
         updateIR();
     saveCountdown = 12;   // ~0.4 s
     changed();
@@ -931,6 +932,11 @@ void Model::loadIR() {
 }
 
 std::vector<float> Model::currentIR(double sr) {
+    auto h = rawIR(sr);
+    return activeCapture() != nullptr ? h : shapeIR(h, sr, settings.d("cabSize"), settings.d("cabLength"), settings.d("cabTone"));
+}
+
+std::vector<float> Model::rawIR(double sr) {
     irLib.scan(sr);
     if (auto* c = activeCapture()) {
         // not normalised: the fitted IR carries the captured output level

@@ -211,7 +211,9 @@ public:
     void reloadCaptures();
     void loadIR();
     void updateIR();
+    /// The cab impulse at a rate with Size / Length / Tone applied (not to a fitted capture's IR); rawIR: as its source gives it.
     std::vector<float> currentIR(double sr);
+    std::vector<float> rawIR(double sr);
     std::unique_ptr<OfflineRig> offlineRig(double sr);
 
     // MARK: NAM captures (.nam, in appDataDir()/NAM)

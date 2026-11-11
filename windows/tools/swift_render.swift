@@ -17,6 +17,7 @@ func testInput(_ i: Int, _ sr: Double) -> Float {
 
 struct Scenario { let name: String; let setup: (Params) -> Void; let ir: ((Double) -> [Float])?; var nam = false; var namB = false; var cal: Float = 1 }
 let builtinCab: (Double) -> [Float] = { sr in renderCab(CABS[0], mic: 0.3, sr: sr) }
+let shapedCab: (Double) -> [Float] = { sr in shapeIR(builtinCab(sr), sr: sr, size: 1.18, length: 0.55, tone: 3.5) }   // Size / Length / Tone
 
 let scenarios: [Scenario] = [
     Scenario(name: "hot_full", setup: { p in
@@ -99,6 +100,9 @@ let scenarios: [Scenario] = [
         p.ampOn = false; p.cabOn = false; p.eqOn = false; p.chainCount = 0; p.gateOn = false
         p.metroOn = true; p.bpm = 133; p.beatsPerBar = 3; p.metroVol = -6
     }, ir: nil),
+    Scenario(name: "cab_shaped", setup: { p in   // the cab after shapeIR (bigger, shorter, brighter)
+        p.gateOn = false; p.ampOn = false; p.eqOn = false; p.chainCount = 0; p.cabOn = true; p.masterVol = 0
+    }, ir: shapedCab),
     Scenario(name: "output_eq", setup: { p in   // the per-output EQ after the recorder tap, with the click through it too
         p.ampOn = true; p.cabOn = true; p.eqOn = false; p.chainCount = 0; p.masterVol = -8
         p.metroOn = true; p.bpm = 100; p.metroVol = -18
