@@ -2042,19 +2042,24 @@ struct ContentView: View {
         return UnitBox(title: "CABINET", on: $m.s.cabOn, onKey: "cabOn", color: ch) {
             VStack(alignment: .center, spacing: 8) {
                 CabPicker()
-                HStack(spacing: 2) {
-                    if lib {
-                        Knob(label: "A ↔ B", value: $m.s.irBlend, key: "irBlend", range: 0...1, def: 0.35, fmt: pct, color: ch)
-                    } else if m.s.cabModel < CABS.count {
-                        Knob(label: "Mic Pos", value: $m.s.cabMic, key: "cabMic", range: 0...1, def: 0.3,
-                             fmt: { $0 < 0.12 ? "center" : $0 > 0.88 ? "edge" : String(format: "%.1f", $0 * 10) }, color: ch)
+                // two rows (cut and level, then the shape of the cab) keep the panel narrow
+                VStack(spacing: 6) {
+                    HStack(spacing: 2) {
+                        if lib {
+                            Knob(label: "A ↔ B", value: $m.s.irBlend, key: "irBlend", range: 0...1, def: 0.35, fmt: pct, color: ch)
+                        } else if m.s.cabModel < CABS.count {
+                            Knob(label: "Mic Pos", value: $m.s.cabMic, key: "cabMic", range: 0...1, def: 0.3,
+                                 fmt: { $0 < 0.12 ? "center" : $0 > 0.88 ? "edge" : String(format: "%.1f", $0 * 10) }, color: ch)
+                        }
+                        Knob(label: "Low Cut", value: $m.s.cabLowCut, key: "cabLowCut", range: 20...300, def: 80, fmt: { "\(Int($0)) Hz" }, color: ch)
+                        Knob(label: "High Cut", value: $m.s.cabHighCut, key: "cabHighCut", range: 2500...16000, def: 10000, fmt: { String(format: "%.1fk", $0 / 1000) }, color: ch)
+                        Knob(label: "Level", value: $m.s.cabLevel, key: "cabLevel", range: -12...12, def: 0, fmt: { String(format: "%+.1f", $0) }, color: ch)
                     }
-                    Knob(label: "Low Cut", value: $m.s.cabLowCut, key: "cabLowCut", range: 20...300, def: 80, fmt: { "\(Int($0)) Hz" }, color: ch)
-                    Knob(label: "High Cut", value: $m.s.cabHighCut, key: "cabHighCut", range: 2500...16000, def: 10000, fmt: { String(format: "%.1fk", $0 / 1000) }, color: ch)
-                    Knob(label: "Level", value: $m.s.cabLevel, key: "cabLevel", range: -12...12, def: 0, fmt: { String(format: "%+.1f", $0) }, color: ch)
-                    Knob(label: "Size", value: $m.s.cabSize, key: "cabSize", range: 0.8...1.25, def: 1, mid: 1, fmt: { String(format: "%.0f%%", $0 * 100) }, color: ch)
-                    Knob(label: "Length", value: $m.s.cabLength, key: "cabLength", range: 0.2...1, def: 1, fmt: { String(format: "%.0f%%", $0 * 100) }, color: ch)
-                    Knob(label: "Tone", value: $m.s.cabTone, key: "cabTone", range: -6...6, def: 0, fmt: { $0 == 0 ? "Flat" : String(format: "%+.1f", $0) }, color: ch)
+                    HStack(spacing: 2) {
+                        Knob(label: "Size", value: $m.s.cabSize, key: "cabSize", range: 0.8...1.25, def: 1, mid: 1, fmt: { String(format: "%.0f%%", $0 * 100) }, color: ch)
+                        Knob(label: "Length", value: $m.s.cabLength, key: "cabLength", range: 0.2...1, def: 1, fmt: { String(format: "%.0f%%", $0 * 100) }, color: ch)
+                        Knob(label: "Tone", value: $m.s.cabTone, key: "cabTone", range: -6...6, def: 0, fmt: { $0 == 0 ? "Flat" : String(format: "%+.1f", $0) }, color: ch)
+                    }
                 }
             }
         }

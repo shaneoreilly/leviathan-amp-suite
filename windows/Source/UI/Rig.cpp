@@ -390,11 +390,15 @@ std::unique_ptr<UnitBox> RigView::makePanel(const juce::String& id) {
             r->add(knob("Low Cut", "cabLowCut", 20, 300, 80, intUnit("Hz"), "CABINET"));
             r->add(knob("High Cut", "cabHighCut", 2500, 16000, 10000, [](double v) { return juce::String(v / 1000, 1) + "k"; }, "CABINET"));
             r->add(knob("Level", "cabLevel", -12, 12, 0, [](double v) { return juce::String::formatted("%+.1f", v); }, "CABINET"));
+            // two rows (cut and level, then the shape of the cab) keep the panel narrow
+            auto r2 = row();
             auto pctOf = [](double v) { return juce::String(juce::roundToInt(v * 100)) + "%"; };
-            auto size = knob("Size", "cabSize", 0.8, 1.25, 1, pctOf, "CABINET"); size->setMid(1); r->add(std::move(size));
-            r->add(knob("Length", "cabLength", 0.2, 1, 1, pctOf, "CABINET"));
-            r->add(knob("Tone", "cabTone", -6, 6, 0, [](double v) { return std::abs(v) < 0.05 ? juce::String("Flat") : juce::String::formatted("%+.1f", v); }, "CABINET"));
-            return r;
+            auto size = knob("Size", "cabSize", 0.8, 1.25, 1, pctOf, "CABINET"); size->setMid(1); r2->add(std::move(size));
+            r2->add(knob("Length", "cabLength", 0.2, 1, 1, pctOf, "CABINET"));
+            r2->add(knob("Tone", "cabTone", -6, 6, 0, [](double v) { return std::abs(v) < 0.05 ? juce::String("Flat") : juce::String::formatted("%+.1f", v); }, "CABINET"));
+            auto both = col(6);
+            both->add(std::move(r)); both->add(std::move(r2));
+            return both;
         };
         juce::Point<int> blockMax, knobsMax;
         for (int k : kinds) {
