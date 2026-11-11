@@ -106,6 +106,9 @@ final class Params: @unchecked Sendable {
     // backing track: stereo, mixed after the master
     var bkL: UnsafeMutablePointer<Float>?, bkR: UnsafeMutablePointer<Float>?, bkLen = 0, bkPos = 0
     var bkPlaying = false, bkLoop = true, bkVol: Float = -6
+    /// Output EQ: corrects the speakers or headphones in use (set per output by the model, not part of presets). It sits
+    /// after the recorder tap, so recordings and re-amps never have it. Off = bypassed.
+    var outEqOn = false, outEqLow: Float = 0, outEqMid: Float = 0, outEqHigh: Float = 0, outEqLevel: Float = 0
     /// A jump requested by the UI (-1 = none); the audio thread applies it at the start of a block, so it can't be
     /// overwritten by the block's own position update.
     var bkSeek = -1
@@ -494,6 +497,8 @@ final class DSP {
     // eq
     private let eqF: [Double] = [80, 160, 320, 640, 1250, 2500, 5000, 10000]
     private let eqB = (0..<8).map { _ in Biquad() }
+    private let oeqL = (0..<3).map { _ in Biquad() }, oeqR = (0..<3).map { _ in Biquad() }
+    private var oeqOn = false, oeqG: Float = 1
     private var eqMix = Smooth()
 
     // cab: FIR via vDSP_conv, double-buffered so the UI can swap IRs
@@ -618,6 +623,13 @@ final class DSP {
             let kind: Biquad.Kind = i == 0 ? .lowShelf : i == 7 ? .highShelf : .peak
             eqB[i].set(kind, eqF[i], s, q: 1.4, db: Double(p.eq[i]))
             eqS[i].set(kind, eqF[i], s, q: 1.4, db: Double(p.eq[i]))
+        }
+
+        oeqOn = p.outEqOn; oeqG = dbLin(p.outEqLevel)
+        for f in [oeqL, oeqR] {
+            f[0].set(.lowShelf, 100, s, db: Double(p.outEqLow))
+            f[1].set(.peak, 1000, s, q: 0.7, db: Double(p.outEqMid))
+            f[2].set(.highShelf, 6000, s, db: Double(p.outEqHigh))
         }
 
         cabMix.target = p.cabOn ? 1 : 0; cabLvl.target = dbLin(p.cabLevel)
@@ -884,6 +896,10 @@ final class DSP {
                     let s = (sinf(2 * .pi * f * t / sr) * 0.7 + sinf(2 * .pi * f * 0.667 * t / sr) * 0.3) * env
                     yl += s; yr += s; mClick += 1
                 }
+            }
+            if oeqOn {
+                yl = oeqL[2].run(oeqL[1].run(oeqL[0].run(yl))) * oeqG
+                yr = oeqR[2].run(oeqR[1].run(oeqR[0].run(yr))) * oeqG
             }
             outL[i] = mute ? 0 : min(max(yl, -1), 1); outR[i] = mute ? 0 : min(max(yr, -1), 1)
         }

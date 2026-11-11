@@ -468,7 +468,24 @@ final class Model: ObservableObject {
     @Published var inputs: [AudioDevice] = []
     @Published var outputs: [AudioDevice] = []
     @Published var inputUID = UserDefaults.standard.string(forKey: "inputUID") ?? "" { didSet { saveDevice(); restartIfRunning() } }
-    @Published var outputUID = UserDefaults.standard.string(forKey: "outputUID") ?? "" { didSet { saveDevice(); restartIfRunning() } }
+    @Published var outputUID = UserDefaults.standard.string(forKey: "outputUID") ?? "" { didSet { saveDevice(); loadOutputEQ(); restartIfRunning() } }
+
+    /// Output EQ for the output in use: each output (headphones, monitors, a TV) keeps its own, switching with it.
+    /// Kept in UserDefaults by output name, not in presets (Windows: Model::OutputEQ, the same keys).
+    struct OutputEQ: Codable, Equatable { var on = false, low = 0.0, mid = 0.0, high = 0.0, level = 0.0 }
+    @Published var outputEQ = OutputEQ() {
+        didSet {
+            guard outputEQ != oldValue else { return }
+            var all = Model.storedOutputEQs; all[outputEQKey] = outputEQ
+            UserDefaults.standard.set(try? JSONEncoder().encode(all), forKey: "outputEQ")
+            applyAll()
+        }
+    }
+    var outputEQKey: String { output?.name ?? outputUID }
+    private static var storedOutputEQs: [String: OutputEQ] {
+        (UserDefaults.standard.data(forKey: "outputEQ")).flatMap { try? JSONDecoder().decode([String: OutputEQ].self, from: $0) } ?? [:]
+    }
+    func loadOutputEQ() { let e = Model.storedOutputEQs[outputEQKey] ?? OutputEQ(); if e != outputEQ { outputEQ = e } }
     @Published var bufferSize = UserDefaults.standard.object(forKey: "buffer") as? Int ?? 32 {
         didSet { UserDefaults.standard.set(bufferSize, forKey: "buffer"); restartIfRunning() }
     }
@@ -701,6 +718,7 @@ final class Model: ObservableObject {
             if let self, !self.running { self.start() }
         }
         DebugLog.setEnabled(UserDefaults.standard.bool(forKey: "debugLog"))
+        loadOutputEQ()
         timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
         }
@@ -899,6 +917,8 @@ final class Model: ObservableObject {
         params.namOn = !s.nam.isEmpty && namHost.model != nil && namHost.loadedName == s.nam
         s.apply(to: params)
         params.bpm = Float(bpm); params.beatsPerBar = beatsPerBar; params.metroVol = Float(metroVol); params.metroOn = metroOn
+        params.outEqOn = outputEQ.on; params.outEqLow = Float(outputEQ.low); params.outEqMid = Float(outputEQ.mid)
+        params.outEqHigh = Float(outputEQ.high); params.outEqLevel = Float(outputEQ.level)
         if let ms = syncedDelayMs { params.delayTime = Float(ms) }
         params.version &+= 1
     }

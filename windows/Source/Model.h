@@ -85,6 +85,13 @@ public:
     void setDebugLog(bool on);
     void toggle() { live() ? stop() : start(); }
     void restartAudio();
+    /// Output EQ for the output in use: each output (headphones, monitors, a TV) keeps its own, switching with it.
+    /// Kept in the app properties by output name, not in presets (Mac: Model.OutputEQ, the same keys).
+    struct OutputEQ { bool on = false; double low = 0, mid = 0, high = 0, level = 0; };
+    OutputEQ outputEQ;
+    juce::String outputEQKey;   // the output it belongs to
+    void setOutputEQ(const OutputEQ& e);
+    void loadOutputEQ();
     /// The chosen device setup (type, devices, rate, buffer, channels) as text: unchanged by opening or closing it.
     juce::String deviceSignature() const;
     bool hasInput() const;

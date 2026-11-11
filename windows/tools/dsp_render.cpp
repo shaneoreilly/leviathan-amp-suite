@@ -110,6 +110,11 @@ static const Scenario scenarios[] = {
         p.ampOn = false; p.cabOn = false; p.eqOn = false; p.chainCount = 0; p.gateOn = false;
         p.metroOn = true; p.bpm = 133; p.beatsPerBar = 3; p.metroVol = -6;
     }, nullptr },
+    { "output_eq", [](Params& p) {   // the per-output EQ after the recorder tap, with the click through it too
+        p.ampOn = true; p.cabOn = true; p.eqOn = false; p.chainCount = 0; p.masterVol = -8;
+        p.metroOn = true; p.bpm = 100; p.metroVol = -18;
+        p.outEqOn = true; p.outEqLow = 4; p.outEqMid = -3; p.outEqHigh = 5; p.outEqLevel = -2;
+    }, builtinCab },
 };
 
 int main(int argc, char** argv) {

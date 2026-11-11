@@ -969,6 +969,21 @@ struct SettingsScreen : Screen_ {
             if (const auto now = model.deviceSignature(); now != deviceSetup) { deviceSetup = now; model.restartAudio(); }
             signature.clear(); refresh();
         };
+        // output EQ: the output in use keeps its own (Model::OutputEQ)
+        outEqT.onClick = [this] { auto e = model.outputEQ; e.on = outEqT.getToggleState(); model.setOutputEQ(e); resized(); };
+        audio.addAndMakeVisible(outEqT);
+        for (int i = 0; i < 4; ++i) {
+            auto& sl = outEqS[(size_t) i];
+            sl.setSliderStyle(juce::Slider::LinearHorizontal); sl.setRange(-12, i == 3 ? 6 : 12, 0.5);
+            sl.setTextBoxStyle(juce::Slider::TextBoxRight, false, 70, 22); sl.setTextValueSuffix(" dB");
+            sl.setDoubleClickReturnValue(true, 0); sl.setViewportIgnoreDragFlag(true);
+            sl.onValueChange = [this, i] {
+                auto e = model.outputEQ; const double v = outEqS[(size_t) i].getValue();
+                (i == 0 ? e.low : i == 1 ? e.mid : i == 2 ? e.high : e.level) = v;
+                model.setOutputEQ(e);
+            };
+            audio.addAndMakeVisible(sl);
+        }
         a4.setSliderStyle(juce::Slider::IncDecButtons); a4.setRange(430, 450, 1); a4.setTextValueSuffix(" Hz");
         a4.onValueChange = [this] { model.setA4(a4.getValue()); };
         for (size_t i = 0; i < TUNINGS.size(); ++i) tuning.addItem(tuningLabel(TUNINGS[i]), (int) i + 1);
@@ -1105,6 +1120,9 @@ struct SettingsScreen : Screen_ {
         nav.query.setColour(juce::TextEditor::focusedOutlineColourId, m.accent());
         inputCh.setSelectedId(m.s().i("inputChannel") + 1, juce::dontSendNotification);
         a4.setValue(m.a4, juce::dontSendNotification);
+        outEqT.setToggleState(m.outputEQ.on, juce::dontSendNotification);
+        { const double v[] = { m.outputEQ.low, m.outputEQ.mid, m.outputEQ.high, m.outputEQ.level };
+          for (int i = 0; i < 4; ++i) outEqS[(size_t) i].setValue(v[i], juce::dontSendNotification); }
         namCalT.setToggleState(m.namCalibrate, juce::dontSendNotification);
         ifaceLvl.setValue(m.interfaceLevel, juce::dontSendNotification);
         tuning.setSelectedId(m.tuningIndex + 1, juce::dontSendNotification);
@@ -1143,6 +1161,14 @@ struct SettingsScreen : Screen_ {
             const bool channels = inputCh.getNumItems() > 1;
             inputCh.setVisible(channels);
             if (channels) Group::place(lay.row("Input channel", "inputChannel"), { { &inputCh, 320 } });
+            lay.heading("Output EQ");
+            outEqT.setButtonText("Correct " + (model.outputEQKey.isNotEmpty() ? model.outputEQKey : juce::String("this output")));
+            Group::place(lay.row("Output EQ", "settings:outputEQ"), { { &outEqT, 420 } });
+            static const char* eqLabels[] = { "Low", "Mid", "High", "Level" };
+            for (int i = 0; i < 4; ++i) {
+                outEqS[(size_t) i].setVisible(model.outputEQ.on);
+                if (model.outputEQ.on) Group::place(lay.row(eqLabels[i], "settings:outputEQ"), { { &outEqS[(size_t) i], 320 } });
+            }
             lay.heading("Speed");
             const int ly = lay.row("Latency", "settings:latency", 46);
             const int ey = lay.row("Engine", "settings:engine");
@@ -1503,6 +1529,7 @@ struct SettingsScreen : Screen_ {
     HelpStrip strip;
     juce::ComboBox inputCh; AudioInfo audioInfo { model };
     juce::Slider a4; juce::ComboBox tuning;
+    juce::ToggleButton outEqT; std::array<juce::Slider, 4> outEqS;
     juce::ToggleButton namCalT; juce::Slider ifaceLvl;
     /// "Amp: +3.0 dB (captured at 9.0 dBu)": what input calibration is doing to a loaded capture.
     static juce::String calibrationLine(const juce::String& label, const juce::String& name, bool loaded, std::optional<double> level, double trim) {

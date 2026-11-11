@@ -417,6 +417,13 @@ void DSP::update(bool force) {
         eqS[i].set(kind, eqF[i], s, 1.4, p.eq[i]);
     }
 
+    oeqOn = p.outEqOn; oeqG = dbLin(p.outEqLevel);
+    for (auto* f : { oeqL, oeqR }) {
+        f[0].set(Biquad::lowShelf, 100, s, 0.7071, p.outEqLow);
+        f[1].set(Biquad::peak, 1000, s, 0.7, p.outEqMid);
+        f[2].set(Biquad::highShelf, 6000, s, 0.7071, p.outEqHigh);
+    }
+
     cabMix.target = p.cabOn ? 1.f : 0.f; cabLvl.target = dbLin(p.cabLevel);
     // a capture's IR already is the cab: leave it unfiltered so it stays faithful
     const double lowCut = p.capOn ? 10 : (double) p.cabLowCut, highCut = p.capOn ? s * 0.47 : (double) p.cabHighCut;
@@ -701,6 +708,10 @@ void DSP::process(const float* input, float* outL, float* outR, int frames) {
                 const float s = (std::sin(2 * kPi * f * t / sr) * 0.7f + std::sin(2 * kPi * f * 0.667f * t / sr) * 0.3f) * env;
                 yl += s; yr += s; mClick++;
             }
+        }
+        if (oeqOn) {
+            yl = oeqL[2].run(oeqL[1].run(oeqL[0].run(yl))) * oeqG;
+            yr = oeqR[2].run(oeqR[1].run(oeqR[0].run(yr))) * oeqG;
         }
         outL[i] = mute ? 0 : std::min(std::max(yl, -1.0f), 1.0f);
         outR[i] = mute ? 0 : std::min(std::max(yr, -1.0f), 1.0f);

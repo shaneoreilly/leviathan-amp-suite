@@ -664,7 +664,7 @@ final class SettingsUI: ObservableObject {
 struct SettingsEntry: Hashable { let section, heading, label, key: String }
 let SETTINGS_INDEX: [SettingsEntry] = [
     ("Audio", "Devices", "Input", "inputDevice"), ("Audio", "Devices", "Input channel", "inputChannel"),
-    ("Audio", "Devices", "Output", "outputDevice"), ("Audio", "Speed", "Buffer", "settings:buffer"),
+    ("Audio", "Devices", "Output", "outputDevice"), ("Audio", "Output EQ", "Output EQ", "settings:outputEQ"), ("Audio", "Speed", "Buffer", "settings:buffer"),
     ("Audio", "Speed", "Latency", "settings:latency"), ("Audio", "Speed", "Engine", "settings:engine"),
     ("Audio", "Amp captures", "Calibrate input", "settings:namCalibrate"), ("Audio", "Amp captures", "Interface level", "settings:interfaceLevel"),
     ("Audio", "Tuner", "Reference", "settings:a4"), ("Audio", "Tuner", "Guitar tuning", "settings:tuning"),
@@ -797,6 +797,16 @@ struct SettingsView: View {
 
     // MARK: Audio
 
+    func outputEQRow(_ label: String, _ key: WritableKeyPath<Model.OutputEQ, Double>, _ range: ClosedRange<Double>, _ note: String) -> some View {
+        SettingsRow(label, explain: "settings:outputEQ") {
+            Slider(value: Binding(get: { m.outputEQ[keyPath: key] }, set: { m.outputEQ[keyPath: key] = ($0 * 2).rounded() / 2 }), in: range)
+                .frame(width: 220 * Z)
+            Text(String(format: "%+.1f dB", m.outputEQ[keyPath: key])).monospacedDigit().frame(width: 70 * Z, alignment: .trailing)
+            if !note.isEmpty { Text(note).foregroundStyle(.secondary) }
+            Button("Reset") { m.outputEQ[keyPath: key] = 0 }.buttonStyle(.borderless).disabled(m.outputEQ[keyPath: key] == 0)
+        }
+    }
+
     @ViewBuilder var audio: some View {
         SettingsHeading("Devices", first: true)
         SettingsRow("Input", explain: "inputDevice") {
@@ -818,6 +828,17 @@ struct SettingsView: View {
                 ForEach(m.outputs) { d in Text(d.outputWarning != nil ? "\(d.name) ⚠︎" : d.name).tag(d.uid) }
             }.labelsHidden().frame(width: SettingsLayout.wide, alignment: .leading)
             if let w = m.output?.outputWarning { Text(w).foregroundStyle(.orange).lineLimit(2) }
+        }
+
+        SettingsHeading("Output EQ")
+        SettingsRow("Output EQ", explain: "settings:outputEQ") {
+            Toggle("Correct \(m.output?.name ?? "this output")", isOn: $m.outputEQ.on)
+        }
+        if m.outputEQ.on {
+            outputEQRow("Low", \.low, -12...12, "100 Hz shelf")
+            outputEQRow("Mid", \.mid, -12...12, "1 kHz")
+            outputEQRow("High", \.high, -12...12, "6 kHz shelf")
+            outputEQRow("Level", \.level, -12...6, "")
         }
 
         SettingsHeading("Speed")

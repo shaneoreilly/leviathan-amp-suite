@@ -114,6 +114,9 @@ struct Params {
     std::atomic<const float*> bkL { nullptr }, bkR { nullptr }; std::atomic<int> bkLen { 0 }, bkPos { 0 };
     std::atomic<int> bkSeek { -1 };   // jump requested by the UI, applied by the audio thread at the start of a block
     std::atomic<bool> bkPlaying { false }, bkLoop { true }; float bkVol = -6;
+    /// Output EQ: corrects the speakers or headphones in use (set per output by the model, not part of presets). It sits
+    /// after the recorder tap, so recordings and re-amps never have it. Off = bypassed.
+    bool outEqOn = false; float outEqLow = 0, outEqMid = 0, outEqHigh = 0, outEqLevel = 0;
 
     // written by audio thread, read by UI
     std::atomic<float> inPeak { 0 }, outPeak { 0 }, pitchLatencyMs { 0 };
@@ -274,6 +277,7 @@ private:
 
     static constexpr double eqF[8] = { 80, 160, 320, 640, 1250, 2500, 5000, 10000 };
     Biquad eqB[8]; Smooth eqMix;
+    Biquad oeqL[3], oeqR[3]; bool oeqOn = false; float oeqG = 1;
 
     // cab: direct-form FIR over a history buffer; IRs stored reversed and double-buffered
     std::vector<float> irs[2]; int irLen[2] = { 1, 0 }; std::atomic<int> irActive { 0 };

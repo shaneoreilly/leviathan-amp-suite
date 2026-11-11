@@ -206,6 +206,8 @@ void Model::applyAll() {
     params.capOn = activeCapture() != nullptr;
     params.namOn = namReady();
     params.bpm = (float) bpm; params.beatsPerBar = beatsPerBar; params.metroVol = (float) metroVol; params.metroOn.store(metroOn);
+    params.outEqOn = outputEQ.on; params.outEqLow = (float) outputEQ.low; params.outEqMid = (float) outputEQ.mid;
+    params.outEqHigh = (float) outputEQ.high; params.outEqLevel = (float) outputEQ.level;
     settings.apply(params);
     if (auto ms = syncedDelayMs()) { params.delayTime = (float) *ms; params.version.fetch_add(1); }
 }
@@ -339,6 +341,27 @@ void Model::restartAudio() {
     saveState();
 }
 
+void Model::loadOutputEQ() {
+    outputEQKey = devices.getAudioDeviceSetup().outputDeviceName;
+    OutputEQ e;
+    if (auto* o = juce::JSON::parse(props().getValue("outputEQ")).getProperty(outputEQKey, {}).getDynamicObject()) {
+        e.on = o->getProperty("on"); e.low = o->getProperty("low"); e.mid = o->getProperty("mid");
+        e.high = o->getProperty("high"); e.level = o->getProperty("level");
+    }
+    outputEQ = e; applyAll(); changed();
+}
+
+void Model::setOutputEQ(const OutputEQ& e) {
+    outputEQ = e;
+    auto all = juce::JSON::parse(props().getValue("outputEQ"));
+    if (!all.isObject()) all = juce::var(new juce::DynamicObject());
+    auto* o = new juce::DynamicObject();
+    o->setProperty("on", e.on); o->setProperty("low", e.low); o->setProperty("mid", e.mid); o->setProperty("high", e.high); o->setProperty("level", e.level);
+    all.getDynamicObject()->setProperty(outputEQKey, juce::var(o));
+    props().setValue("outputEQ", juce::JSON::toString(all, juce::JSON::FormatOptions{}.withSpacing(juce::JSON::Spacing::none)));
+    applyAll(); changed();
+}
+
 juce::String Model::deviceSignature() const {
     const auto s = devices.getAudioDeviceSetup();
     return devices.getCurrentAudioDeviceType() + "|" + s.inputDeviceName + "|" + s.outputDeviceName + "|" + juce::String(s.sampleRate)
@@ -347,6 +370,7 @@ juce::String Model::deviceSignature() const {
 }
 
 void Model::refreshInfo() {
+    if (devices.getAudioDeviceSetup().outputDeviceName != outputEQKey) loadOutputEQ();   // another output: its own EQ
     info = {};
     if (auto* d = devices.getCurrentAudioDevice()) {
         const double sr = d->getCurrentSampleRate();
