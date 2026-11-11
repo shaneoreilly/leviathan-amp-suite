@@ -396,7 +396,7 @@ std::unique_ptr<UnitBox> RigView::makePanel(const juce::String& id) {
             auto pctOf = [](double v) { return juce::String(juce::roundToInt(v * 100)) + "%"; };
             auto size = knob("Size", "cabSize", 0.8, 1.25, 1, pctOf, "CABINET"); size->setMid(1); r->add(std::move(size));
             r->add(knob("Length", "cabLength", 0.2, 1, 1, pctOf, "CABINET"));
-            r->add(knob("Tone", "cabTone", -6, 6, 0, [](double v) { return std::abs(v) < 0.05 ? juce::String("flat") : juce::String::formatted("%+.1f", v); }, "CABINET"));
+            r->add(knob("Tone", "cabTone", -6, 6, 0, [](double v) { return std::abs(v) < 0.05 ? juce::String("Flat") : juce::String::formatted("%+.1f", v); }, "CABINET"));
             return r;
         };
         juce::Point<int> blockMax, knobsMax;

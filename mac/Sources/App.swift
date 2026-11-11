@@ -2054,7 +2054,7 @@ struct ContentView: View {
                     Knob(label: "Level", value: $m.s.cabLevel, key: "cabLevel", range: -12...12, def: 0, fmt: { String(format: "%+.1f", $0) }, color: ch)
                     Knob(label: "Size", value: $m.s.cabSize, key: "cabSize", range: 0.8...1.25, def: 1, mid: 1, fmt: { String(format: "%.0f%%", $0 * 100) }, color: ch)
                     Knob(label: "Length", value: $m.s.cabLength, key: "cabLength", range: 0.2...1, def: 1, fmt: { String(format: "%.0f%%", $0 * 100) }, color: ch)
-                    Knob(label: "Tone", value: $m.s.cabTone, key: "cabTone", range: -6...6, def: 0, fmt: { $0 == 0 ? "flat" : String(format: "%+.1f", $0) }, color: ch)
+                    Knob(label: "Tone", value: $m.s.cabTone, key: "cabTone", range: -6...6, def: 0, fmt: { $0 == 0 ? "Flat" : String(format: "%+.1f", $0) }, color: ch)
                 }
             }
         }
