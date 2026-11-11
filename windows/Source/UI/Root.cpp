@@ -200,6 +200,7 @@ struct TopBar : juce::Component {
         tuner.setToggleState(m.tunerOn, juce::dontSendNotification);
         midi.setToggleState(m.midi->learning, juce::dontSendNotification);
         metro.setToggleState(m.metroOn, juce::dontSendNotification);
+        bpm.setClickingTogglesState(false); bpm.setToggleState(m.metroOn, juce::dontSendNotification);   // lit with the icon while it plays
         bpm.setButtonText(std::fmod(m.bpm, 1.0) == 0 ? juce::String(juce::roundToInt(m.bpm)) : juce::String(m.bpm, 1));
         presetMenu.setButtonText((m.presetModified() ? juce::String::fromUTF8("\xe2\x97\x8f ") : juce::String()) + m.presetName);
         save.setEnabled(m.presetModified()); undoB.setEnabled(m.canUndo());
@@ -309,7 +310,7 @@ struct TopBar : juce::Component {
             explicit Tempo(Model& m) : model(m), tapB(m, "Tap", [&m] { m.tap(); }, MidiArmed::action("@tap", "Tap tempo")) {
                 bpmS.setSliderStyle(juce::Slider::IncDecButtons); bpmS.setRange(30, 300, 0.1); bpmS.setValue(m.bpm, juce::dontSendNotification);
                 bpmS.setTextValueSuffix(" BPM"); bpmS.onValueChange = [this] { model.setBpm(bpmS.getValue()); };
-                metroT.setButtonText("Metronome on"); metroT.setToggleState(m.metroOn, juce::dontSendNotification); metroT.onClick = [this] { model.setMetro(metroT.getToggleState()); };
+                metroT.setToggleState(m.metroOn, juce::dontSendNotification); metroT.onClick = [this] { model.setMetro(metroT.getToggleState()); };
                 for (int i = 1; i <= 12; ++i) beats.addItem(juce::String(i), i);
                 beats.setSelectedId(m.beatsPerBar, juce::dontSendNotification); beats.onChange = [this] { model.setBeatsPerBar(beats.getSelectedId()); };
                 vol.setRange(-40, 0, 0.5); vol.setValue(m.metroVol, juce::dontSendNotification); vol.setTextValueSuffix(" dB");
@@ -320,14 +321,14 @@ struct TopBar : juce::Component {
                 setSize(400, 230);
             }
             void resized() override {
-                metroT.setBounds(130, 10, 250, 26); bpmS.setBounds(130, 50, 170, 28); tapB.setBounds(310, 50, 70, 28);
+                metroT.setBounds(130, 10, 120, 28); bpmS.setBounds(130, 50, 170, 28); tapB.setBounds(310, 50, 70, 28);
                 beats.setBounds(130, 88, 80, 28); vol.setBounds(130, 128, 250, 28); clockT.setBounds(130, 168, 250, 26);
             }
             void paint(juce::Graphics& g) override {
                 g.setColour(theme::secondary); g.setFont(theme::font(10));
                 int y = 10; for (auto* t : { "Metronome", "Tempo", "Beats per bar", "Click volume", "MIDI clock" }) { g.drawText(t, 10, y, 115, 28, juce::Justification::centredLeft); y += y == 10 ? 40 : 39; }
             }
-            Model& model; juce::Slider bpmS, vol; ActionButton tapB; juce::ToggleButton metroT, clockT; juce::ComboBox beats;
+            Model& model; juce::Slider bpmS, vol; ActionButton tapB; SwitchButton metroT { [this] { return model.accent(); } }; juce::ToggleButton clockT; juce::ComboBox beats;
         };
         juce::CallOutBox::launchAsynchronously(std::make_unique<Tempo>(model), metro.getScreenBounds().getUnion(bpm.getScreenBounds()), nullptr);
     }

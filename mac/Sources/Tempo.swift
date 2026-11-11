@@ -23,11 +23,12 @@ struct TempoControl: View {
     var body: some View {
         Button { ui.open.toggle() } label: {
             HStack(spacing: 6) {
-                Image(systemName: "metronome").foregroundStyle(m.metroOn ? Color.accentColor : .primary)
+                Image(systemName: "metronome")
                 Text(String(format: m.bpm.truncatingRemainder(dividingBy: 1) == 0 ? "%.0f" : "%.1f", m.bpm)).monospacedDigit()
                 if m.metroOn { BeatLights(mt: m.meters, beats: m.beatsPerBar) }
             }
         }
+        .buttonStyle(TopBarToggle(on: m.metroOn))
         .help("Metronome and tempo")
         .overlay { MidiLearnOverlay(armed: .action("@metro", "Metronome"), cornerRadius: 6) }
         .explain("top:metro", "Metronome")
@@ -57,7 +58,7 @@ struct TempoPopover: View {
         Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 10) {
             GridRow {
                 Text("Metronome").foregroundStyle(.secondary)
-                Toggle("On", isOn: $m.metroOn)
+                Toggle(isOn: $m.metroOn) { Text(m.metroOn ? "On" : "Off") }.toggleStyle(.switch)
             }
             GridRow {
                 Text("Tempo").foregroundStyle(.secondary)

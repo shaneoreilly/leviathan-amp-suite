@@ -320,12 +320,26 @@ struct MidiSettings: View {
 }
 
 /// Top-bar toggle for learn mode.
+/// Top-bar buttons that switch something on (Rec, metronome, Tuner, MIDI): plain text while off, the accent colour
+/// only while on. (macOS would otherwise tint every bordered button's text with the accent, on or off.)
+struct TopBarToggle: ButtonStyle {
+    let on: Bool
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.inter(size: T(9) * UI))   // the size of the bar's other buttons (Save, the preset menu)
+            .foregroundStyle(on ? Color.accentColor : Color.primary)
+            .padding(.horizontal, 10).padding(.vertical, 5)
+            .background(RoundedRectangle(cornerRadius: 6).fill(on ? Color.accentColor.opacity(0.2) : Color.white.opacity(configuration.isPressed ? 0.16 : 0.09)))
+            .contentShape(RoundedRectangle(cornerRadius: 6))
+    }
+}
+
 struct MidiLearnButton: View {
     @EnvironmentObject var m: Model
     @EnvironmentObject var midi: Midi
     var body: some View {
-        Toggle("MIDI", isOn: Binding(get: { midi.learning }, set: { midi.learning = $0; if $0 { m.screen = .rig } }))
-            .toggleStyle(.button)
+        Button("MIDI") { midi.learning.toggle(); if midi.learning { m.screen = .rig } }
+            .buttonStyle(TopBarToggle(on: midi.learning))
             .help("MIDI learn: click a knob or switch, then move a control on your MIDI device")
     }
 }

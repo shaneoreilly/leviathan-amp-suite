@@ -147,6 +147,23 @@ public:
     std::function<void(SourceButton&)> onOpen;
 };
 
+/// An on/off switch (a pill with a knob) reading "On" or "Off" beside it, instead of a checkbox.
+class SwitchButton : public juce::ToggleButton {
+public:
+    explicit SwitchButton(std::function<juce::Colour()> accent) : accentOf(std::move(accent)) {}
+    void paintButton(juce::Graphics& g, bool over, bool) override {
+        const bool on = getToggleState();
+        const auto track = juce::Rectangle<float>(2, (float) getHeight() / 2 - 10, 38, 20);
+        g.setColour(on ? accentOf() : juce::Colours::white.withAlpha(over ? 0.22f : 0.16f));
+        g.fillRoundedRectangle(track, 10);
+        const float x = on ? track.getRight() - 18 : track.getX() + 2;
+        g.setColour(juce::Colours::white); g.fillEllipse(x, track.getY() + 2, 16, 16);
+        g.setColour(theme::text); g.setFont(theme::font(10.5f));
+        g.drawText(on ? "On" : "Off", getLocalBounds().withTrimmedLeft(50), juce::Justification::centredLeft);
+    }
+    std::function<juce::Colour()> accentOf;
+};
+
 class IconButton : public juce::Button {
 public:
     enum Icon { chevronLeft, chevronRight, chevronDown, cross, reset, refresh, plus, minus, star, starFilled, folder, trash, play, pause, prev, next, grip, metronome };

@@ -149,11 +149,12 @@ struct TopBar: View {
                     Text(rec.recording ? mmss(rec.recSeconds) : "Rec").monospacedDigit()
                 }
             }
+            .buttonStyle(TopBarToggle(on: rec.recording))
             .keyboardShortcut("r", modifiers: [.command])
             .help("Record dry + wet (⌘R)")
             .explain("top:rec", "Record")
             TempoControl()
-            Toggle("Tuner", isOn: $m.tunerOn).toggleStyle(.button).keyboardShortcut("t", modifiers: [])
+            Button("Tuner") { m.tunerOn.toggle() }.buttonStyle(TopBarToggle(on: m.tunerOn)).keyboardShortcut("t", modifiers: [])
                 .overlay { MidiLearnOverlay(armed: .action("@tuner", "Tuner"), cornerRadius: 6) }
                 .explain("top:tuner", "Tuner")
             MidiLearnButton().explain("top:midi", "MIDI learn")
