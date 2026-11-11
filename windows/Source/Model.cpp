@@ -35,6 +35,7 @@ Model::Model() {
         for (const auto& kv : obj->getProperties()) userPresets[kv.name.toString()] = Settings::fromJSON(kv.value);
     presetName = p.getValue("preset", FACTORY[0].name);
     favorites = juce::StringArray::fromLines(p.getValue("favorites")); favorites.removeEmptyStrings();
+    hiddenMessages = juce::StringArray::fromLines(p.getValue("hiddenMessages")); hiddenMessages.removeEmptyStrings();
     if (auto v = juce::JSON::parse(p.getValue("presetMeta")); auto* obj = v.getDynamicObject())
         for (const auto& kv : obj->getProperties())
         {
@@ -362,6 +363,30 @@ void Model::setOutputEQ(const OutputEQ& e) {
     props().setValue("outputEQ", juce::JSON::toString(all, juce::JSON::FormatOptions{}.withSpacing(juce::JSON::Spacing::none)));
     applyAll(); changed();
 }
+
+juce::String Model::messageKey(const juce::String& s) {
+    juce::String k;
+    int skip = 0; juce::juce_wchar close = 0;
+    for (auto c : s) {   // drop "quoted names", (brackets) and digits; the rest, lower case, single-spaced
+        if (skip) { if (c == close) skip = 0; continue; }
+        if (c == '"' || c == 0x201c) { skip = 1; close = c == '"' ? '"' : (juce::juce_wchar) 0x201d; continue; }
+        if (c == '(') { skip = 1; close = ')'; continue; }
+        if (juce::CharacterFunctions::isDigit(c)) continue;
+        k << juce::String::charToString(c);
+    }
+    juce::StringArray w; w.addTokens(k.toLowerCase(), " \t\n", ""); w.removeEmptyStrings();
+    // numbers like 0.5 leave a stray "." or ",": the Mac rule removes the whole number
+    for (auto& x : w) if (x == "." || x == ",") x = {};
+    w.removeEmptyStrings();
+    return w.joinIntoString(" ");
+}
+
+void Model::hideForever(const juce::String& msg) {
+    hiddenMessages.addIfNotAlreadyThere(messageKey(msg));
+    props().setValue("hiddenMessages", hiddenMessages.joinIntoString("\n")); changed();
+}
+
+void Model::showHiddenMessages() { hiddenMessages.clear(); props().setValue("hiddenMessages", juce::String()); changed(); }
 
 juce::String Model::deviceSignature() const {
     const auto s = devices.getAudioDeviceSetup();

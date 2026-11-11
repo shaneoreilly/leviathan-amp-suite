@@ -984,6 +984,8 @@ struct SettingsScreen : Screen_ {
         // output EQ: the output in use keeps its own (Model::OutputEQ)
         outEqT.onClick = [this] { auto e = model.outputEQ; e.on = outEqT.getToggleState(); model.setOutputEQ(e); resized(); };
         audio.addAndMakeVisible(outEqT);
+        showHiddenB.onClick = [this] { model.showHiddenMessages(); };
+        look.addAndMakeVisible(showHiddenB);
         lowLagT.onClick = [this] { model.set("pitchLowLag", lowLagT.getToggleState()); };
         audio.addAndMakeVisible(lowLagT);
         for (int i = 0; i < 4; ++i) {
@@ -1144,6 +1146,7 @@ struct SettingsScreen : Screen_ {
         followAmp.setEnabled(m.accentPick.has_value());
         autoUpd.setToggleState(m.updater->autoCheck, juce::dontSendNotification);
         explain.setToggleState(m.explainOnHover, juce::dontSendNotification);
+        showHiddenB.setEnabled(!m.hiddenMessages.isEmpty()); look.repaint();
         checkNow.setEnabled(!m.updater->busy());
         progressValue = m.updater->progressValue;
         pcT.setToggleState(m.midi->programChange, juce::dontSendNotification);
@@ -1284,9 +1287,15 @@ struct SettingsScreen : Screen_ {
             const int zy = lay.row("Zoom", "settings:zoom");
             Group::place(zy, { { &zoomMinus, 30 } }); Group::place(zy, { { &zoomPlus, 30 } }, ctrlX + 30 + 68);
             Group::place(lay.row("Explanations", "settings:explain"), { { &explain, 320 } });
-            look.extra = [this, zy](juce::Graphics& g) {
+            lay.heading("Messages");
+            const int hy = lay.row("Hidden messages", "settings:hiddenMessages");
+            Group::place(hy, { { &showHiddenB, 150 } });
+            look.extra = [this, zy, hy](juce::Graphics& g) {
                 g.setColour(theme::text); g.setFont(theme::font(11));
                 g.drawText(juce::String(juce::roundToInt(model.zoom * 100)) + "%", ctrlX + 30, zy, 68, rowH, juce::Justification::centred);
+                g.setColour(theme::secondary);
+                const int n = model.hiddenMessages.size();
+                g.drawText(n == 0 ? juce::String("none hidden") : juce::String(n) + " hidden", ctrlX + 160, hy, 200, rowH, juce::Justification::centredLeft);
             };
             fit(look, lay);
         }
@@ -1547,6 +1556,7 @@ struct SettingsScreen : Screen_ {
     juce::ComboBox inputCh; AudioInfo audioInfo { model };
     juce::Slider a4; juce::ComboBox tuning;
     juce::ToggleButton outEqT; std::array<juce::Slider, 4> outEqS;
+    juce::TextButton showHiddenB { "Show all again" };
     juce::ToggleButton lowLagT { "Less delay on low chords (they may shimmer slightly)" };
     juce::ToggleButton namCalT; juce::Slider ifaceLvl;
     /// "Amp: +3.0 dB (captured at 9.0 dBu)": what input calibration is doing to a loaded capture.
@@ -1729,15 +1739,18 @@ void Root::rebuildBanners() {
     } else if (ph == Updater::Phase::installing)
         banners.add(new Banner(juce::String::fromUTF8("Installing the update. Leviathan will reopen in a moment\xe2\x80\xa6"), updBg, theme::text, {}));
     else if (ph == Updater::Phase::failed && m.updater->error.isNotEmpty())
-        banners.add(new Banner(m.updater->error, warnBg, warnFg, [&m] { m.updater->phase = Updater::Phase::idle; m.changed(); },
-                               { { resolveLabel, [&m] { m.resolve("About"); } } }));
-    // an error that a setting fixes gets a button that goes there
-    auto resolveIn = [&m](const juce::String& where) {
-        return where.isEmpty() ? Banner::Actions() : Banner::Actions { { resolveLabel, [&m, where] { m.resolve(where); } } };
+        banners.add(new Banner(m.updater->error, warnBg, warnFg, {},
+                               { { "Dismiss", [&m] { m.updater->phase = Updater::Phase::idle; m.changed(); } },
+                                 { resolveLabel, [&m] { m.resolve("About"); } } }));
+    // Dismiss, Don't show again, and (when a setting fixes it) the button that goes there, highlighted
+    auto message = [&](const juce::String& text, std::function<void()> clear, const juce::String& where) {
+        if (text.isEmpty() || m.isHidden(text)) return;
+        Banner::Actions a { { "Dismiss", clear }, { juce::String::fromUTF8("Don\xe2\x80\x99t show again"), [&m, text, clear] { m.hideForever(text); clear(); } } };
+        if (where.isNotEmpty()) a.push_back({ resolveLabel, [&m, where] { m.resolve(where); } });
+        banners.add(new Banner(text, warnBg, warnFg, {}, a));
     };
-    if (m.status.isNotEmpty()) banners.add(new Banner(m.status, warnBg, warnFg, [&m] { m.status = {}; m.changed(); }, resolveIn(m.currentFix())));
-    if (m.sessions->message.isNotEmpty())
-        banners.add(new Banner(m.sessions->message, warnBg, warnFg, [&m] { m.sessions->message = {}; m.changed(); }, resolveIn(m.sessions->currentFix())));
+    message(m.status, [&m] { m.status = {}; m.changed(); }, m.currentFix());
+    message(m.sessions->message, [&m] { m.sessions->message = {}; m.changed(); }, m.sessions->currentFix());
     if (m.midi->learning && m.screen == Screen::rig) {
         const auto t = m.midi->armed ? "Move a knob, pedal or switch on your MIDI device to assign it to " + m.midi->armed->name + "."
                                      : juce::String("MIDI learn: click a knob or an ON/OFF switch, then move a control on your MIDI device.")

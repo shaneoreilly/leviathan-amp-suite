@@ -18,16 +18,19 @@ struct RootView: View {
             VStack(spacing: 0) {
                 TopBar()
                 if updater.showBanner, let r = updater.available { UpdateBanner(release: r) } else { UpdateProgressBanner() }
-                ForEach([m.status, rec.message].filter { !$0.isEmpty }, id: \.self) { msg in
+                ForEach([m.status, rec.message].filter { !$0.isEmpty && !m.isHidden($0) }, id: \.self) { msg in
+                    let clear = { if msg == rec.message { rec.message = "" } else { m.status = "" } }
                     HStack {
                         Text(msg).font(.inter(size: T(12) * UI))
                         Spacer()
+                        Button("Dismiss") { clear() }
+                        Button("Don't show again") { m.hideForever(msg); clear() }
+                            .help("Hide this message from now on (Settings, Appearance shows hidden messages again)")
                         // an error that a setting fixes gets a button that goes there
                         let fix = msg == rec.message ? rec.currentFix : m.currentFix
-                        if !fix.isEmpty { Button("Click to resolve") { m.resolve(fix) }.font(.inter(size: T(12) * UI)) }
-                        Button { if msg == rec.message { rec.message = "" } else { m.status = "" } } label: { Image(systemName: "xmark") }
-                            .buttonStyle(.borderless)
+                        if !fix.isEmpty { Button("Click to resolve") { m.resolve(fix) }.buttonStyle(.borderedProminent) }
                     }
+                    .font(.inter(size: T(10.5) * UI))
                     .padding(10)
                     .background(Color(red: 0.16, green: 0.12, blue: 0.06)).foregroundStyle(Color(red: 1, green: 0.85, blue: 0.6))
                 }
@@ -682,6 +685,7 @@ let SETTINGS_INDEX: [SettingsEntry] = [
     ("Library", "", "Recordings", "settings:recordings"), ("Library", "", "Recordings folder", "settings:recordingsFolder"),
     ("Library", "", "NAM captures", "settings:nam"), ("Library", "", "Cab IRs", "settings:cabIRs"), ("Library", "", "Your captures", "settings:captures"),
     ("Appearance", "", "Accent colour", "settings:accent"), ("Appearance", "", "Zoom", "settings:zoom"), ("Appearance", "", "Explanations", "settings:explain"),
+    ("Appearance", "Messages", "Hidden messages", "settings:hiddenMessages"),
     ("About", "Updates", "Version", "settings:version"), ("About", "Updates", "Automatic", "settings:autoUpdate"),
     ("About", "Feedback", "GitHub", "settings:feedback"), ("About", "Feedback", "Debug log", "settings:debugLog"),
     ("About", "License", "Leviathan", "settings:license"),
@@ -1004,6 +1008,11 @@ struct SettingsView: View {
         SettingsRow("Explanations", explain: "settings:explain") {
             Toggle("Explain controls on hover", isOn: $m.explainOnHover)
         }
+        SettingsHeading("Messages")
+        SettingsRow("Hidden messages", explain: "settings:hiddenMessages") {
+            Button("Show all again") { m.hiddenMessages = [] }.disabled(m.hiddenMessages.isEmpty)
+            SettingsCount(m.hiddenMessages.isEmpty ? "none hidden" : "\(m.hiddenMessages.count) hidden")
+        }
     }
 }
 
@@ -1306,8 +1315,8 @@ struct UpdateProgressBanner: View {
             row {
                 Text(msg).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
                 Spacer()
-                Button("Click to resolve") { m.resolve("About") }
-                Button { updater.phase = .idle } label: { Image(systemName: "xmark") }.buttonStyle(.borderless)
+                Button("Dismiss") { updater.phase = .idle }
+                Button("Click to resolve") { m.resolve("About") }.buttonStyle(.borderedProminent)
             }
         default: EmptyView()
         }

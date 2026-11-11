@@ -134,6 +134,7 @@
   "settings:accent": "The colour of knobs, switches and highlights. Follow amp channel changes it with the amp's channel.",
   "settings:zoom": "Makes everything in the window bigger or smaller.",
   "settings:explain": "Shows what the control under the pointer does, in a strip at the bottom of the window (like this one).",
+  "settings:hiddenMessages": "Messages you hid with \"Don't show again\" on a yellow message bar. Show all again brings every one of them back.",
   "settings:version": "The version you're running. Leviathan checks GitHub for a newer one; updating downloads it, checks it and reopens Leviathan.",
   "settings:autoUpdate": "Checks for a new version each time Leviathan opens, then every few hours. Nothing is installed until you choose Update.",
   "settings:feedback": "Opens a form on GitHub (a free account is needed) with your Leviathan version, system version and audio devices filled in. You can see and change everything before you submit.",

@@ -1176,6 +1176,22 @@ final class Model: ObservableObject {
 
     func isFactory(_ name: String) -> Bool { FACTORY.contains { $0.0 == name } }
 
+    // MARK: hidden messages ("Don't show again" on a banner; Settings > Appearance > Messages shows them again)
+
+    @Published var hiddenMessages: [String] = UserDefaults.standard.stringArray(forKey: "hiddenMessages") ?? [] {
+        didSet { UserDefaults.standard.set(hiddenMessages, forKey: "hiddenMessages") }
+    }
+    /// A message's identity: its wording without numbers and quoted names, so "buffer is now 256 samples" and
+    /// "... 512 samples" are the same message (Windows: Model::messageKey, the same rule).
+    static func messageKey(_ s: String) -> String {
+        var k = s.replacingOccurrences(of: #"["“][^"”]*["”]"#, with: "", options: .regularExpression)
+        k = k.replacingOccurrences(of: #"\([^)]*\)"#, with: "", options: .regularExpression)
+        k = k.replacingOccurrences(of: #"[0-9]+([.,][0-9]+)?"#, with: "", options: .regularExpression)
+        return k.lowercased().split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+    }
+    func isHidden(_ msg: String) -> Bool { hiddenMessages.contains(Model.messageKey(msg)) }
+    func hideForever(_ msg: String) { let k = Model.messageKey(msg); if !hiddenMessages.contains(k) { hiddenMessages.append(k) } }
+
     // MARK: preset tags (Windows: Model::autoTags and friends, the same words)
 
     /// Style words that become tags when a preset's name has them ("Thrash Attack" -> Thrash).

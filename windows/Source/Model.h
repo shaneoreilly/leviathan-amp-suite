@@ -85,6 +85,13 @@ public:
     void setDebugLog(bool on);
     void toggle() { live() ? stop() : start(); }
     void restartAudio();
+    /// Messages hidden with "Don't show again" (Settings > Appearance > Messages shows them again). A message's key is
+    /// its wording without numbers, quoted names or brackets, as the Mac app's Model.messageKey.
+    juce::StringArray hiddenMessages;
+    static juce::String messageKey(const juce::String& s);
+    bool isHidden(const juce::String& msg) const { return hiddenMessages.contains(messageKey(msg)); }
+    void hideForever(const juce::String& msg);
+    void showHiddenMessages();
     /// Output EQ for the output in use: each output (headphones, monitors, a TV) keeps its own, switching with it.
     /// Kept in the app properties by output name, not in presets (Mac: Model.OutputEQ, the same keys).
     struct OutputEQ { bool on = false; double low = 0, mid = 0, high = 0, level = 0; };
