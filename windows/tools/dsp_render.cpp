@@ -50,6 +50,10 @@ static const Scenario scenarios[] = {
         p.pitchOn = true; p.pitchSemis = -2; p.pitchCents = 10; p.pitchMix = 1;
         p.chainCount = 0; p.ampOn = true; p.ampChannel = 1; p.ampGain = 0.7f; p.eqOn = false; p.cabOn = true; p.masterVol = -6;
     }, builtinCab },
+    { "pitch_lowlag", [](Params& p) {   // Low lag: chords splice at the root's period
+        p.pitchOn = true; p.pitchLowLag = true; p.pitchSemis = -2; p.pitchCents = 10; p.pitchMix = 1;
+        p.chainCount = 0; p.ampOn = true; p.ampChannel = 1; p.ampGain = 0.7f; p.eqOn = false; p.cabOn = true; p.masterVol = -6;
+    }, builtinCab },
     { "doubler", [](Params& p) {
         p.chainCount = 0; p.ampOn = true; p.ampChannel = 2; p.ampGain = 0.6f; p.eqOn = false; p.cabOn = true; p.masterVol = -6;
         p.doublerOn = true; p.doublerWidth = 0.8f; p.doublerTime = 24; p.revOn = true; p.revMix = 0.2f;

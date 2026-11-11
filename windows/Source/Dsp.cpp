@@ -382,6 +382,7 @@ void DSP::update(bool force) {
     gEnvR = std::exp(-1 / (0.015f * sr)); gAttC = std::exp(-1 / (0.0003f * sr));
 
     shifter.setRatio(std::pow(2.0, (double) (std::round(p.pitchSemis) + p.pitchCents / 100) / 12));
+    shifter.lowLag = p.pitchLowLag;
     pMix.target = p.pitchOn ? p.pitchMix : 0;
 
     for (auto& pd : pedals) pd->update(p);
@@ -494,7 +495,7 @@ void DSP::process(const float* input, float* outL, float* outR, int frames) {
             const float m = pMix.next(c), x = a[(size_t) i];
             a[(size_t) i] = x + (shifter.process(x) - x) * m;
         }
-        p.pitchLatencyMs.store(p.pitchOn && shifter.ratio != 1 ? (float) shifter.avgDelay / sr * 1000 : 0);
+        p.pitchLatencyMs.store(p.pitchOn && shifter.ratio != 1 ? (float) shifter.shownDelay / sr * 1000 : 0);
     } else {
         for (int i = 0; i < n; ++i) shifter.write(a[(size_t) i]);
         p.pitchLatencyMs.store(0);
@@ -758,7 +759,7 @@ float PitchShifter::process(float x) {
         read = (double) w - (double) (ahead + period + margin + 8); fade = fadeLen; d = (double) w - read;
     }
     if (fade >= fadeLen) {
-        const bool periodic = periodScore > 0.96f;
+        const bool periodic = lowLag || periodScore > 0.96f;
         if (ratio > 1) {
             if (d <= (double) (std::max(ahead, (int) ((double) fadeLen * (ratio - 1))) + 8)) {
                 const int j = bestJump((int) read, true, jMax, (int) ((double) fadeLen * (ratio - 1)) + 2, periodic);
@@ -777,6 +778,7 @@ float PitchShifter::process(float x) {
     }
     read += ratio;
     avgDelay += (d - avgDelay) * 0.0005;
+    shownDelay += (d - shownDelay) * 0.00002;
     return y;
 }
 
@@ -800,7 +802,8 @@ int PitchShifter::bestJump(int base, bool up, int maxJ, int minJ, bool preferSho
         scratch[(size_t) k] = s;
         if (s > bestScore) { bestScore = s; best = j; }
     }
-    const float thr = bestScore - 0.03f * std::abs(bestScore);
+    // Low lag accepts a much rougher match (a chord's root period rather than the whole chord repeating)
+    const float thr = bestScore - (lowLag ? 0.30f : 0.03f) * std::abs(bestScore);
     if (preferShort && count >= 3) {
         for (int k = 1; k < count - 1; ++k)
             if (scratch[(size_t) k] >= thr && scratch[(size_t) k] >= scratch[(size_t) k - 1] && scratch[(size_t) k] >= scratch[(size_t) k + 1]) {

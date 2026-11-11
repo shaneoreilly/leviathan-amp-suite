@@ -10,7 +10,7 @@ let CAB_USER = CABS.count, CAB_LIB = CABS.count + 1, CAB_IRLIB = CABS.count + 2
 struct Settings: Codable, Equatable {
     var inGain = 0.0, inputChannel = 0
     var gateOn = true, gateThresh = -60.0, gateRelease = 60.0, gateDepth = -60.0
-    var pitchOn = false, pitchSemis = 0.0, pitchCents = 0.0, pitchMix = 1.0
+    var pitchOn = false, pitchSemis = 0.0, pitchCents = 0.0, pitchMix = 1.0, pitchLowLag = false
     var odOn = true, odDrive = 0.05, odTone = 0.55, odLevel = 0.8
     var ampOn = true, ampChannel = 2, ampGain = 0.55
     var bass = 0.5, mid = 0.55, treble = 0.55, presence = 0.55, depth = 0.55, ampVolume = 0.5
@@ -63,7 +63,7 @@ struct Settings: Codable, Equatable {
         p.ampBOn = ampBOn && !ampBNam.isEmpty; p.ampBLevel = Float(ampBLevel); p.ampBSpread = Float(ampBSpread)
         p.inGain = Float(inGain); p.inputChannel = inputChannel
         p.gateOn = gateOn; p.gateThresh = Float(gateThresh); p.gateRelease = Float(gateRelease); p.gateDepth = Float(gateDepth)
-        p.pitchOn = pitchOn; p.pitchSemis = Float(pitchSemis); p.pitchCents = Float(pitchCents); p.pitchMix = Float(pitchMix)
+        p.pitchOn = pitchOn; p.pitchSemis = Float(pitchSemis); p.pitchCents = Float(pitchCents); p.pitchMix = Float(pitchMix); p.pitchLowLag = pitchLowLag
         p.odOn = odOn; p.odDrive = Float(odDrive); p.odTone = Float(odTone); p.odLevel = Float(odLevel)
         p.ampOn = ampOn; p.ampChannel = ampChannel; p.ampGain = Float(ampGain)
         p.bass = Float(bass); p.mid = Float(mid); p.treble = Float(treble); p.presence = Float(presence); p.depth = Float(depth); p.ampVolume = Float(ampVolume)
@@ -1246,7 +1246,7 @@ final class Model: ObservableObject {
         else { return false }
         var cur = s
         cur.inGain = stored.inGain; cur.masterVol = stored.masterVol; cur.inputChannel = stored.inputChannel
-        cur.pitchOn = stored.pitchOn; cur.pitchSemis = stored.pitchSemis; cur.pitchCents = stored.pitchCents; cur.pitchMix = stored.pitchMix
+        cur.pitchOn = stored.pitchOn; cur.pitchSemis = stored.pitchSemis; cur.pitchCents = stored.pitchCents; cur.pitchMix = stored.pitchMix; cur.pitchLowLag = stored.pitchLowLag
         cur.cabModel = stored.cabModel
         return cur != stored
     }
@@ -1271,7 +1271,7 @@ final class Model: ObservableObject {
     private func applyPreset(_ p: Settings, _ name: String) {
         var n = p
         n.inGain = s.inGain; n.masterVol = s.masterVol; n.inputChannel = s.inputChannel   // presets don't change your levels
-        n.pitchOn = s.pitchOn; n.pitchSemis = s.pitchSemis; n.pitchCents = s.pitchCents; n.pitchMix = s.pitchMix   // ...or your tuning
+        n.pitchOn = s.pitchOn; n.pitchSemis = s.pitchSemis; n.pitchCents = s.pitchCents; n.pitchMix = s.pitchMix; n.pitchLowLag = s.pitchLowLag   // ...or your tuning
         if n.cabModel == CAB_USER && userIR == nil { n.cabModel = irLib.isEmpty ? 0 : CAB_LIB }
         if n.cabModel == CAB_IRLIB && !cabIRs.files.contains(n.irFile) { n.cabModel = irLib.isEmpty ? 0 : CAB_LIB }
         if n.cabModel == CAB_LIB && irLib.isEmpty { n.cabModel = 0 }
@@ -1825,10 +1825,15 @@ struct ContentView: View {
         UnitBox(title: "PITCH", on: $m.s.pitchOn, onKey: "pitchOn", color: ch, trailing: AnyView(PitchLatency(mt: m.meters))) {
             VStack(alignment: .center, spacing: 8) {
                 // the button shows just the tuning's name, the menu shows the notes too (keeps the panel narrow)
-                Menu("Guitar: \(m.tuning.name)") {
-                    ForEach(TUNINGS.indices, id: \.self) { i in Button(TUNINGS[i].label) { m.tuningIndex = i } }
+                HStack(spacing: 6) {
+                    Menu("Guitar: \(m.tuning.name)") {
+                        ForEach(TUNINGS.indices, id: \.self) { i in Button(TUNINGS[i].label) { m.tuningIndex = i } }
+                    }
+                    .frame(width: 135 * W)
+                    Button("Low lag") { m.s.pitchLowLag.toggle() }
+                        .buttonStyle(TopBarToggle(on: m.s.pitchLowLag))
+                        .explain("pitchLowLag", "Pitch · Low lag")
                 }
-                .frame(width: 135 * W)
                 HStack(spacing: 4) {
                     Button { m.playAs(max(Int(m.s.pitchSemis.rounded()) - 1, -12)) } label: { Image(systemName: "minus") }
                         .help("Down a semitone")

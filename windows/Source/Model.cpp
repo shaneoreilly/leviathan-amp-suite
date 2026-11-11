@@ -607,7 +607,7 @@ void Model::loadUser(const juce::String& n) { if (auto it = userPresets.find(n);
 void Model::applyPreset(const Settings& p, const juce::String& name) {
     Settings n = p;
     // presets don't change your levels, input channel or tuning
-    for (const char* k : { "inGain", "masterVol", "inputChannel", "pitchOn", "pitchSemis", "pitchCents", "pitchMix" }) n.set(k, settings.get(k));
+    for (const char* k : { "inGain", "masterVol", "inputChannel", "pitchOn", "pitchSemis", "pitchCents", "pitchMix", "pitchLowLag" }) n.set(k, settings.get(k));
     if (n.i("cabModel") == CAB_USER && !userIR) n.set("cabModel", irLib.isEmpty() ? 0 : CAB_LIB);
     if (n.i("cabModel") == CAB_LIB && irLib.isEmpty()) n.set("cabModel", 0);
     if (n.i("cabModel") == CAB_IRLIB && !cabIRs.contains(n.s("irFile"))) n.set("cabModel", irLib.isEmpty() ? 0 : CAB_LIB);
@@ -684,7 +684,7 @@ bool Model::presetModified() const {
     auto stored = presetSettings(presetName);
     if (!stored) return false;
     Settings cur = settings;
-    for (const char* k : { "inGain", "masterVol", "inputChannel", "pitchOn", "pitchSemis", "pitchCents", "pitchMix", "cabModel" }) cur.set(k, stored->get(k));
+    for (const char* k : { "inGain", "masterVol", "inputChannel", "pitchOn", "pitchSemis", "pitchCents", "pitchMix", "pitchLowLag", "cabModel" }) cur.set(k, stored->get(k));
     return cur != *stored;
 }
 

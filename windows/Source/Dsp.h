@@ -66,7 +66,7 @@ struct Params {
     std::atomic<int> version { 0 };
     float inGain = 0; int inputChannel = 0; std::atomic<bool> muted { false };
     bool gateOn = true; float gateThresh = -60, gateRelease = 60, gateDepth = -60;
-    bool pitchOn = false; float pitchSemis = 0, pitchCents = 0, pitchMix = 1;
+    bool pitchOn = false, pitchLowLag = false; float pitchSemis = 0, pitchCents = 0, pitchMix = 1;
     bool odOn = true; float odDrive = 0, odTone = 0.6f, odLevel = 0.75f;
     bool ampOn = true; int ampChannel = 2; float ampGain = 0.55f;
     float bass = 0.5f, mid = 0.5f, treble = 0.55f, presence = 0.55f, depth = 0.5f, ampVolume = 0.5f;
@@ -164,6 +164,10 @@ public:
     inline void write(float x) { int i = w & mask; buf[(size_t) i] = x; buf[(size_t) (i + size)] = x; w++; }
     float process(float x);
     double ratio = 1.0, avgDelay = 0.0;
+    /// Low lag: treat everything as one note, so chords splice at the root's period instead of waiting for the whole
+    /// chord to repeat (much less lag on low chords, at the cost of a slight shimmer on them).
+    bool lowLag = false;
+    double shownDelay = 0.0;   // ~1 s average of the lag, for the readout (avgDelay follows it within each splice)
 private:
     static constexpr int size = 32768, mask = 32767;   // room for the 30 ms search at 192 kHz
     std::vector<float> buf, scratch;

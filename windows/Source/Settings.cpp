@@ -11,7 +11,7 @@ void fillDefaults(juce::NamedValueSet& v) {
     auto put = [&](const char* k, juce::var x) { v.set(k, x); };
     put("inGain", 0.0); put("inputChannel", 0);
     put("gateOn", true); put("gateThresh", -60.0); put("gateRelease", 60.0); put("gateDepth", -60.0);
-    put("pitchOn", false); put("pitchSemis", 0.0); put("pitchCents", 0.0); put("pitchMix", 1.0);
+    put("pitchOn", false); put("pitchSemis", 0.0); put("pitchCents", 0.0); put("pitchMix", 1.0); put("pitchLowLag", false);
     put("odOn", true); put("odDrive", 0.05); put("odTone", 0.55); put("odLevel", 0.8);
     put("ampOn", true); put("ampChannel", 2); put("ampGain", 0.55);
     put("bass", 0.5); put("mid", 0.55); put("treble", 0.55); put("presence", 0.55); put("depth", 0.55); put("ampVolume", 0.5);
@@ -142,7 +142,7 @@ void Settings::apply(Params& p) const {
     p.ampBOn = b("ampBOn") && get("ampBNam").toString().isNotEmpty(); p.ampBLevel = f("ampBLevel"); p.ampBSpread = f("ampBSpread");
     p.inGain = f("inGain"); p.inputChannel = i("inputChannel");
     p.gateOn = b("gateOn"); p.gateThresh = f("gateThresh"); p.gateRelease = f("gateRelease"); p.gateDepth = f("gateDepth");
-    p.pitchOn = b("pitchOn"); p.pitchSemis = f("pitchSemis"); p.pitchCents = f("pitchCents"); p.pitchMix = f("pitchMix");
+    p.pitchOn = b("pitchOn"); p.pitchSemis = f("pitchSemis"); p.pitchCents = f("pitchCents"); p.pitchMix = f("pitchMix"); p.pitchLowLag = b("pitchLowLag");
     p.odOn = b("odOn"); p.odDrive = f("odDrive"); p.odTone = f("odTone"); p.odLevel = f("odLevel");
     p.ampOn = b("ampOn"); p.ampChannel = i("ampChannel"); p.ampGain = f("ampGain");
     p.bass = f("bass"); p.mid = f("mid"); p.treble = f("treble"); p.presence = f("presence"); p.depth = f("depth"); p.ampVolume = f("ampVolume");

@@ -19,6 +19,7 @@
   "pitchSemis": "Shift in semitones: -2 turns E standard into D standard, -5 into B standard.",
   "pitchCents": "Fine tuning in cents (1/100 of a semitone), to match a recording that's slightly off concert pitch.",
   "pitchMix": "Blend of shifted and original sound. 100% is a pure retune; lower values give an octave or harmony effect.",
+  "pitchLowLag": "Less delay on low chords. Normally the shifter waits for a chord's whole waveform to repeat before it splices, which can mean 20 ms or more on low chords. Low lag splices at the root note's cycle instead, about the lag of a single note, but chords may shimmer slightly. Single notes sound the same either way.",
   "ampGain": "Preamp drive: from clean to heavily distorted.",
   "bass": "Low end (around 100 Hz). Too much makes palm mutes flubby.",
   "mid": "Midrange (around 600 Hz–1 kHz). Cutting it scoops the tone; boosting it helps you cut through a band mix.",

@@ -57,7 +57,7 @@ final class Params: @unchecked Sendable {
     var namSeconds: Double = 0
     var inGain: Float = 0, inputChannel = 0, muted = false
     var gateOn = true, gateThresh: Float = -60, gateRelease: Float = 60, gateDepth: Float = -60
-    var pitchOn = false, pitchSemis: Float = 0, pitchCents: Float = 0, pitchMix: Float = 1
+    var pitchOn = false, pitchSemis: Float = 0, pitchCents: Float = 0, pitchMix: Float = 1, pitchLowLag = false
     var odOn = true, odDrive: Float = 0, odTone: Float = 0.6, odLevel: Float = 0.75
     var ampOn = true, ampChannel = 2, ampGain: Float = 0.55
     var bass: Float = 0.5, mid: Float = 0.5, treble: Float = 0.55, presence: Float = 0.55, depth: Float = 0.5, ampVolume: Float = 0.5
@@ -590,6 +590,7 @@ final class DSP {
         gEnvR = expf(-1 / (0.015 * sr)); gAttC = expf(-1 / (0.0003 * sr))
 
         shifter.setRatio(pow(2, Double(p.pitchSemis.rounded() + p.pitchCents / 100) / 12))
+        shifter.lowLag = p.pitchLowLag
         pMix.target = p.pitchOn ? p.pitchMix : 0
 
         for pd in pedals { pd.update(p) }
@@ -700,7 +701,7 @@ final class DSP {
                 let m = pMix.next(c), x = a[i]
                 a[i] = x + (shifter.process(x) - x) * m
             }
-            p.pitchLatencyMs = p.pitchOn && shifter.ratio != 1 ? Float(shifter.avgDelay) / sr * 1000 : 0
+            p.pitchLatencyMs = p.pitchOn && shifter.ratio != 1 ? Float(shifter.shownDelay) / sr * 1000 : 0
         } else {
             for i in 0..<n { shifter.write(a[i]) }
             p.pitchLatencyMs = 0
@@ -990,6 +991,10 @@ final class PitchShifter {
     private let fadeLen: Int, L: Int, back: Int, ahead: Int, jMin: Int, jMinChord: Int, jMax: Int, margin: Int
     private(set) var ratio = 1.0
     private(set) var avgDelay = 0.0
+    /// Low lag: treat everything as one note, so chords splice at the root's period instead of waiting for the whole
+    /// chord to repeat (much less lag on low chords, at the cost of a slight shimmer on them).
+    var lowLag = false
+    private(set) var shownDelay = 0.0   // ~1 s average of the lag, for the readout (avgDelay follows it within each splice)
     // running estimate of the input's period: when the signal is clearly periodic (single notes, riffs) a
     // down-shift jumps as soon as one period has built up instead of always waiting for the longest possible
     // period (about 40 ms behind the dry signal). Chords have no short common period, so they keep the long search.
@@ -1039,7 +1044,7 @@ final class PitchShifter {
             read = Double(w) - Double(ahead + period + margin + 8); fade = fadeLen; d = Double(w) - read
         }
         if fade >= fadeLen {
-            let periodic = periodScore > 0.96
+            let periodic = lowLag || periodScore > 0.96
             if ratio > 1 {
                 if d <= Double(max(ahead, Int(Double(fadeLen) * (ratio - 1))) + 8) {
                     let j = bestJump(Int(read), up: true, maxJ: jMax, minJ: Int(Double(fadeLen) * (ratio - 1)) + 2, preferShort: periodic)
@@ -1058,6 +1063,7 @@ final class PitchShifter {
         }
         read += ratio
         avgDelay += (d - avgDelay) * 0.0005
+        shownDelay += (d - shownDelay) * 0.00002
         return y
     }
 
@@ -1086,7 +1092,8 @@ final class PitchShifter {
             if s > bestScore { bestScore = s; best = j }
         }
         // shortest lag that is a local peak and close to the best score
-        let thr = bestScore - 0.03 * abs(bestScore)
+        // Low lag accepts a much rougher match (a chord's root period rather than the whole chord repeating)
+        let thr = bestScore - (lowLag ? 0.30 : 0.03) * abs(bestScore)
         if preferShort && count >= 3 {
             for k in 1..<(count - 1) where scores[k] >= thr && scores[k] >= scores[k - 1] && scores[k] >= scores[k + 1] {
                 firstGood = jMin + k; break
