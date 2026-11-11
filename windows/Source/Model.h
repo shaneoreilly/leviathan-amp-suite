@@ -101,7 +101,14 @@ public:
         juce::int64 created = 0, modified = 0, played = 0;
         juce::int64 imported = 0;   // from a .leviathan file, or first seen by a version that keeps dates
         juce::int64 shownModified() const { return modified > 0 ? modified : imported; }   // the Modified column
+        juce::StringArray tags;   // your own tags (the automatic ones are worked out: autoTags)
     };
+    /// Preset tags (the Mac app's Model.autoTags and friends, the same words): Factory or Yours, the amp, style words
+    /// in the name; then your own.
+    juce::StringArray autoTags(const juce::String& n) const;
+    juce::StringArray userTags(const juce::String& n) const;
+    void setUserTags(const juce::String& n, const juce::String& commaSeparated);
+    juce::StringArray tags(const juce::String& n) const;
     std::map<juce::String, PresetMeta> presetMeta;
     int presetSort = 0;   // 0 list order, 1 recently played, 2 recently modified, 3 recently created, 4 name A-Z
     bool presetSortReversed = false;   // list order Z-A / oldest first

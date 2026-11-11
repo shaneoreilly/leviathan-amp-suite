@@ -1147,6 +1147,31 @@ final class Model: ObservableObject {
 
     func isFactory(_ name: String) -> Bool { FACTORY.contains { $0.0 == name } }
 
+    // MARK: preset tags (Windows: Model::autoTags and friends, the same words)
+
+    /// Style words that become tags when a preset's name has them ("Thrash Attack" -> Thrash).
+    static let styleTags = ["Clean", "Crunch", "Blues", "Rock", "Metal", "Thrash", "Doom", "Djent", "Lead", "Rhythm", "Ambient",
+                            "Funk", "Jazz", "Punk", "Fuzz", "Stoner", "Sludge", "Grunge", "Country", "Shoegaze", "Acoustic", "Bass", "Death", "Black"]
+    /// Tags every preset has without anyone typing them: Factory or Yours, its amp, and style words in its name.
+    func autoTags(_ n: String) -> [String] {
+        var t = [isFactory(n) ? "Factory" : "Yours"]
+        let st: Settings? = userPresets[n] ?? FACTORY.first { $0.0 == n }.map { var x = Settings(); $0.1(&x); return x }
+        if let st { t.append(st.nam.isEmpty ? "Built-in amp" : "NAM") }
+        let words = Set(n.lowercased().split { !$0.isLetter }.map(String.init))
+        t += Model.styleTags.filter { words.contains($0.lowercased()) }
+        return t
+    }
+    func userTags(_ n: String) -> [String] { presetMeta[n]?.tags ?? [] }
+    func setUserTags(_ n: String, _ text: String) {
+        var seen = Set<String>()
+        let tags = text.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty && seen.insert($0.lowercased()).inserted }
+        presetMeta[n, default: PresetMeta()].tags = tags.isEmpty ? nil : tags
+    }
+    func tags(_ n: String) -> [String] {
+        let a = autoTags(n)
+        return a + userTags(n).filter { u in !a.contains { $0.caseInsensitiveCompare(u) == .orderedSame } }
+    }
+
     /// Presets in the order the Presets screen lists them (MIDI Program Change counts through this).
     var presetOrder: [String] { FACTORY.map(\.0) + userPresets.keys.filter { !isFactory($0) }.sorted() }
 
@@ -2246,6 +2271,8 @@ extension View {
 
 struct PresetMeta: Codable {
     var created: Date?, modified: Date?, played: Date?
+    /// Your own tags for this preset (the automatic ones are worked out: Model.autoTags).
+    var tags: [String]?
     /// When it came in from a .leviathan file (or, for presets saved before dates were kept, when this version first saw it).
     var imported: Date?
     /// What the Modified column shows: the last save, or the import date if it was never changed.

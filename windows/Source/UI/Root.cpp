@@ -355,17 +355,37 @@ struct PresetsScreen : Screen_, juce::FileDragAndDropTarget {
         importB.onClick = [&m] { m.importPresetsDialog(); }; importB.setTooltip("Add .leviathan preset files (or drop them here)");
         exportB.onClick = [&m] { m.exportAllPresets(); }; exportB.setTooltip("Save every preset as a .leviathan file in a folder");
         saveB.onClick = [&m] { askText("Save preset", {}, "Save", [&m](juce::String n) { m.savePreset(n); }); };
-        for (auto* c : std::initializer_list<juce::Component*> { &filter, &importB, &exportB, &saveB, &viewport }) addAndMakeVisible(c);
+        for (auto* c : std::initializer_list<juce::Component*> { &filter, &importB, &exportB, &saveB, &viewport, &search, &tagBar }) addAndMakeVisible(c);
         viewport.setViewedComponent(&list, false); viewport.setScrollBarsShown(true, false);
+        search.setTextToShowWhenEmpty("Search presets and tags", theme::secondary);
+        search.setFont(theme::font(10.5f)); search.setIndents(10, 0); search.setJustification(juce::Justification::centredLeft);
+        search.setColour(juce::TextEditor::backgroundColourId, juce::Colours::white.withAlpha(0.06f));
+        search.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
+        search.onTextChange = [this] { signature.clear(); refresh(); };
+        search.onEscapeKey = [this] { search.clear(); };
+        tagBar.onChange = [this] { signature.clear(); refresh(); };
     }
+    /// Favourites, the tags picked (all of them), then the search words (each in the name or a tag).
     juce::StringArray names() const {
         auto all = model.sortedPresets(model.presetSort, model.presetSortReversed);
-        if (filter.getSelectedId() == 2) { juce::StringArray f; for (auto& n : all) if (model.favorites.contains(n)) f.add(n); return f; }
-        return all;
+        juce::StringArray words; words.addTokens(search.getText().toLowerCase(), " ", ""); words.removeEmptyStrings();
+        juce::StringArray f;
+        for (auto& n : all) {
+            if (filter.getSelectedId() == 2 && !model.favorites.contains(n)) continue;
+            const auto t = model.tags(n);
+            bool ok = true;
+            for (auto& want : tagBar.picked) ok = ok && t.contains(want);
+            const auto hay = (n + " " + t.joinIntoString(" ")).toLowerCase();
+            for (auto& w : words) ok = ok && hay.contains(w);
+            if (ok) f.add(n);
+        }
+        return f;
     }
     void refresh() override {
+        tagBar.update();
         juce::StringArray sig { names().joinIntoString("|"), model.favorites.joinIntoString("|"), model.presetName, model.presetModified() ? "m" : "", juce::String(model.presetSort) + (model.presetSortReversed ? "r" : "") };
         for (auto& [k, v] : model.userPresets) sig.add(k);
+        for (auto& [k, v] : model.presetMeta) sig.add(v.tags.joinIntoString(","));
         if (sig.joinIntoString("/") == signature) return;
         signature = sig.joinIntoString("/");
         rows.clear(); list.removeAllChildren();
@@ -376,10 +396,12 @@ struct PresetsScreen : Screen_, juce::FileDragAndDropTarget {
         auto r = getLocalBounds().reduced(14, 0);
         auto head = r.removeFromTop(56).withTrimmedTop(14).withHeight(28);
         filter.setBounds(head.getX() + 110, head.getY(), 200, 28);
+        search.setBounds(filter.getRight() + 10, head.getY(), 260, 28);
 
         saveB.setBounds(head.removeFromRight(120)); head.removeFromRight(8);
         exportB.setBounds(head.removeFromRight(100)); head.removeFromRight(8);
         importB.setBounds(head.removeFromRight(90));
+        tagBar.setBounds(r.removeFromTop(tagBar.heightFor(r.getWidth())));
         header.setBounds(r.removeFromTop(24));
         viewport.setBounds(r.withTrimmedBottom(10));
         int y = 0; for (auto& row : rows) { row->setBounds(0, y, viewport.getMaximumVisibleWidth(), 58); y += 58; }
@@ -397,7 +419,7 @@ struct PresetsScreen : Screen_, juce::FileDragAndDropTarget {
     struct Row : juce::Component {
         Row(Model& m, juce::String n) : model(m), name(std::move(n)),
             star(m.favorites.contains(name) ? IconButton::starFilled : IconButton::star, [this] { model.toggleFavorite(name); }, 16),
-            load("Load"), exportB("Export" + ellipsis), rename("Rename"), del("Delete"), restore("Restore factory") {
+            load("Load"), exportB("Export" + ellipsis), rename("Rename"), del("Delete"), restore("Restore factory"), tagsB("Tags" + ellipsis) {
             star.colour = m.favorites.contains(name) ? juce::Colours::yellow : theme::secondary;
             addAndMakeVisible(star);
             load.onClick = [this] { model.confirmLoad([this] { model.loadAny(name); model.setScreen(Screen::rig); }); };
@@ -405,7 +427,11 @@ struct PresetsScreen : Screen_, juce::FileDragAndDropTarget {
             rename.onClick = [this] { askText("Rename preset", name, "Rename", [this](juce::String n) { model.renamePreset(name, n); }); };
             del.onClick = [this] { model.deletePreset(name); };
             restore.onClick = [this] { model.restoreFactory(name); };
-            for (auto* b : { &load, &exportB }) addAndMakeVisible(b);
+            tagsB.onClick = [this] {
+                askText("Tags for " + name + " (separate with commas)", model.userTags(name).joinIntoString(", "), "Save", [this](juce::String t) { model.setUserTags(name, t); });
+            };
+            tagsB.setTooltip("Add your own tags. Factory or Yours, the amp and style words in the name are tagged for you.");
+            for (auto* b : { &load, &exportB, &tagsB }) addAndMakeVisible(b);
             const bool factory = m.isFactory(name), edited = factory && m.userPresets.count(name);
             if (!factory) { addAndMakeVisible(rename); addAndMakeVisible(del); }
             else if (edited) addAndMakeVisible(restore);
@@ -413,7 +439,7 @@ struct PresetsScreen : Screen_, juce::FileDragAndDropTarget {
         void resized() override {
             star.setBounds(4, 15, 28, 28);
             int r = getWidth() - 8;
-            for (auto* b : { &del, &rename, &restore, &exportB, &load }) {
+            for (auto* b : { &del, &rename, &restore, &tagsB, &exportB, &load }) {
                 if (!b->isVisible()) continue;
                 const int w = juce::GlyphArrangement::getStringWidthInt(theme::font(10), b->getButtonText()) + 24;
                 r -= w; b->setBounds(r, 15, w, 28); r -= 8;
@@ -426,7 +452,9 @@ struct PresetsScreen : Screen_, juce::FileDragAndDropTarget {
             const auto cols = columns(getWidth());
             g.setColour(theme::text); g.setFont(theme::font(14, current)); g.drawText(name, 44, 8, cols.modified - 54, 24, juce::Justification::centredLeft, true);
             g.setColour(theme::secondary); g.setFont(theme::font(10));
-            juce::String sub = factory ? (edited ? juce::String::fromUTF8("Factory \xc2\xb7 edited") : juce::String("Factory")) : juce::String("Yours");
+            auto tg = model.tags(name);
+            if (edited) tg.set(tg.indexOf("Factory"), juce::String::fromUTF8("Factory \xc2\xb7 edited"));
+            juce::String sub = tg.joinIntoString(juce::String::fromUTF8(" \xc2\xb7 "));
             if (current) sub += juce::String::fromUTF8(model.presetModified() ? " \xc2\xb7 loaded \xc2\xb7 unsaved changes" : " \xc2\xb7 loaded");
             g.drawText(sub, 44, 32, cols.modified - 54, 18, juce::Justification::centredLeft, true);
             Model::PresetMeta mt; if (auto it = model.presetMeta.find(name); it != model.presetMeta.end()) mt = it->second;
@@ -435,11 +463,60 @@ struct PresetsScreen : Screen_, juce::FileDragAndDropTarget {
             g.drawText(Model::stamp(mt.played), cols.played, 0, cols.width, getHeight(), juce::Justification::centredLeft);
         }
         void mouseDoubleClick(const juce::MouseEvent&) override { model.confirmLoad([this] { model.loadAny(name); model.setScreen(Screen::rig); }); }
-        Model& model; juce::String name; IconButton star; juce::TextButton load, exportB, rename, del, restore; int statusX = 0;
+        Model& model; juce::String name; IconButton star; juce::TextButton load, exportB, rename, del, restore, tagsB; int statusX = 0;
     };
     /// Column positions shared by the header and the rows: dates right of the name, actions at the right edge.
     struct Columns { int modified, played, width; };
-    static Columns columns(int w) { const int actions = 380, dw = 170; return { w - actions - 2 * dw, w - actions - dw, dw }; }
+    static Columns columns(int w) { const int actions = 450, dw = 170; return { w - actions - 2 * dw, w - actions - dw, dw }; }
+    /// Tag chips to narrow the list: tap to filter by a tag (several narrow further), tap again to drop it.
+    struct TagBar : juce::Component {
+        explicit TagBar(Model& m) : model(m) {}
+        juce::StringArray picked; std::function<void()> onChange;
+        std::vector<std::pair<juce::String, int>> all;
+        std::vector<std::pair<juce::Rectangle<int>, juce::String>> chips;
+        void update() {
+            std::map<juce::String, int> c;
+            for (auto& n : model.sortedPresets(4, false)) for (auto& t : model.tags(n)) c[t]++;
+            all.assign(c.begin(), c.end());
+            std::stable_sort(all.begin(), all.end(), [](auto& a, auto& b) { return a.second > b.second; });
+            for (int i = picked.size(); --i >= 0;) if (c.find(picked[i]) == c.end()) picked.remove(i);
+            repaint();
+        }
+        int chipH() const { return onAndroid ? 34 : 24; }
+        std::vector<std::pair<juce::Rectangle<int>, juce::String>> layout(int width) const {
+            std::vector<std::pair<juce::Rectangle<int>, juce::String>> out;
+            int x = 30, y = 0;
+            for (auto& [t, n] : all) {
+                const int w = juce::GlyphArrangement::getStringWidthInt(theme::font(9), t + "  " + juce::String(n)) + 24;
+                if (x > 30 && x + w > width) { x = 30; y += chipH() + 6; }
+                out.push_back({ { x, y, w, chipH() }, t }); x += w + 6;
+            }
+            if (!picked.isEmpty()) out.push_back({ { x, y, 50, chipH() }, {} });   // Clear
+            return out;
+        }
+        int heightFor(int width) const { const auto l = layout(width); return l.empty() ? 0 : l.back().first.getBottom() + 10; }
+        void paint(juce::Graphics& g) override {
+            chips = layout(getWidth());
+            for (auto& [r, t] : chips) {
+                if (t.isEmpty()) { g.setColour(theme::secondary); g.setFont(theme::font(9)); g.drawText("Clear", r, juce::Justification::centred); continue; }
+                const bool on = picked.contains(t);
+                const auto rf = r.toFloat().reduced(0.5f);
+                g.setColour(on ? model.accent().withAlpha(0.22f) : juce::Colours::white.withAlpha(0.05f)); g.fillRoundedRectangle(rf, rf.getHeight() / 2);
+                g.setColour(on ? model.accent() : juce::Colours::white.withAlpha(0.12f)); g.drawRoundedRectangle(rf, rf.getHeight() / 2, 1);
+                int n = 0; for (auto& [tt, c] : all) if (tt == t) n = c;
+                g.setFont(theme::font(9));
+                g.setColour(theme::text); g.drawText(t, r.withTrimmedLeft(12), juce::Justification::centredLeft);
+                g.setColour(theme::secondary); g.drawText(juce::String(n), r.withTrimmedRight(10), juce::Justification::centredRight);
+            }
+        }
+        void mouseUp(const juce::MouseEvent& e) override {
+            for (auto& [r, t] : chips) if (r.contains(e.getPosition())) {
+                if (t.isEmpty()) picked.clear(); else if (picked.contains(t)) picked.removeString(t); else picked.add(t);
+                repaint(); if (onChange) onChange(); return;
+            }
+        }
+        Model& model;
+    };
     /// NAME / MODIFIED / LAST PLAYED: click to sort, click again to reverse.
     struct Header : juce::Component {
         explicit Header(Model& m) : model(m) {}
@@ -462,6 +539,7 @@ struct PresetsScreen : Screen_, juce::FileDragAndDropTarget {
         Model& model; std::function<void(int)> onSort;
     };
     Model& model; Header header { model }; juce::ComboBox filter; juce::TextButton importB, exportB, saveB; juce::Viewport viewport; juce::Component list;
+    juce::TextEditor search; TagBar tagBar { model };
     std::vector<std::unique_ptr<Row>> rows; juce::String signature;
 };
 

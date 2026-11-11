@@ -215,9 +215,23 @@ struct PresetsView: View {
     @EnvironmentObject var m: Model
     @StateObject private var ui = PresetsUI()
 
+    /// Favourites, the tags picked (all of them), then the search words (each in the name or a tag).
     var names: [String] {
         let all = m.sortedPresets(m.presetSort, reversed: m.presetSortReversed)
-        return ui.favOnly ? all.filter(m.favorites.contains) : all
+        let words = ui.query.lowercased().split(separator: " ").map(String.init)
+        return all.filter { n in
+            if ui.favOnly && !m.favorites.contains(n) { return false }
+            let tags = m.tags(n)
+            if !ui.tagFilter.isSubset(of: Set(tags)) { return false }
+            let hay = ([n] + tags).joined(separator: " ").lowercased()
+            return words.allSatisfy { hay.contains($0) }
+        }
+    }
+    /// Every tag in use, most common first.
+    var allTags: [(tag: String, count: Int)] {
+        var c: [String: Int] = [:]
+        for n in m.sortedPresets(.name, reversed: false) { for t in m.tags(n) { c[t, default: 0] += 1 } }
+        return c.map { (tag: $0.key, count: $0.value) }.sorted { $0.count != $1.count ? $0.count > $1.count : $0.tag < $1.tag }
     }
 
     var body: some View {
@@ -226,12 +240,20 @@ struct PresetsView: View {
                 Text("PRESETS").font(.inter(size: T(10) * UI, weight: .bold)).tracking(2).foregroundStyle(.secondary)
                 Picker("", selection: $ui.favOnly) { Text("All").tag(false); Text("★ Favorites").tag(true) }
                     .pickerStyle(.segmented).labelsHidden().frame(width: 260 * Z)
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                    TextField("Search presets and tags", text: $ui.query).textFieldStyle(.plain)
+                    if !ui.query.isEmpty { Button { ui.query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }.buttonStyle(.plain) }
+                }
+                .padding(.horizontal, 10).padding(.vertical, 6).frame(width: 280 * Z)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.06)))
                 Spacer()
                 Button("Import…") { m.importPresetsPanel() }.help("Add .leviathan preset files (or drop them here)")
                 Button("Export all…") { m.exportAllPresets() }.help("Save every preset as a .leviathan file in a folder")
                 Button("Save as new…") { m.newPresetName = ""; m.savingPreset = true }
             }
             .padding(14)
+            tagBar
             columnHeaders
             List {
                 ForEach(names, id: \.self) { n in row(n) }
@@ -248,6 +270,11 @@ struct PresetsView: View {
             }
             return true
         }
+        .alert("Tags for \(ui.tagging ?? "")", isPresented: Binding(get: { ui.tagging != nil }, set: { if !$0 { ui.tagging = nil } })) {
+            TextField("e.g. live, drop C, favourite solo", text: $ui.tagText)
+            Button("Save") { if let n = ui.tagging { m.setUserTags(n, ui.tagText) }; ui.tagging = nil }
+            Button("Cancel", role: .cancel) { ui.tagging = nil }
+        } message: { Text("Separate tags with commas. Factory or Yours, the amp and style words in the name are tagged for you.") }
         .alert("Rename preset", isPresented: Binding(get: { ui.renaming != nil }, set: { if !$0 { ui.renaming = nil } })) {
             TextField("Name", text: $ui.newName)
             Button("Rename") { if let r = ui.renaming { m.renamePreset(r, to: ui.newName) }; ui.renaming = nil }
@@ -255,9 +282,34 @@ struct PresetsView: View {
         }
     }
 
-    func subtitle(_ n: String, factory: Bool, edited: Bool) -> String { factory ? (edited ? "Factory · edited" : "Factory") : "Yours" }
+    func subtitle(_ n: String, factory: Bool, edited: Bool) -> String {
+        var t = m.tags(n)
+        if edited, let i = t.firstIndex(of: "Factory") { t[i] = "Factory · edited" }
+        return t.joined(separator: " · ")
+    }
 
-    static let dateColumn: CGFloat = 170, actionsColumn: CGFloat = 340
+    /// Tag chips to narrow the list: click to filter by a tag (several narrow further), click again to drop it.
+    var tagBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(allTags, id: \.tag) { t in
+                    let on = ui.tagFilter.contains(t.tag)
+                    Button { if on { ui.tagFilter.remove(t.tag) } else { ui.tagFilter.insert(t.tag) } } label: {
+                        HStack(spacing: 4) { Text(t.tag); Text("\(t.count)").foregroundStyle(.secondary) }
+                            .font(.inter(size: T(9) * UI))
+                            .padding(.horizontal, 9).padding(.vertical, 4)
+                            .background(Capsule().fill(on ? Color.accentColor.opacity(0.22) : Color.white.opacity(0.05)))
+                            .overlay(Capsule().stroke(on ? Color.accentColor : Color.white.opacity(0.12)))
+                            .contentShape(Capsule())
+                    }.buttonStyle(.plain)
+                }
+                if !ui.tagFilter.isEmpty { Button("Clear") { ui.tagFilter = [] }.buttonStyle(.borderless).font(.inter(size: T(9) * UI)) }
+            }
+            .padding(.horizontal, 24).padding(.bottom, 10)
+        }
+    }
+
+    static let dateColumn: CGFloat = 170, actionsColumn: CGFloat = 410
     func stamp(_ d: Date?) -> String { d.map { DateFormatter.presetStamp.string(from: $0) } ?? "—" }
 
     /// Click a header to sort by it; click again to reverse.
@@ -304,6 +356,7 @@ struct PresetsView: View {
             if current { Text(m.presetModified ? "Loaded · unsaved" : "Loaded").font(.inter(size: T(10) * UI)).foregroundStyle(.secondary).lineLimit(1).fixedSize() }
             Button("Load") { m.confirmLoad { m.loadAny(n); m.screen = .rig } }
             Button("Export…") { m.exportPreset(n) }
+            Button("Tags…") { ui.tagText = m.userTags(n).joined(separator: ", "); ui.tagging = n }.help("Add your own tags to this preset")
             if !factory {
                 Button("Rename") { ui.newName = n; ui.renaming = n }
                 Button("Delete", role: .destructive) { m.deletePreset(n) }
@@ -1119,7 +1172,11 @@ struct FlowLayout: Layout {
     }
 }
 
-final class PresetsUI: ObservableObject { @Published var favOnly = false; @Published var renaming: String? = nil; @Published var newName = "" }
+final class PresetsUI: ObservableObject {
+    @Published var favOnly = false; @Published var renaming: String? = nil; @Published var newName = ""
+    @Published var query = ""; @Published var tagFilter: Set<String> = []
+    @Published var tagging: String? = nil; @Published var tagText = ""
+}
 final class RecordingsUI: ObservableObject {
     @Published var name = ""
     /// Trim mode: the kept range in seconds.

@@ -37,8 +37,12 @@ Model::Model() {
     favorites = juce::StringArray::fromLines(p.getValue("favorites")); favorites.removeEmptyStrings();
     if (auto v = juce::JSON::parse(p.getValue("presetMeta")); auto* obj = v.getDynamicObject())
         for (const auto& kv : obj->getProperties())
-            presetMeta[kv.name.toString()] = { (juce::int64) kv.value.getProperty("created", 0), (juce::int64) kv.value.getProperty("modified", 0),
-                                               (juce::int64) kv.value.getProperty("played", 0), (juce::int64) kv.value.getProperty("imported", 0) };
+        {
+            auto& mt = presetMeta[kv.name.toString()];
+            mt.created = (juce::int64) kv.value.getProperty("created", 0); mt.modified = (juce::int64) kv.value.getProperty("modified", 0);
+            mt.played = (juce::int64) kv.value.getProperty("played", 0); mt.imported = (juce::int64) kv.value.getProperty("imported", 0);
+            if (auto* t = kv.value.getProperty("tags", {}).getArray()) for (auto& x : *t) mt.tags.add(x.toString());
+        }
     for (const auto& [n, s] : userPresets)   // presets saved before dates were kept: date them from now
         if (presetMeta[n].shownModified() == 0) presetMeta[n].imported = juce::Time::currentTimeMillis();
     presetSort = juce::jlimit(0, 4, p.getIntValue("presetSort", 0));
@@ -223,6 +227,7 @@ void Model::saveState() {
         for (const auto& [k, mt] : presetMeta) {
             auto* e = new juce::DynamicObject();
             e->setProperty("created", mt.created); e->setProperty("modified", mt.modified); e->setProperty("played", mt.played); e->setProperty("imported", mt.imported);
+            if (!mt.tags.isEmpty()) { juce::Array<juce::var> t; for (auto& x : mt.tags) t.add(x); e->setProperty("tags", t); }
             o->setProperty(k, juce::var(e));
         }
         p.setValue("presetMeta", juce::JSON::toString(juce::var(o), juce::JSON::FormatOptions{}.withSpacing(juce::JSON::Spacing::none)));
@@ -763,6 +768,37 @@ void Model::movePedal(PedalKind k, PedalKind target) {
     c.erase(c.begin() + fi);
     c.insert(c.begin() + ti, (int) k);
     Settings n = settings; n.setChain(c); setSettings(n);
+}
+
+// MARK: - preset tags
+
+juce::StringArray Model::autoTags(const juce::String& n) const {
+    static const char* style[] = { "Clean", "Crunch", "Blues", "Rock", "Metal", "Thrash", "Doom", "Djent", "Lead", "Rhythm", "Ambient",
+                                   "Funk", "Jazz", "Punk", "Fuzz", "Stoner", "Sludge", "Grunge", "Country", "Shoegaze", "Acoustic", "Bass", "Death", "Black" };
+    juce::StringArray t { isFactory(n) ? "Factory" : "Yours" };
+    if (auto st = presetSettings(n)) t.add(st->s("nam").isEmpty() ? "Built-in amp" : "NAM");
+    juce::StringArray words; words.addTokens(n.toLowerCase().retainCharacters("abcdefghijklmnopqrstuvwxyz "), " ", ""); words.removeEmptyStrings();
+    for (auto* w : style) if (words.contains(juce::String(w).toLowerCase())) t.add(w);
+    return t;
+}
+
+juce::StringArray Model::userTags(const juce::String& n) const {
+    if (auto it = presetMeta.find(n); it != presetMeta.end()) return it->second.tags;
+    return {};
+}
+
+void Model::setUserTags(const juce::String& n, const juce::String& commaSeparated) {
+    juce::StringArray in; in.addTokens(commaSeparated, ",", ""); in.trim(); in.removeEmptyStrings();
+    juce::StringArray out;
+    for (auto& t : in) { bool dup = false; for (auto& o : out) dup = dup || o.equalsIgnoreCase(t); if (!dup) out.add(t); }
+    presetMeta[n].tags = out;
+    saveState(); changed();
+}
+
+juce::StringArray Model::tags(const juce::String& n) const {
+    auto t = autoTags(n);
+    for (auto& u : userTags(n)) { bool dup = false; for (auto& a : t) dup = dup || a.equalsIgnoreCase(u); if (!dup) t.add(u); }
+    return t;
 }
 
 // MARK: - pitch
