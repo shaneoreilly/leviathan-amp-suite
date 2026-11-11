@@ -118,6 +118,8 @@ void LookAndFeel::refreshTheme() {
     setColour(juce::ToggleButton::textColourId, theme::text);
     setColour(juce::TextEditor::textColourId, theme::text);
     setColour(juce::Slider::textBoxTextColourId, theme::text);
+    setColour(juce::Slider::textBoxOutlineColourId, theme::line);
+    setColour(juce::Slider::textBoxBackgroundColourId, theme::panel2);
     setColour(juce::ListBox::textColourId, theme::text);
     setAccent(accent);   // the scheme above reset the accent-coloured parts
 }
@@ -126,7 +128,7 @@ void LookAndFeel::setAccent(juce::Colour c) {
     accent = c;
     setColour(juce::TextButton::textColourOnId, juce::Colours::black);
     setColour(juce::TextButton::buttonOnColourId, c);
-    setColour(juce::ComboBox::textColourId, c);
+    setColour(juce::ComboBox::textColourId, theme::text);   // the choice in the text colour, the arrow in the accent
     setColour(juce::ComboBox::arrowColourId, c);
     setColour(juce::ToggleButton::tickColourId, c);
     setColour(juce::Slider::thumbColourId, c);

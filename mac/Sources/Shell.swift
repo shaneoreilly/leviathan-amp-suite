@@ -683,10 +683,10 @@ let SETTINGS_INDEX: [SettingsEntry] = [
     ("Audio", "Pitch shifter", "Low lag on chords", "pitchLowLag"), ("Audio", "Tuner", "Reference", "settings:a4"), ("Audio", "Tuner", "Guitar tuning", "settings:tuning"),
     ("MIDI", "Connection", "Devices", "settings:midiDevices"), ("MIDI", "Connection", "Last message", "settings:midiLast"),
     ("MIDI", "Presets", "Program change", "settings:programChange"), ("MIDI", "Assignments", "Assign", "settings:midiAssign"),
-    ("Library", "", "Recordings", "settings:recordings"), ("Library", "", "Recordings folder", "settings:recordingsFolder"),
-    ("Library", "", "NAM captures", "settings:nam"), ("Library", "", "Cab IRs", "settings:cabIRs"), ("Library", "", "Your captures", "settings:captures"),
-    ("Appearance", "", "Theme", "settings:theme"), ("Appearance", "", "Background", "settings:background"),
-    ("Appearance", "", "Accent colour", "settings:accent"), ("Appearance", "", "Zoom", "settings:zoom"), ("Appearance", "", "Explanations", "settings:explain"),
+    ("Library", "Recordings", "Recordings", "settings:recordings"), ("Library", "Recordings", "Recordings folder", "settings:recordingsFolder"),
+    ("Library", "Sounds", "NAM captures", "settings:nam"), ("Library", "Sounds", "Cab IRs", "settings:cabIRs"), ("Library", "Sounds", "Your captures", "settings:captures"),
+    ("Appearance", "Look", "Theme", "settings:theme"), ("Appearance", "Look", "Background", "settings:background"),
+    ("Appearance", "Look", "Accent colour", "settings:accent"), ("Appearance", "Display", "Zoom", "settings:zoom"), ("Appearance", "Display", "Explanations", "settings:explain"),
     ("Appearance", "Messages", "Hidden messages", "settings:hiddenMessages"),
     ("About", "Updates", "Version", "settings:version"), ("About", "Updates", "Automatic", "settings:autoUpdate"),
     ("About", "Feedback", "GitHub", "settings:feedback"), ("About", "Feedback", "Debug log", "settings:debugLog"),
@@ -732,6 +732,7 @@ struct SettingsView: View {
                 ScrollViewReader { scroll in
                     ScrollView {
                         section.font(.inter(size: T(10.5) * UI))   // one body size for labels and controls' text
+                            .buttonStyle(SettingsButtonStyle())        // one plain button look on every page
                             .padding(.horizontal, 36 * Z).padding(.vertical, 28 * Z)
                             .frame(maxWidth: 1000 * Z, alignment: .leading).frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -957,6 +958,7 @@ struct SettingsView: View {
     }
 
     @ViewBuilder var library: some View {
+        SettingsHeading("Recordings", first: true)
         SettingsRow("Recordings", explain: "settings:recordings") {
             Button("Import WAV\u{2026}") { rec.importRecordings(); m.screen = .recordings }
             Button("Open folder") { NSWorkspace.shared.open(Sessions.root) }
@@ -967,6 +969,7 @@ struct SettingsView: View {
             Text(Sessions.chosenMissing ? "\(Sessions.chosen?.path ?? "") (not available: using the default for now)" : Sessions.root.path)
                 .foregroundStyle(Sessions.chosenMissing ? Color.orange : Color.secondary).lineLimit(1).truncationMode(.middle)
         }
+        SettingsHeading("Sounds")
         SettingsRow("NAM captures", explain: "settings:nam") {
             Button("Add\u{2026}") { m.importNam() }
             Button("Open folder") { NSWorkspace.shared.open(NamHost.dir) }
@@ -992,6 +995,7 @@ struct SettingsView: View {
     // MARK: Appearance
 
     @ViewBuilder var appearance: some View {
+        SettingsHeading("Look", first: true)
         SettingsRow("Theme", explain: "settings:theme") {
             Picker("", selection: $m.theme) { Text("Dark").tag("dark"); Text("Light").tag("light") }
                 .pickerStyle(.segmented).labelsHidden().frame(width: 180 * Z)
@@ -1015,6 +1019,7 @@ struct SettingsView: View {
             }
             Button("Follow amp channel") { m.accentRGB = nil }.disabled(m.accentRGB == nil)
         }
+        SettingsHeading("Display")
         SettingsRow("Zoom", explain: "settings:zoom") {
             Button { m.zoomStep(-1) } label: { Image(systemName: "minus") }
             Text("\(Int((m.zoom * 100).rounded()))%").monospacedDigit().frame(width: 56 * Z)
@@ -1089,6 +1094,18 @@ struct SettingsRow<C: View>: View {
             guard let key else { return }
             if inside { HoverHelp.shared.show(id: "settings·" + label, title: label, text: EXPLAIN[key]) } else { HoverHelp.shared.clear(id: "settings·" + label) }
         }
+    }
+}
+
+/// Settings buttons: one plain look on every page (macOS would tint some with the accent and not others).
+struct SettingsButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var enabled
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(PAL.text.opacity(enabled ? 1 : 0.35))
+            .padding(.horizontal, 10).padding(.vertical, 4)
+            .background(RoundedRectangle(cornerRadius: 6).fill(PAL.tint.opacity(configuration.isPressed ? 0.16 : 0.08)))
+            .contentShape(RoundedRectangle(cornerRadius: 6))
     }
 }
 

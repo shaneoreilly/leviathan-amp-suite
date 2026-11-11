@@ -38,6 +38,14 @@ public:
     juce::Font getPopupMenuFont() override { return theme::font(10.5f); }
     juce::Font getTextButtonFont(juce::TextButton&, int) override { return theme::font(10); }
     juce::Font getLabelFont(juce::Label&) override { return theme::font(10); }
+    /// Checkboxes: a tick box and the label at the body size (JUCE's default text is smaller than the rows' labels).
+    void drawToggleButton(juce::Graphics& g, juce::ToggleButton& b, bool over, bool down) override {
+        const float box = 16, y = ((float) b.getHeight() - box) / 2;
+        drawTickBox(g, b, 4, y, box, box, b.getToggleState(), b.isEnabled(), over, down);
+        g.setColour(b.findColour(juce::ToggleButton::textColourId).withMultipliedAlpha(b.isEnabled() ? 1 : 0.5f));
+        g.setFont(theme::font(10.5f));
+        g.drawFittedText(b.getButtonText(), b.getLocalBounds().withTrimmedLeft((int) box + 12), juce::Justification::centredLeft, 2);
+    }
     void drawButtonBackground(juce::Graphics&, juce::Button&, const juce::Colour&, bool over, bool down) override;
     void drawComboBox(juce::Graphics&, int w, int h, bool down, int, int, int, int, juce::ComboBox&) override;
     juce::Colour accent = juce::Colours::red;

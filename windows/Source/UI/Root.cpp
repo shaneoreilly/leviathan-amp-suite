@@ -970,6 +970,7 @@ struct SettingsScreen : Screen_ {
 
         // audio
         audioSel.setLookAndFeel(&selLnf);
+        audioSel.setItemHeight(settingsLayout::rowH - 4);   // device rows as tall as every other settings row
         audio.addAndMakeVisible(audioSel);
         audio.addAndMakeVisible(inputCh); audio.addAndMakeVisible(audioInfo);
         inputCh.onChange = [this] { if (inputCh.getSelectedId() > 0) model.set("inputChannel", inputCh.getSelectedId() - 1); };
@@ -1183,7 +1184,7 @@ struct SettingsScreen : Screen_ {
             lay.heading("Devices");
             const int selW = (int) std::round((ctrlX - labelX) / 0.35);
             audioSel.setBounds(labelX, lay.y - 15, selW, 800);   // it shrinks itself to fit its controls; JUCE starts them 15 px down
-            lay.y += audioSel.getHeight() - 15 - 24 + rowGap;   // JUCE ends its panel with an empty row
+            lay.y += audioSel.getHeight() - 15 - audioSel.getItemHeight() + rowGap;   // JUCE ends its panel with an empty row
             const bool channels = inputCh.getNumItems() > 1;
             inputCh.setVisible(channels);
             if (channels) Group::place(lay.row("Input channel", "inputChannel"), { { &inputCh, 320 } });
@@ -1263,10 +1264,12 @@ struct SettingsScreen : Screen_ {
         // LIBRARY
         {
             Group::Lay lay { lib };
+            lay.heading("Recordings");
             Group::place(lay.row("Recordings", "settings:recordings"), Group::withOpen({ { &importRec, 140 } }, &openRec, 110));
             const int fy = lay.row("Recordings folder", "settings:recordingsFolder");
             const int fx = Group::place(fy, Sessions::chosen != juce::File() ? Group::Items { { &changeRec, 140 }, { &resetRec, 110 } } : Group::Items { { &changeRec, 140 } });
             resetRec.setVisible(Sessions::chosen != juce::File());
+            lay.heading("Sounds");
             const int ny = lay.row("NAM captures", "settings:nam"), nx = Group::place(ny, Group::withOpen({ { &addNam, 80 } }, &openNam, 110, { { &rescanNam, 80 } }));
             const int iy = lay.row("Cab IRs", "settings:cabIRs"), ix = Group::place(iy, Group::withOpen({ { &addIRs, 80 } }, &openIRs, 110, { { &rescanIRs, 80 } }));
             const int cy = lay.row("Your captures", "settings:captures"), cx = Group::place(cy, Group::withOpen({}, &openCap, 110, { { &rescan, 80 } }));
@@ -1290,12 +1293,14 @@ struct SettingsScreen : Screen_ {
         // APPEARANCE
         {
             Group::Lay lay { look };
+            lay.heading("Look");
             Group::place(lay.row("Theme", "settings:theme"), { { &themeDarkB, 80 }, { &themeLightB, 80 } });
             const int by = lay.row("Background", "settings:background");
             Group::place(by, { { &bgSwatch, 52 }, { &bgResetB, 80 } });
             bgResetB.setEnabled((model.themeName == "light" ? model.bgLight : model.bgDark).isNotEmpty());
             const int ay = lay.row("Accent colour", "settings:accent");
             { int sx = ctrlX; for (auto& s : swatchButtons) { s->setBounds(sx, ay + 3, 24, 24); sx += 30; } Group::place(ay, { { &followAmp, 170 } }, sx + 6); }
+            lay.heading("Display");
             const int zy = lay.row("Zoom", "settings:zoom");
             Group::place(zy, { { &zoomMinus, 30 } }); Group::place(zy, { { &zoomPlus, 30 } }, ctrlX + 30 + 68);
             Group::place(lay.row("Explanations", "settings:explain"), { { &explain, 320 } });
