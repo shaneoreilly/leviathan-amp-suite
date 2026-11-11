@@ -83,10 +83,10 @@ struct Sidebar: View {
     var zoomControl: some View {
         VStack(spacing: 2) {
             HStack(spacing: 2) {
-                Button { m.zoomStep(-1) } label: { Image(systemName: "minus").frame(width: 30 * Z, height: 26 * Z) }
+                Button { m.zoomStep(-1) } label: { Image(systemName: "minus").frame(width: 30 * Z, height: 26 * Z).contentShape(Rectangle()) }   // the whole box clicks, not just the glyph
                     .keyboardShortcut("-", modifiers: .command).help("Zoom out (⌘−)")
                     .disabled(m.zoom <= Model.zoomSteps.first! + 0.001)
-                Button { m.zoomStep(1) } label: { Image(systemName: "plus").frame(width: 30 * Z, height: 26 * Z) }
+                Button { m.zoomStep(1) } label: { Image(systemName: "plus").frame(width: 30 * Z, height: 26 * Z).contentShape(Rectangle()) }   // the whole box clicks, not just the glyph
                     .keyboardShortcut("=", modifiers: .command).help("Zoom in (⌘+)")
                     .disabled(m.zoom >= Model.zoomSteps.last! - 0.001)
             }
