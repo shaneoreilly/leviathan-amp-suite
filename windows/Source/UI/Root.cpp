@@ -471,7 +471,7 @@ struct PresetsScreen : Screen_, juce::FileDragAndDropTarget {
     static Columns columns(int w) { const int actions = 450, dw = 170; return { w - actions - 2 * dw, w - actions - dw, dw }; }
     /// Tag chips to narrow the list: tap to filter by a tag (several narrow further), tap again to drop it.
     struct TagBar : juce::Component {
-        explicit TagBar(Model& m) : model(m) {}
+        explicit TagBar(Model& m) : model(m) { setMouseClickGrabsKeyboardFocus(false); }
         juce::StringArray picked; std::function<void()> onChange;
         std::vector<std::pair<juce::String, int>> all;
         std::vector<std::pair<juce::Rectangle<int>, juce::String>> chips;
@@ -1451,6 +1451,9 @@ struct SettingsScreen : Screen_ {
     juce::String section;
     struct Nav : juce::Component {
         explicit Nav(SettingsScreen& o) : owner(o) {
+            // tapping a section must not hand the keyboard to the search box (JUCE focuses the first text box under a
+            // click on a component that doesn't take focus itself; on a phone that raises the keyboard)
+            setMouseClickGrabsKeyboardFocus(false);
             addAndMakeVisible(query);
             query.setTextToShowWhenEmpty("Search settings", theme::secondary);
             query.setFont(theme::font(10.5f)); query.setIndents(30, 0); query.setJustification(juce::Justification::centredLeft);

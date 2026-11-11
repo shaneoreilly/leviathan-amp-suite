@@ -347,6 +347,7 @@ std::unique_ptr<juce::Component> makeButton(Model& m) {
     auto b = std::make_unique<SourceButton>([&m] { return source(currentId(m)); }, [&m] { return name(m, currentId(m)); },
                                             [&m] { return detail(m, currentId(m)); },
                                             [&m](SourceButton& self) { juce::CallOutBox::launchAsynchronously(std::make_unique<Browser>(m), self.getScreenBounds(), nullptr); });
+    b->key = [&m] { return currentId(m) + "|" + m.s().s("irB") + "|" + juce::String(m.s().i("cabModel")); };
     b->setTooltip("Choose a cabinet");
     return b;
 }

@@ -54,11 +54,14 @@ SourceButton::SourceButton(std::function<juce::String()> b, std::function<juce::
 }
 
 void SourceButton::paint(juce::Graphics& g) {
+    if (const auto k = key ? key() : juce::String(); !cached || !key || k != shownKey) {
+        shownKey = k; shownBadge = badge(); shownName = name(); shownDetail = detail(); cached = true;
+    }
     auto r = getLocalBounds().toFloat().reduced(0.5f);
     g.setColour(theme::tint.withAlpha(0.06f)); g.fillRoundedRectangle(r, 7);
     g.setColour(theme::tint.withAlpha(0.1f)); g.drawRoundedRectangle(r, 7, 1);
     auto in = getLocalBounds().reduced(8, 3);
-    const auto bdg = badge();
+    const auto& bdg = shownBadge;
     const int bw = juce::GlyphArrangement::getStringWidthInt(theme::font(9, true), bdg) + 10;
     const auto br = in.removeFromLeft(bw).withSizeKeepingCentre(bw, 18);
     g.setColour(theme::tint.withAlpha(0.08f)); g.fillRoundedRectangle(br.toFloat(), 4);
@@ -67,12 +70,14 @@ void SourceButton::paint(juce::Graphics& g) {
     const auto chev = in.removeFromRight(14);
     g.strokePath(IconButton::pathFor(IconButton::chevronDown, chev.toFloat().withSizeKeepingCentre(10, 10)), juce::PathStrokeType(1.5f));
     g.setColour(theme::text); g.setFont(theme::font(10.5f, true));
-    g.drawText(name(), in.removeFromTop(in.getHeight() / 2), juce::Justification::bottomLeft, true);
+    g.drawText(shownName, in.removeFromTop(in.getHeight() / 2), juce::Justification::bottomLeft, true);
     g.setColour(theme::secondary); g.setFont(theme::font(9));
-    g.drawText(detail(), in, juce::Justification::topLeft, true);
+    g.drawText(shownDetail, in, juce::Justification::topLeft, true);
 }
 
-void SourceButton::mouseUp(const juce::MouseEvent& e) { if (getLocalBounds().contains(e.getPosition()) && onOpen) onOpen(*this); }
+void SourceButton::mouseUp(const juce::MouseEvent& e) {   // a tap, not the end of a scroll that ended on it
+    if (getLocalBounds().contains(e.getPosition()) && !e.mouseWasDraggedSinceMouseDown() && onOpen) onOpen(*this);
+}
 
 // MARK: - look and feel
 

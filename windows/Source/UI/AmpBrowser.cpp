@@ -143,6 +143,7 @@ std::unique_ptr<juce::Component> makeButton(Model& m, bool second) {
                                             [&m, second] { return detail(m, currentId(m, second), second); },
                                             [&m, second](SourceButton& self) { juce::CallOutBox::launchAsynchronously(std::make_unique<Browser>(m, second), self.getScreenBounds(), nullptr); },
                                             150);   // narrow panels; adding captures is in the browser
+    b->key = [&m, second] { return currentId(m, second) + "|" + juce::String(m.namFiles.size()); };
     b->setTooltip(second ? "Choose a second amp" : "Choose an amp");
     return b;
 }

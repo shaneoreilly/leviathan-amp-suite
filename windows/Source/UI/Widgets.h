@@ -161,6 +161,13 @@ public:
     void mouseUp(const juce::MouseEvent&) override;
     std::function<juce::String()> badge, name, detail;
     std::function<void(SourceButton&)> onOpen;
+    /// What the texts depend on (the selected amp or cab). They are worked out again only when it changes, not on every
+    /// paint: scrolling the rig repaints this button every frame, and finding a God's Cab IR or tidying a NAM file's
+    /// name each time made scrolling stutter on phones.
+    std::function<juce::String()> key;
+private:
+    juce::String shownKey, shownBadge, shownName, shownDetail;
+    bool cached = false;
 };
 
 /// A flat on/off switch: a plain track and a plain dot, no label (instead of a checkbox).
