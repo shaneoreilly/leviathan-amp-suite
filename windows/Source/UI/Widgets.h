@@ -182,6 +182,8 @@ public:
     /// Size at the panel's preferred layout; expanded = as if open, even while folded (the grid uses it so a collapse moves nothing).
     juce::Point<int> idealSize(bool expanded = false) const;
     bool folded() const { return model.collapsed.contains(title); }
+    /// Content at the top instead of on the bottom (AMP, AMP B, CABINET: their pickers line up along the top).
+    bool alignTop = false;
     void paint(juce::Graphics&) override;
     void resized() override;
     void paintOverChildren(juce::Graphics&) override;

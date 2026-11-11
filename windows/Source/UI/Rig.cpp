@@ -342,6 +342,7 @@ std::unique_ptr<UnitBox> RigView::makePanel(const juce::String& id) {
             c->add(std::move(r));
         }
         box = std::make_unique<UnitBox>(m, "AMP", std::move(c), "ampOn", "panel:amp");
+        box->alignTop = true;
     } else if (id == "master") {
         auto c = col(8);
         const auto outs = m.outputDeviceNames();
@@ -411,6 +412,7 @@ std::unique_ptr<UnitBox> RigView::makePanel(const juce::String& id) {
         c->add(std::make_unique<MinSize>(block(kind), blockMax, false));
         c->add(std::make_unique<MinSize>(knobs(kind), knobsMax, true));
         box = std::make_unique<UnitBox>(m, "CABINET", std::move(c), "cabOn", "panel:cab");
+        box->alignTop = true;
     } else if (id == "eq") {
         static const char* freqs[] = { "80", "160", "320", "640", "1.2k", "2.5k", "5k", "10k" };
         auto r = row(6);
@@ -457,6 +459,7 @@ std::unique_ptr<UnitBox> RigView::makePanel(const juce::String& id) {
         r->add(knob("Spread", "ampBSpread", 0, 1, 1, pct, "AMP B"));
         c->add(std::move(r));
         box = std::make_unique<UnitBox>(m, "AMP B", std::move(c), "ampBOn", "panel:ampb");
+        box->alignTop = true;
     } else if (id == "doubler") {
         auto r = row();
         r->add(knob("Width", "doublerWidth", 0, 1, 0.6, pct, "DOUBLER"));

@@ -1513,6 +1513,8 @@ struct UnitBox<Content: View>: View {
     var color: Color = .accentColor
     var trailing: AnyView? = nil
     var leading: AnyView? = nil
+    /// Content at the top instead of on the bottom (AMP, AMP B, CABINET: their pickers line up along the top).
+    var alignTop = false
     @ViewBuilder let content: Content
 
     var body: some View {
@@ -1536,7 +1538,7 @@ struct UnitBox<Content: View>: View {
             }
             if !folded {
                 content.opacity(on?.wrappedValue == false ? 0.4 : 1).environment(\.midiScope, title)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)   // centred across, sitting on the bottom so knob rows line up
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignTop ? .top : .bottom)   // centred across, sitting on the bottom so knob rows line up
                     .padding(.top, 10)
             } else {
                 // Folded: the content stays in the layout, hidden and squeezable to zero height. GridFlow measures the
@@ -1968,7 +1970,7 @@ struct ContentView: View {
     }
 
     var amp: some View {
-        UnitBox(title: "AMP", on: $m.s.ampOn, onKey: "ampOn", color: ch) {
+        UnitBox(title: "AMP", on: $m.s.ampOn, onKey: "ampOn", color: ch, alignTop: true) {
             VStack(alignment: .center, spacing: 10) {
                 AmpPicker(secondAmp: false)
                 if !m.s.nam.isEmpty {
@@ -2039,7 +2041,7 @@ struct ContentView: View {
 
     var cab: some View {
         let lib = m.s.cabModel == CAB_LIB
-        return UnitBox(title: "CABINET", on: $m.s.cabOn, onKey: "cabOn", color: ch) {
+        return UnitBox(title: "CABINET", on: $m.s.cabOn, onKey: "cabOn", color: ch, alignTop: true) {
             VStack(alignment: .center, spacing: 8) {
                 CabPicker()
                 // two rows (cut and level, then the shape of the cab) keep the panel narrow
@@ -2068,7 +2070,7 @@ struct ContentView: View {
 
     /// A second amp (any NAM capture) fed by the same pedals; Spread puts amp A left and amp B right.
     var ampB: some View {
-        return UnitBox(title: "AMP B", on: $m.s.ampBOn, onKey: "ampBOn", color: ch) {
+        return UnitBox(title: "AMP B", on: $m.s.ampBOn, onKey: "ampBOn", color: ch, alignTop: true) {
             VStack(spacing: 8) {
                 AmpPicker(secondAmp: true).explain("panel:ampb", "Amp B")
                 HStack(spacing: 2) {

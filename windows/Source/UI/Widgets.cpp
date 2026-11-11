@@ -492,7 +492,7 @@ void UnitBox::resized() {
         // centred across, sitting on the bottom so knob rows in a grid row line up
         const auto p = pref(*content);
         const auto area = juce::Rectangle<int>(pad, pad + headerH + gapAfterHeader, getWidth() - 2 * pad, getHeight() - 2 * pad - headerH - gapAfterHeader);
-        content->setBounds(area.getX() + (area.getWidth() - p.x) / 2, area.getBottom() - p.y, p.x, p.y);
+        content->setBounds(area.getX() + (area.getWidth() - p.x) / 2, alignTop ? area.getY() : area.getBottom() - p.y, p.x, p.y);
     }
 }
 
