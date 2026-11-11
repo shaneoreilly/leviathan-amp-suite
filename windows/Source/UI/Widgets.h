@@ -12,6 +12,8 @@ const juce::Colour bg { 0xff0d0d0d }, bar { 0xff121212 }, panel { 0xff161616 }, 
                    knobFace { 0xff262626 }, knobTrack { 0xff383838 }, text { 0xffeeeeee }, secondary { 0xff9a9a9a };
 /// SwiftUI point size -> JUCE font (SwiftUI's 1.5x text scale, JUCE heights include line spacing).
 juce::Font font(float pt, bool bold = false, float tracking = 0);
+/// A design size snapped to the type scale (9, 10.5, 12, 13, 16, 22; larger sizes unchanged).
+float snap(float pt);
 constexpr float UI = 1.5f, W = 1.4f;
 }
 
@@ -20,6 +22,11 @@ public:
     LookAndFeel();
     void setAccent(juce::Colour c);
     juce::Font getComboBoxFont(juce::ComboBox&) override { return theme::font(10.5f); }
+    /// Never squeeze a combo box's text narrower (JUCE's default): too long ends in "..." instead.
+    void positionComboBoxText(juce::ComboBox& box, juce::Label& label) override {
+        juce::LookAndFeel_V4::positionComboBoxText(box, label);
+        label.setMinimumHorizontalScale(1.0f);
+    }
     juce::Font getPopupMenuFont() override { return theme::font(10.5f); }
     juce::Font getTextButtonFont(juce::TextButton&, int) override { return theme::font(10); }
     juce::Font getLabelFont(juce::Label&) override { return theme::font(10); }

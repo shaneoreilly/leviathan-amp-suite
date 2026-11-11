@@ -90,13 +90,13 @@ struct MarkdownView: View {
         .textSelection(.enabled)
     }
 
-    private var body13: Font { .system(size: 13 * UI) }
+    private var body13: Font { .inter(size: T(13) * UI) }
 
     @ViewBuilder private func block(_ b: MDBlock, first: Bool) -> some View {
         switch b {
         case .heading(let level, let s):
             Text(Markdown.inline(s))
-                .font(.system(size: (level == 1 ? 18 : level == 2 ? 15 : 13) * UI, weight: .semibold))
+                .font(.inter(size: (level == 1 ? T(22) : level == 2 ? T(16) : T(13)) * UI, weight: .semibold))
                 .padding(.top, first ? 0 : (level == 1 ? 16 : 8) * Z)
                 .fixedSize(horizontal: false, vertical: true)
         case .para(let s):
@@ -110,7 +110,7 @@ struct MarkdownView: View {
         case .row(let cells, let header):
             HStack(alignment: .firstTextBaseline, spacing: 12 * Z) {
                 ForEach(cells.indices, id: \.self) { i in
-                    Text(Markdown.inline(cells[i])).font(.system(size: 13 * UI, weight: header ? .semibold : .regular))
+                    Text(Markdown.inline(cells[i])).font(.inter(size: T(13) * UI, weight: header ? .semibold : .regular))
                         .frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -121,7 +121,7 @@ struct MarkdownView: View {
         case .rule:
             Rectangle().fill(line).frame(height: 1).padding(.vertical, 4 * Z)
         case .quote(let s):
-            Text(Markdown.inline(s)).font(.system(size: 11 * UI)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Text(Markdown.inline(s)).font(.inter(size: T(11) * UI)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }
 }

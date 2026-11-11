@@ -248,7 +248,7 @@ struct MidiLearnOverlay: View {
             .overlay(shape.stroke(stroke, style: style))
             .overlay {
                 Text(label)
-                    .font(.system(size: 9 * UI, weight: .bold)).multilineTextAlignment(.center)
+                    .font(.inter(size: T(9) * UI, weight: .bold)).multilineTextAlignment(.center)
                     .padding(2).background(Color.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 3))
                     .opacity(showLabel ? 1 : 0)
             }
@@ -272,7 +272,7 @@ struct MidiLearnBanner: View {
             if midi.sources.isEmpty { Text("No MIDI devices connected").foregroundStyle(.orange) }
             Button("Done") { midi.learning = false }.keyboardShortcut(.escape, modifiers: [])
         }
-        .font(.system(size: 12 * UI))
+        .font(.inter(size: T(12) * UI))
         .padding(10)
         .background(Color.accentColor.opacity(0.18))
     }

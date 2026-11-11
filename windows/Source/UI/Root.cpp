@@ -39,7 +39,7 @@ void boxBackground(juce::Graphics& g, juce::Rectangle<float> r, float radius = 1
 // MARK: - sidebar
 
 struct Sidebar : juce::Component {
-    explicit Sidebar(Model& m) : model(m), minus(IconButton::minus, [&m] { m.zoomStep(-1); }, 12), plus(IconButton::plus, [&m] { m.zoomStep(1); }, 12) {
+    explicit Sidebar(Model& m) : model(m), minus(IconButton::minus, [&m] { m.zoomStep(-1); }, onAndroid ? 18 : 12), plus(IconButton::plus, [&m] { m.zoomStep(1); }, onAndroid ? 18 : 12) {
         addAndMakeVisible(minus); addAndMakeVisible(plus);
         minus.setTooltip(juce::String::fromUTF8("Zoom out (Ctrl \xe2\x88\x92)")); plus.setTooltip("Zoom in (Ctrl +)");
     }
@@ -47,7 +47,19 @@ struct Sidebar : juce::Component {
     const Item items[3] = { { Screen::rig, "Rig" }, { Screen::presets, "Presets" }, { Screen::recordings, "Recordings" } };
     juce::Rectangle<int> itemRect(int i) const { return { 6, 10 + i * 74, getWidth() - 12, 70 }; }
     juce::Rectangle<int> settingsRect() const { return { 6, getHeight() - 80, getWidth() - 12, 70 }; }
-    void resized() override { minus.setBounds(getWidth() / 2 - 32, getHeight() - 140, 30, 26); plus.setBounds(getWidth() / 2 + 2, getHeight() - 140, 30, 26); }
+    // Zoom: side by side on a computer; on a phone a column of finger-sized buttons (+ on top, then the %, then -)
+    juce::Rectangle<int> zoomLabelRect() const {
+        return onAndroid ? juce::Rectangle<int>(0, getHeight() - 88 - 48 - 24, getWidth(), 24) : juce::Rectangle<int>(0, getHeight() - 110, getWidth(), 18);
+    }
+    void resized() override {
+        if (onAndroid) {
+            const auto l = zoomLabelRect();
+            plus.setBounds(getWidth() / 2 - 26, l.getY() - 48, 52, 48);
+            minus.setBounds(getWidth() / 2 - 26, l.getBottom(), 52, 48);
+        } else {
+            minus.setBounds(getWidth() / 2 - 32, getHeight() - 140, 30, 26); plus.setBounds(getWidth() / 2 + 2, getHeight() - 140, 30, 26);
+        }
+    }
     void drawItem(juce::Graphics& g, juce::Rectangle<int> r, Screen s, const juce::String& label, bool badge) {
         const bool on = model.screen == s;
         if (on) { g.setColour(juce::Colours::white.withAlpha(0.07f)); g.fillRoundedRectangle(r.toFloat(), 10); }
@@ -69,13 +81,17 @@ struct Sidebar : juce::Component {
         g.setColour(theme::line); g.fillRect(getWidth() - 1, 0, 1, getHeight());
         for (int i = 0; i < 3; ++i) drawItem(g, itemRect(i), items[i].s, items[i].label, items[i].s == Screen::recordings && model.sessions->recording);
         drawItem(g, settingsRect(), Screen::settings, "Settings", model.updater->phase == Updater::Phase::available);
+        if (onAndroid) {   // finger-sized buttons need to look like buttons
+            g.setColour(theme::panel2);
+            for (auto* b : { &plus, &minus }) g.fillRoundedRectangle(b->getBounds().toFloat().reduced(2), 10);
+        }
         g.setColour(theme::secondary); g.setFont(theme::font(9));
-        g.drawText(juce::String(juce::roundToInt(model.zoom * 100)) + "%", 0, getHeight() - 110, getWidth(), 18, juce::Justification::centred);
+        g.drawText(juce::String(juce::roundToInt(model.zoom * 100)) + "%", zoomLabelRect(), juce::Justification::centred);
     }
     void mouseUp(const juce::MouseEvent& e) override {
         for (int i = 0; i < 3; ++i) if (itemRect(i).contains(e.getPosition())) model.setScreen(items[i].s);
         if (settingsRect().contains(e.getPosition())) model.setScreen(Screen::settings);
-        if (juce::Rectangle<int>(0, getHeight() - 112, getWidth(), 22).contains(e.getPosition())) model.setZoom(1.0);
+        if (zoomLabelRect().expanded(0, 2).contains(e.getPosition())) model.setZoom(1.0);
     }
     Model& model; IconButton minus, plus;
 };
@@ -747,12 +763,16 @@ struct Group : juce::Component {
     void clearLayout() { rows.clear(); heads.clear(); rules.clear(); }
     void paint(juce::Graphics& g) override {
         using namespace settingsLayout;
-        boxBackground(g, getLocalBounds().toFloat());
-        g.setColour(theme::text); g.setFont(theme::font(16, true)); g.drawText(title, labelX, 16, 400, 30, juce::Justification::centredLeft);
+        for (auto& r : rows)   // the row a search result pointed at
+            if (highlight.isNotEmpty() && r.label == highlight) {
+                g.setColour(model.accent().withAlpha(0.18f));
+                g.fillRoundedRectangle(juce::Rectangle<int>(labelX - 8, r.y - 3, getWidth() - 2 * labelX + 16, std::min(r.h, rowH) + 6).toFloat(), 7);
+            }
+        g.setColour(theme::text); g.setFont(theme::font(22, true)); g.drawText(title, labelX, 8, 400, 40, juce::Justification::centredLeft);
         g.setColour(theme::line); for (int y : rules) g.fillRect(labelX, y, getWidth() - 2 * labelX, 1);
         g.setColour(theme::secondary); g.setFont(theme::font(9, true, 1.2f));
         for (auto& [y, t] : heads) g.drawText(t.toUpperCase(), labelX, y, 400, 18, juce::Justification::centredLeft);
-        g.setFont(theme::font(11));
+        g.setFont(theme::font(10.5f));
         for (auto& r : rows) if (r.label.isNotEmpty()) g.drawText(r.label, labelX, r.y, labelW, std::min(r.h, rowH), juce::Justification::centredLeft);
         if (extra) extra(g);
     }
@@ -810,6 +830,13 @@ struct Group : juce::Component {
     std::vector<int> rules;
     std::function<void(juce::Graphics&)> extra;   // values painted next to the controls
     std::function<void()> onHover;
+    juce::String highlight;   // a row's label, briefly, after a search jumped to it
+    /// The heading a row sits under ("" before the first heading).
+    juce::String headingFor(int y) const {
+        juce::String h;
+        for (auto& [hy, t] : heads) if (hy <= y) h = t;
+        return h;
+    }
 };
 
 /// JUCE's device panel draws its own labels right-aligned beside each control; this hides them so the section paints
@@ -998,6 +1025,7 @@ struct SettingsScreen : Screen_ {
             for (auto& mp : m.midi->maps) { auto r = std::make_unique<MapRow>(m, mp); mid.addAndMakeVisible(*r); mapRows.push_back(std::move(r)); }
         }
         selLnf.setAccent(m.accent());
+        nav.query.setColour(juce::TextEditor::focusedOutlineColourId, m.accent());
         inputCh.setSelectedId(m.s().i("inputChannel") + 1, juce::dontSendNotification);
         a4.setValue(m.a4, juce::dontSendNotification);
         namCalT.setToggleState(m.namCalibrate, juce::dontSendNotification);
@@ -1014,18 +1042,17 @@ struct SettingsScreen : Screen_ {
         for (auto* g : groups()) g->repaint();
     }
     /// Nav and content as one block, centred on wide windows instead of hugging the sidebar.
-    juce::Rectangle<int> block() const {
-        const int bw = std::min(getWidth() - 48, 1240);
-        return { (getWidth() - bw) / 2, 18, bw, getHeight() - 36 - (strip.isVisible() ? 44 : 0) };
-    }
+    /// The section menu sits against the app's sidebar, a quarter of the width; the section fills the rest.
+    juce::Rectangle<int> block() const { return { 0, 0, getWidth(), getHeight() - (strip.isVisible() ? 44 : 0) }; }
+    int navWidth() const { return juce::jlimit(220, 320, getWidth() / 4); }
     void resized() override {
         using namespace settingsLayout;
         strip.setVisible(model.explainOnHover);
         if (strip.isVisible()) strip.setBounds(getLocalBounds().removeFromBottom(44));
         const auto b = block();
-        nav.setBounds(b.getX(), b.getY(), navW, b.getHeight());
-        viewport.setBounds(b.getX() + navW + 12, 0, b.getWidth() - navW - 12, b.getBottom() + 18);
-        const int w = std::min(viewport.getMaximumVisibleWidth() - 48, 1000), x = 24;
+        nav.setBounds(b.getX(), b.getY(), navWidth(), b.getHeight());
+        viewport.setBounds(nav.getRight(), b.getY(), b.getWidth() - nav.getWidth(), b.getHeight());
+        const int w = std::min(viewport.getMaximumVisibleWidth() - 56, 1000), x = 28;
         for (auto* g : groups()) { g->clearLayout(); g->setVisible(g->title == section); }
         auto fit = [&](Group& g, const Group::Lay& lay) { g.setBounds(x, 24, w, lay.end()); };
 
@@ -1198,9 +1225,41 @@ struct SettingsScreen : Screen_ {
         inner.setSize(viewport.getMaximumVisibleWidth(), shownBottom + 24);
     }
     void paint(juce::Graphics& g) override {
-        const auto r = nav.getBounds().toFloat().reduced(0.5f);
-        g.setColour(theme::bar); g.fillRoundedRectangle(r, 12);
-        g.setColour(theme::line); g.drawRoundedRectangle(r, 12, 1);
+        g.setColour(theme::line); g.fillRect(nav.getRight() - 1, nav.getY(), 1, nav.getHeight());
+    }
+    /// Search: every laid-out row (all sections are laid out, only one shown), matched on its label, heading, section
+    /// and hover explanation, label matches first. Same index and ranking as the Mac app's searchSettings.
+    struct Hit { juce::String section, heading, label; };
+    std::vector<Hit> search(const juce::String& query) {
+        juce::StringArray words; words.addTokens(query.toLowerCase(), " ", ""); words.removeEmptyStrings();
+        std::vector<Hit> first, rest;
+        if (words.isEmpty()) return first;
+        for (auto* g : groups())
+            for (auto& r : g->rows) {
+                if (r.label.isEmpty() || r.key.isEmpty() || r.label == "Now") continue;
+                const auto head = g->headingFor(r.y);
+                const auto all = (r.label + " " + head + " " + g->title + " " + Model::explain(r.key)).toLowerCase();
+                bool hit = true, inLabel = true;
+                for (auto& w : words) { hit = hit && all.contains(w); inLabel = inLabel && r.label.toLowerCase().contains(w); }
+                if (!hit) continue;
+                bool dup = false;   // one result per label in a section (e.g. two "Now" rows)
+                for (auto* v : { &first, &rest }) for (auto& h : *v) dup = dup || (h.section == g->title && h.label == r.label);
+                if (!dup) (inLabel ? first : rest).push_back({ g->title, head, r.label });
+            }
+        first.insert(first.end(), rest.begin(), rest.end());
+        return first;
+    }
+    void go(const Hit& h) {
+        section = h.section; model.props().setValue("settingsSection", h.section);
+        nav.query.clear(); nav.refreshResults();
+        resized(); repaint(); nav.repaint();
+        for (auto* g : groups())
+            if (g->title == h.section) {
+                g->highlight = h.label; g->repaint();
+                for (auto& r : g->rows) if (r.label == h.label) viewport.setViewPosition(0, std::max(0, g->getY() + r.y - viewport.getHeight() / 3));
+                juce::Component::SafePointer<Group> sg(g); const auto label = h.label;
+                juce::Timer::callAfterDelay(2500, [sg, label] { if (sg && sg->highlight == label) { sg->highlight.clear(); sg->repaint(); } });
+            }
     }
 
     void chooseRecordingsFolder() {
@@ -1243,22 +1302,53 @@ struct SettingsScreen : Screen_ {
     }
 
     /// Left-hand navigation (same sections as the Mac app); the last one opened is remembered.
-    static constexpr int navW = 220;
     juce::String section;
     struct Nav : juce::Component {
-        explicit Nav(SettingsScreen& o) : owner(o) {}
+        explicit Nav(SettingsScreen& o) : owner(o) {
+            addAndMakeVisible(query);
+            query.setTextToShowWhenEmpty("Search settings", theme::secondary);
+            query.setFont(theme::font(10.5f)); query.setIndents(30, 0); query.setJustification(juce::Justification::centredLeft);
+            query.setColour(juce::TextEditor::backgroundColourId, juce::Colours::white.withAlpha(0.06f));
+            query.setColour(juce::TextEditor::outlineColourId, theme::line);
+            query.onTextChange = [this] { refreshResults(); };
+            query.onReturnKey = [this] { if (!results.empty()) owner.go(results.front()); };
+            query.onEscapeKey = [this] { query.clear(); refreshResults(); };
+        }
         static constexpr const char* items[] = { "Audio", "MIDI", "Library", "Appearance", "About" };
         std::vector<std::pair<juce::Rectangle<int>, juce::String>> rows;
+        juce::TextEditor query;
+        std::vector<SettingsScreen::Hit> results;
+        std::vector<juce::Rectangle<int>> resultRects;
+        void refreshResults() { results = owner.search(query.getText()); repaint(); }
+        void resized() override { query.setBounds(14, 46, getWidth() - 28, 34); }
         void paint(juce::Graphics& g) override {
             g.fillAll(theme::bar);
-            drawSectionTitle(g, "SETTINGS", { 24, 12, 180, 28 });
-            rows.clear();
-            int y = 52;
+            drawSectionTitle(g, "SETTINGS", { 24, 10, 180, 28 });
+            {   // magnifier inside the search box
+                const auto q = query.getBounds().toFloat();
+                const float cx = q.getX() + 15, cy = q.getCentreY() - 1;
+                juce::Path p; p.addEllipse(cx - 5, cy - 5, 10, 10); p.startNewSubPath(cx + 3.5f, cy + 3.5f); p.lineTo(cx + 7, cy + 7);
+                g.setColour(theme::secondary); g.strokePath(p, juce::PathStrokeType(1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            }
+            rows.clear(); resultRects.clear();
+            int y = query.getBottom() + 14;
+            if (query.getText().isNotEmpty()) {
+                if (results.empty()) { g.setColour(theme::secondary); g.setFont(theme::font(10.5f)); g.drawText("No settings match.", 26, y, getWidth() - 40, 24, juce::Justification::centredLeft); }
+                for (auto& h : results) {
+                    const juce::Rectangle<int> r(14, y, getWidth() - 28, 40);
+                    g.setColour(theme::text); g.setFont(theme::font(10.5f)); g.drawText(h.label, r.withTrimmedLeft(12).removeFromTop(22), juce::Justification::bottomLeft);
+                    g.setColour(theme::secondary); g.setFont(theme::font(9));
+                    g.drawText(h.heading.isEmpty() ? h.section : h.section + juce::String::fromUTF8(" \xe2\x80\xba ") + h.heading,
+                               r.withTrimmedLeft(12).withTrimmedTop(22), juce::Justification::topLeft);
+                    resultRects.push_back(r); y += 42;
+                }
+                return;
+            }
             for (const auto* it : items) {
                 const juce::Rectangle<int> r(14, y, getWidth() - 28, 32);
                 const bool on = owner.section == it;
                 if (on) { g.setColour(juce::Colours::white.withAlpha(0.08f)); g.fillRoundedRectangle(r.toFloat(), 7); }
-                g.setColour(on ? owner.model.accent() : theme::text); g.setFont(theme::font(11));
+                g.setColour(on ? owner.model.accent() : theme::text); g.setFont(theme::font(10.5f));
                 g.drawText(it, r.withTrimmedLeft(12), juce::Justification::centredLeft);
                 if (juce::String(it) == "About" && owner.model.updater->phase == Updater::Phase::available) {
                     g.setColour(juce::Colours::red); g.fillEllipse((float) r.getRight() - 18, (float) r.getCentreY() - 4, 8, 8);
@@ -1267,6 +1357,8 @@ struct SettingsScreen : Screen_ {
             }
         }
         void mouseUp(const juce::MouseEvent& e) override {
+            for (size_t i = 0; i < resultRects.size() && i < results.size(); ++i)
+                if (resultRects[i].contains(e.getPosition())) { const auto h = results[i]; owner.go(h); return; }
             for (auto& [r, n] : rows) if (r.contains(e.getPosition())) {
                 owner.section = n; owner.model.props().setValue("settingsSection", n);
                 owner.resized(); owner.repaint(); repaint();

@@ -1321,6 +1321,27 @@ func resample(_ x: [Float], from: Double, to: Double) -> [Float] {
 /// the whole tree when it changes, so everything reflows at the new size instead of being bitmap-scaled.
 var Z: CGFloat = CGFloat(UserDefaults.standard.object(forKey: "zoom") as? Double ?? 1)
 var UI: CGFloat { 1.5 * Z }
+
+/// Type: Inter everywhere (bundled, Info.plist ATSApplicationFontsPath), on one fixed scale so sizes stay
+/// consistent. T() snaps a design size to the scale; multiply by UI as before. Same scale as theme::font (JUCE).
+let TYPE_SCALE: [CGFloat] = [9, 10.5, 12, 13, 16, 22]
+func T(_ pt: CGFloat) -> CGFloat {
+    if pt > 24 { return pt }   // display sizes (logo, tuner note) are their own
+    return TYPE_SCALE.min(by: { abs($0 - pt) < abs($1 - pt) || (abs($0 - pt) == abs($1 - pt) && $0 > $1) })!
+}
+extension Font {
+    static func inter(size: CGFloat, weight: Font.Weight = .regular) -> Font {
+        let name: String
+        switch weight {
+        case .heavy, .black: name = "Inter-ExtraBold"
+        case .bold: name = "Inter-Bold"
+        case .semibold: name = "Inter-SemiBold"
+        case .medium: name = "Inter-Medium"
+        default: name = "Inter-Regular"
+        }
+        return .custom(name, fixedSize: size).monospacedDigit()
+    }
+}
 var W: CGFloat { 1.4 * Z }
 
 let channelColors: [Color] = [Color(red: 0.35, green: 0.7, blue: 1), Color(red: 0.91, green: 0.57, blue: 0.23), Color(red: 1, green: 0.3, blue: 0.3)]
@@ -1370,10 +1391,10 @@ struct Knob: View {
             }
             .help("Drag or scroll · Shift = fine · double-click resets")
             .overlay { if let key { MidiLearnOverlay(armed: MidiArmed(key: key, name: "\(scope) · \(label)", lo: range.lowerBound, hi: range.upperBound, toggle: false)) } }
-            Text(fmt(value)).font(.system(size: 11 * UI).monospacedDigit())
-            Text(label.uppercased()).font(.system(size: 9 * UI, weight: .semibold)).foregroundStyle(.secondary).tracking(0.6)
+            Text(fmt(value)).font(.inter(size: T(11) * UI).monospacedDigit())
+            Text(label.uppercased()).font(.inter(size: T(9) * UI, weight: .semibold)).foregroundStyle(.secondary).tracking(0.6)
             Button { value = def } label: {
-                Image(systemName: "arrow.counterclockwise").font(.system(size: 9 * UI, weight: .semibold))
+                Image(systemName: "arrow.counterclockwise").font(.inter(size: T(9) * UI, weight: .semibold))
                     .frame(width: 22 * Z, height: 14 * Z).contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -1399,7 +1420,7 @@ struct Footswitch: View {
                     Text("OFF").hidden()
                     Text(on ? "ON" : "OFF")
                 }
-                .font(.system(size: 9 * UI, weight: .bold)).tracking(1)
+                .font(.inter(size: T(9) * UI, weight: .bold)).tracking(1)
             }
             .fixedSize()
             .padding(.horizontal, 6).padding(.vertical, 3)
@@ -1437,7 +1458,7 @@ struct UnitBox<Content: View>: View {
                     Grip().onDrag { drag.panel = panelID; return NSItemProvider(object: panelID as NSString) }
                 }
                 leading
-                Text(title).font(.system(size: 10 * UI, weight: .bold)).tracking(2).foregroundStyle(.secondary)
+                Text(title).font(.inter(size: T(10) * UI, weight: .bold)).tracking(2).foregroundStyle(.secondary)
                 trailing
                 Spacer(minLength: 8)
                 if let on { Footswitch(on: on, color: color, key: onKey, name: title) }
@@ -1523,8 +1544,8 @@ struct LevelMeters: View {
     @ObservedObject var mt: Meters
     var body: some View {
         VStack(alignment: .trailing, spacing: 3) {
-            HStack(spacing: 4) { Text("IN").font(.system(size: 9 * UI)).foregroundStyle(.secondary); Meter(level: mt.inLevel) }
-            HStack(spacing: 4) { Text("OUT").font(.system(size: 9 * UI)).foregroundStyle(.secondary); Meter(level: mt.outLevel) }
+            HStack(spacing: 4) { Text("IN").font(.inter(size: T(9) * UI)).foregroundStyle(.secondary); Meter(level: mt.inLevel) }
+            HStack(spacing: 4) { Text("OUT").font(.inter(size: T(9) * UI)).foregroundStyle(.secondary); Meter(level: mt.outLevel) }
         }
     }
 }
@@ -1538,7 +1559,7 @@ struct PitchLatency: View {
     @ObservedObject var mt: Meters
     var body: some View {
         Text(mt.pitchLatency > 0 ? String(format: "+%.0f ms", mt.pitchLatency) : "")
-            .font(.system(size: 10 * UI).monospacedDigit()).foregroundStyle(.secondary)
+            .font(.inter(size: T(10) * UI).monospacedDigit()).foregroundStyle(.secondary)
     }
 }
 
@@ -1603,7 +1624,7 @@ struct CollapseChevron: View {
         let folded = m.collapsed.contains(key)
         Button { withAnimation(.easeOut(duration: 0.15)) { m.toggleCollapsed(key) } } label: {
             Image(systemName: "chevron.right").rotationEffect(.degrees(folded ? 0 : 90))
-                .font(.system(size: 9 * UI, weight: .bold)).foregroundStyle(.secondary).frame(width: 12 * Z, height: 12 * Z).contentShape(Rectangle())
+                .font(.inter(size: T(9) * UI, weight: .bold)).foregroundStyle(.secondary).frame(width: 12 * Z, height: 12 * Z).contentShape(Rectangle())
         }
         .buttonStyle(.plain).help(folded ? "Expand" : "Collapse")
     }
@@ -1664,7 +1685,7 @@ struct ContentView: View {
                 Spacer()
                 Toggle("Mute while tuning", isOn: $m.tunerMute)
             }
-            Text(m.tunerNote).font(.system(size: 64 * UI, weight: .heavy)).foregroundStyle(inTune ? Color.green : .primary)
+            Text(m.tunerNote).font(.inter(size: T(64) * UI, weight: .heavy)).foregroundStyle(inTune ? Color.green : .primary)
             GeometryReader { g in
                 ZStack {
                     LinearGradient(colors: [.red.opacity(0.4), Color(white: 0.2), .green.opacity(0.5), Color(white: 0.2), .red.opacity(0.4)],
@@ -1678,11 +1699,11 @@ struct ContentView: View {
             }
             .frame(width: 420 * Z, height: 18 * Z)
             Text(m.tunerFreq > 0 ? String(format: "%.1f Hz · %+.0f ¢", m.tunerFreq, m.tunerCents) : "play one string")
-                .font(.system(size: 12 * UI).monospacedDigit()).foregroundStyle(.secondary)
+                .font(.inter(size: T(12) * UI).monospacedDigit()).foregroundStyle(.secondary)
             HStack(spacing: 8) {
                 ForEach(Array(t.strings.enumerated()), id: \.offset) { i, n in
                     Text(noteName(n, flats: t.flats) + "\(n / 12 - 1)")
-                        .font(.system(size: 13 * UI, weight: .bold).monospacedDigit())
+                        .font(.inter(size: T(13) * UI, weight: .bold).monospacedDigit())
                         .frame(width: 48 * Z, height: 30 * Z)
                         .background(RoundedRectangle(cornerRadius: 6).fill(m.tunerString == i ? (inTune ? Color.green : ch).opacity(0.85) : panel2))
                         .foregroundStyle(m.tunerString == i ? .black : .primary)
@@ -1767,7 +1788,7 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 CollapseChevron(key: "PEDALS")
-                Text("PEDALS  →  AMP").font(.system(size: 10 * UI, weight: .bold)).tracking(2).foregroundStyle(.secondary)
+                Text("PEDALS  →  AMP").font(.inter(size: T(10) * UI, weight: .bold)).tracking(2).foregroundStyle(.secondary)
                 Menu("+ Add pedal") {
                     ForEach(PedalKind.allCases.filter { !m.s.chain.contains($0.rawValue) }.sorted { $0.title < $1.title }) { k in
                         Button(k.title.capitalized) { m.addPedal(k) }
@@ -1778,7 +1799,7 @@ struct ContentView: View {
                 EmptyView()
             } else if m.s.chain.isEmpty {
                 Text("No pedals. Add one; signal flows left to right into the amp.")
-                    .font(.system(size: 12 * UI)).foregroundStyle(.secondary).padding(.vertical, 20)
+                    .font(.inter(size: T(12) * UI)).foregroundStyle(.secondary).padding(.vertical, 20)
             } else {
                 GridFlow {
                     ForEach(m.s.chain.compactMap(PedalKind.init(rawValue:))) { k in
@@ -1913,7 +1934,7 @@ struct ContentView: View {
                         Knob(label: "Input", value: $m.s.namInput, key: "namInput", range: -24...24, def: 0, fmt: { String(format: "%+.1f dB", $0) }, color: ch)
                         Knob(label: "Output", value: $m.s.namOutput, key: "namOutput", range: -24...24, def: 0, fmt: { String(format: "%+.1f dB", $0) }, color: ch)
                     }
-                    if m.running && !m.params.namOn { Text("Loading…").font(.system(size: 10 * UI)).foregroundStyle(.secondary) }
+                    if m.running && !m.params.namOn { Text("Loading…").font(.inter(size: T(10) * UI)).foregroundStyle(.secondary) }
                 } else if m.activeCapture != nil {
                     HStack(spacing: 2) {
                         Knob(label: "Drive", value: $m.s.capDrive, key: "capDrive", range: -18...18, def: 0, fmt: { String(format: "%+.1f dB", $0) }, color: ch)
@@ -1923,7 +1944,7 @@ struct ContentView: View {
                 HStack(spacing: 6) {
                     ForEach(VOICINGS.indices, id: \.self) { i in
                         Button { m.s.ampChannel = i } label: {
-                            Text(VOICINGS[i].name).font(.system(size: 11 * UI, weight: .heavy)).tracking(2)
+                            Text(VOICINGS[i].name).font(.inter(size: T(11) * UI, weight: .heavy)).tracking(2)
                                 .frame(maxWidth: .infinity).padding(.vertical, 6)
                                 .background(RoundedRectangle(cornerRadius: 7).fill(m.s.ampChannel == i ? channelColors[i] : panel2))
                                 .foregroundStyle(m.s.ampChannel == i ? .black : .secondary)
@@ -1972,9 +1993,9 @@ struct ContentView: View {
             HStack(alignment: .bottom, spacing: 6) {
                 ForEach(0..<8, id: \.self) { i in
                     VStack(spacing: 4) {
-                        Text(String(format: "%+.0f", m.s.eq[i])).font(.system(size: 9 * UI).monospacedDigit()).foregroundStyle(.secondary)
+                        Text(String(format: "%+.0f", m.s.eq[i])).font(.inter(size: T(9) * UI).monospacedDigit()).foregroundStyle(.secondary)
                         Fader(value: $m.s.eq[i], range: -12...12, color: ch)
-                        Text(freqs[i]).font(.system(size: 9 * UI)).foregroundStyle(.secondary)
+                        Text(freqs[i]).font(.inter(size: T(9) * UI)).foregroundStyle(.secondary)
                     }
                     .contentShape(Rectangle())
                     .explain("eq\(i)", "Graphic EQ · \(freqs[i])\(freqs[i].hasSuffix("k") ? "Hz" : " Hz")")
@@ -2030,7 +2051,7 @@ struct ContentView: View {
             rel.wrappedValue = lib.find(mic: mic, ts: ts, position: pos, pres: pres)?.rel ?? rel.wrappedValue
         }
         HStack(spacing: 6) {
-            Text(label).font(.system(size: 10 * UI, weight: .bold)).foregroundStyle(.secondary).frame(width: 12)
+            Text(label).font(.inter(size: T(10) * UI, weight: .bold)).foregroundStyle(.secondary).frame(width: 12)
             Picker("", selection: Binding(get: { f?.mic ?? "" }, set: { mic in
                 if mic.isEmpty { rel.wrappedValue = "" } else { pick(mic, f?.ts ?? false, f?.position ?? "1 inch edge", f?.pres ?? 3) }
             })) {
@@ -2102,7 +2123,7 @@ struct ContentView: View {
                 }.labelsHidden().frame(width: 110 * W).help("Free time, or a note length at the tempo")
                 TapButton()
                 Text(m.syncedDelayMs.map { String(format: "%.0f BPM · %.0f ms", m.bpm, $0) } ?? String(format: "%.0f BPM", m.bpm))
-                    .font(.system(size: 10 * UI).monospacedDigit()).foregroundStyle(.secondary)
+                    .font(.inter(size: T(10) * UI).monospacedDigit()).foregroundStyle(.secondary)
             }
             HStack(spacing: 2) {
                 if m.s.delaySync == 0 {
@@ -2161,6 +2182,7 @@ struct LeviathanApp: App {
     var body: some Scene {
         WindowGroup("Leviathan - v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")") {
             RootView().environmentObject(model).environmentObject(model.sessions).environmentObject(model.midi).environmentObject(model.updater)
+                .font(.inter(size: T(12) * UI))   // default for any text without its own font
                 .preferredColorScheme(.dark).frame(minWidth: 900, minHeight: 600)
                 .background(WindowFrameSaver())
         }
@@ -2210,7 +2232,7 @@ struct HoverHelpStrip: View {
             }
             Spacer(minLength: 0)
         }
-        .font(.system(size: 12 * UI))
+        .font(.inter(size: T(12) * UI))
         .lineLimit(2)
         .padding(.horizontal, 14).padding(.vertical, 8)
         .frame(minHeight: 44 * Z, alignment: .leading)

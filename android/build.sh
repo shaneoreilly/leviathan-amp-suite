@@ -188,7 +188,8 @@ if target == "app":
     sources = sorted(glob.glob(os.path.join(win, "*.cpp")) + glob.glob(os.path.join(win, "*.h"))
                      + glob.glob(os.path.join(win, "UI/*.cpp")) + glob.glob(os.path.join(win, "UI/*.h")))
     groups = (group("Source", code(sources)) + group("NAM", code(bridge + namsrc))
-              + group("Resources", [file_el(p, False, True) for p in caps + [os.path.join(repo, "shared/help/explanations.json")]])
+              + group("Resources", [file_el(p, False, True) for p in caps + [os.path.join(repo, "shared/help/explanations.json")]
+                                                    + [os.path.join(repo, "shared/fonts/Inter-" + w + ".ttf") for w in ("Regular", "SemiBold", "Bold")]])
               + group("Icon", [file_el(icon, False, False)]))
     modules = ["juce_core", "juce_events", "juce_data_structures", "juce_graphics", "juce_gui_basics", "juce_gui_extra",
                "juce_audio_basics", "juce_audio_devices", "juce_audio_formats", "juce_audio_processors",

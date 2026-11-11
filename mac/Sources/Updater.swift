@@ -300,11 +300,11 @@ struct WhatsNewSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(alignment: .top, spacing: 12) {
-                Image(systemName: "arrow.down.circle.fill").font(.system(size: 26 * Z)).foregroundStyle(.tint)
+                Image(systemName: "arrow.down.circle.fill").font(.inter(size: T(26) * Z)).foregroundStyle(.tint)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("What\u{2019}s new in Leviathan \(release.version)").font(.system(size: 17 * UI, weight: .semibold))
+                    Text("What\u{2019}s new in Leviathan \(release.version)").font(.inter(size: T(17) * UI, weight: .semibold))
                     Text("You have \(updater.current). Updating replaces this copy and reopens Leviathan.")
-                        .font(.system(size: 11 * UI)).foregroundStyle(.secondary)
+                        .font(.inter(size: T(11) * UI)).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Button { updater.showNotes = false } label: { Image(systemName: "xmark") }

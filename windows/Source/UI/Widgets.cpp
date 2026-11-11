@@ -1,9 +1,32 @@
 #include "Widgets.h"
+#include <BinaryData.h>
 
 namespace lev {
 
+// Type: Inter everywhere (bundled), on one fixed scale so sizes stay consistent; the same scale as the Mac app's T().
+namespace {
+const juce::Typeface::Ptr& interRegular() {
+    static const juce::Typeface::Ptr t = juce::Typeface::createSystemTypefaceFor(BinaryData::InterRegular_ttf, BinaryData::InterRegular_ttfSize);
+    return t;
+}
+const juce::Typeface::Ptr& interBold() {   // "bold" is SemiBold: Inter's Bold reads heavy at these small sizes
+    static const juce::Typeface::Ptr t = juce::Typeface::createSystemTypefaceFor(BinaryData::InterSemiBold_ttf, BinaryData::InterSemiBold_ttfSize);
+    return t;
+}
+}
+
+float theme::snap(float pt) {
+    if (pt > 24) return pt;   // display sizes (logo, tuner note) are their own
+    static constexpr float scale[] = { 9, 10.5f, 12, 13, 16, 22 };
+    float best = scale[0];
+    for (float s : scale)
+        if (std::abs(s - pt) < std::abs(best - pt) || (std::abs(s - pt) == std::abs(best - pt) && s > best)) best = s;
+    return best;
+}
+
 juce::Font theme::font(float pt, bool bold, float tracking) {
-    juce::Font f(juce::FontOptions(pt * UI * 1.18f, bold ? juce::Font::bold : juce::Font::plain));
+    pt = snap(pt);
+    juce::Font f(juce::FontOptions(bold ? interBold() : interRegular()).withHeight(pt * UI * 1.18f));
     if (tracking != 0) f.setExtraKerningFactor(tracking / (pt * UI));
     return f;
 }
@@ -11,6 +34,7 @@ juce::Font theme::font(float pt, bool bold, float tracking) {
 // MARK: - look and feel
 
 LookAndFeel::LookAndFeel() {
+    setDefaultSansSerifTypeface(interRegular());   // anything drawn without theme::font
     setColourScheme(juce::LookAndFeel_V4::getDarkColourScheme());
     setColour(juce::ResizableWindow::backgroundColourId, theme::bg);
     setColour(juce::TextButton::buttonColourId, theme::panel2);

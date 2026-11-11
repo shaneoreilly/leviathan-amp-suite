@@ -540,9 +540,9 @@ private:
         const bool on = rel == model.s().s("irFile");
         if (on) { g.setColour(model.accent().withAlpha(0.2f)); g.fillRoundedRectangle(0, 1, (float) w, (float) h - 2, 4); }
         const auto folder = rel.containsChar('/') ? rel.upToLastOccurrenceOf("/", false, false) : juce::String();
-        g.setColour(on ? model.accent() : theme::text); g.setFont(13.0f);
+        g.setColour(on ? model.accent() : theme::text); g.setFont(theme::font(10.5f));
         g.drawText(CabIRLibrary::title(rel), 8, 0, w - 160, h, juce::Justification::centredLeft, true);
-        g.setColour(theme::secondary); g.setFont(11.0f);
+        g.setColour(theme::secondary); g.setFont(theme::font(9));
         g.drawText(folder, w - 150, 0, 142, h, juce::Justification::centredRight, true);
     }
     void listBoxItemClicked(int row, const juce::MouseEvent&) override {

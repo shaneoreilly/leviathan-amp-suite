@@ -20,11 +20,11 @@ struct RootView: View {
                 if updater.showBanner, let r = updater.available { UpdateBanner(release: r) } else { UpdateProgressBanner() }
                 ForEach([m.status, rec.message].filter { !$0.isEmpty }, id: \.self) { msg in
                     HStack {
-                        Text(msg).font(.system(size: 12 * UI))
+                        Text(msg).font(.inter(size: T(12) * UI))
                         Spacer()
                         // an error that a setting fixes gets a button that goes there
                         let fix = msg == rec.message ? rec.currentFix : m.currentFix
-                        if !fix.isEmpty { Button("Click to resolve") { m.resolve(fix) }.font(.system(size: 12 * UI)) }
+                        if !fix.isEmpty { Button("Click to resolve") { m.resolve(fix) }.font(.inter(size: T(12) * UI)) }
                         Button { if msg == rec.message { rec.message = "" } else { m.status = "" } } label: { Image(systemName: "xmark") }
                             .buttonStyle(.borderless)
                     }
@@ -41,7 +41,7 @@ struct RootView: View {
             }
         }
         .id(m.zoom)   // rebuild everything at the new size
-        .font(.system(size: 13 * UI))
+        .font(.inter(size: T(13) * UI))
         .controlSize(.large)
         .background(Color(white: 0.05))
         .tint(ch)
@@ -91,10 +91,10 @@ struct Sidebar: View {
                     .disabled(m.zoom >= Model.zoomSteps.last! - 0.001)
             }
             .buttonStyle(.plain)
-            .font(.system(size: 13 * Z, weight: .semibold))
+            .font(.inter(size: T(13) * Z, weight: .semibold))
             .background(RoundedRectangle(cornerRadius: 7).fill(Color.white.opacity(0.06)))
             Button { m.zoom = 1 } label: {
-                Text("\(Int((m.zoom * 100).rounded()))%").font(.system(size: 9 * UI).monospacedDigit())
+                Text("\(Int((m.zoom * 100).rounded()))%").font(.inter(size: T(9) * UI).monospacedDigit())
             }
             .buttonStyle(.plain).foregroundStyle(.secondary).keyboardShortcut("0", modifiers: .command).help("Actual size (⌘0)")
         }
@@ -106,9 +106,9 @@ struct Sidebar: View {
         let on = m.screen == s
         return Button { m.screen = s } label: {
             VStack(spacing: 4) {
-                Image(systemName: icon).font(.system(size: 20 * UI * 0.8))
+                Image(systemName: icon).font(.inter(size: T(20) * UI * 0.8))
                     .overlay(alignment: .topTrailing) { if badge { Circle().fill(.red).frame(width: 9, height: 9).offset(x: 6, y: -4) } }
-                Text(label).font(.system(size: 9 * UI, weight: .semibold))
+                Text(label).font(.inter(size: T(9) * UI, weight: .semibold))
             }
             .frame(width: 80 * Z, height: 70 * Z)
             .foregroundStyle(on ? Color.accentColor : .secondary)
@@ -129,8 +129,8 @@ struct TopBar: View {
         HStack(spacing: 14) {
             LogoMark(size: 40 * Z, color: ch)
             VStack(alignment: .leading, spacing: 0) {
-                Text("LEVIATHAN").font(.system(size: 15 * UI, weight: .heavy)).tracking(4)
-                Text("OPEN GUITAR RIG").font(.system(size: 9 * UI)).tracking(1.5).foregroundStyle(.secondary)
+                Text("LEVIATHAN").font(.inter(size: T(15) * UI, weight: .heavy)).tracking(4)
+                Text("OPEN GUITAR RIG").font(.inter(size: T(9) * UI)).tracking(1.5).foregroundStyle(.secondary)
             }
             .fixedSize()
             Button(m.live ? "⏻ On" : "⏻ Start") { m.toggle() }
@@ -223,7 +223,7 @@ struct PresetsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("PRESETS").font(.system(size: 10 * UI, weight: .bold)).tracking(2).foregroundStyle(.secondary)
+                Text("PRESETS").font(.inter(size: T(10) * UI, weight: .bold)).tracking(2).foregroundStyle(.secondary)
                 Picker("", selection: $ui.favOnly) { Text("All").tag(false); Text("★ Favorites").tag(true) }
                     .pickerStyle(.segmented).labelsHidden().frame(width: 260 * Z)
                 Spacer()
@@ -276,8 +276,8 @@ struct PresetsView: View {
         let on = m.presetSort == sort
         return Button { m.sortPresets(by: sort) } label: {
             HStack(spacing: 4) {
-                Text(title).font(.system(size: 10 * UI, weight: .bold)).tracking(1.2)
-                if on { Image(systemName: m.presetSortReversed ? "chevron.up" : "chevron.down").font(.system(size: 8 * UI, weight: .bold)) }
+                Text(title).font(.inter(size: T(10) * UI, weight: .bold)).tracking(1.2)
+                if on { Image(systemName: m.presetSortReversed ? "chevron.up" : "chevron.down").font(.inter(size: T(8) * UI, weight: .bold)) }
             }
             .foregroundStyle(on ? Color.accentColor : .secondary)
             .contentShape(Rectangle())
@@ -292,16 +292,16 @@ struct PresetsView: View {
             Button { m.toggleFavorite(n) } label: { Image(systemName: m.favorites.contains(n) ? "star.fill" : "star") }
                 .buttonStyle(.borderless).foregroundStyle(m.favorites.contains(n) ? Color.yellow : .secondary)
             VStack(alignment: .leading, spacing: 2) {
-                Text(n).font(.system(size: 14 * UI, weight: current ? .bold : .regular))
-                Text(subtitle(n, factory: factory, edited: edited)).font(.system(size: 10 * UI)).foregroundStyle(.secondary)
+                Text(n).font(.inter(size: T(14) * UI, weight: current ? .bold : .regular))
+                Text(subtitle(n, factory: factory, edited: edited)).font(.inter(size: T(10) * UI)).foregroundStyle(.secondary)
             }
             Spacer()
-            Text(stamp(m.presetMeta[n]?.shownModified)).font(.system(size: 12 * UI).monospacedDigit()).foregroundStyle(.secondary)
+            Text(stamp(m.presetMeta[n]?.shownModified)).font(.inter(size: T(12) * UI).monospacedDigit()).foregroundStyle(.secondary)
                 .lineLimit(1).fixedSize().frame(width: PresetsView.dateColumn * Z, alignment: .leading)
-            Text(stamp(m.presetMeta[n]?.played)).font(.system(size: 12 * UI).monospacedDigit()).foregroundStyle(.secondary)
+            Text(stamp(m.presetMeta[n]?.played)).font(.inter(size: T(12) * UI).monospacedDigit()).foregroundStyle(.secondary)
                 .lineLimit(1).fixedSize().frame(width: PresetsView.dateColumn * Z, alignment: .leading)
             HStack(spacing: 8) {
-            if current { Text(m.presetModified ? "Loaded · unsaved" : "Loaded").font(.system(size: 10 * UI)).foregroundStyle(.secondary).lineLimit(1).fixedSize() }
+            if current { Text(m.presetModified ? "Loaded · unsaved" : "Loaded").font(.inter(size: T(10) * UI)).foregroundStyle(.secondary).lineLimit(1).fixedSize() }
             Button("Load") { m.confirmLoad { m.loadAny(n); m.screen = .rig } }
             Button("Export…") { m.exportPreset(n) }
             if !factory {
@@ -332,7 +332,7 @@ struct RecordingsView: View {
             Rectangle().fill(line).frame(width: 1)
             if let s = rec.current { detail(s) } else {
                 VStack(spacing: 12) {
-                    Text(rec.list.isEmpty ? "No recordings yet" : "Select a recording").font(.system(size: 16 * UI))
+                    Text(rec.list.isEmpty ? "No recordings yet" : "Select a recording").font(.inter(size: T(16) * UI))
                     Text("Press Rec (⌘R) to capture your dry guitar and the amp's output together.\nDry takes can be re-amped through any preset later.")
                         .multilineTextAlignment(.center).foregroundStyle(.secondary)
                 }
@@ -346,11 +346,11 @@ struct RecordingsView: View {
             ForEach(rec.list) { s in
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(s.meta.name).font(.system(size: 13 * UI)).lineLimit(1)
-                        Text(DateFormatter.nice.string(from: s.meta.date)).font(.system(size: 9 * UI)).foregroundStyle(.secondary)
+                        Text(s.meta.name).font(.inter(size: T(13) * UI)).lineLimit(1)
+                        Text(DateFormatter.nice.string(from: s.meta.date)).font(.inter(size: T(9) * UI)).foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Text(mmss(s.meta.duration)).font(.system(size: 11 * UI).monospacedDigit()).foregroundStyle(.secondary)
+                    Text(mmss(s.meta.duration)).font(.inter(size: T(11) * UI).monospacedDigit()).foregroundStyle(.secondary)
                 }
                 .padding(.vertical, 3)
                 .tag(s.id)
@@ -413,7 +413,7 @@ struct RecordingsView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(alignment: .firstTextBaseline) {
                         TextField("Name", text: $ui.name, onCommit: { rec.rename(ui.name) })
-                            .textFieldStyle(.plain).font(.system(size: 22 * UI, weight: .semibold))
+                            .textFieldStyle(.plain).font(.inter(size: T(22) * UI, weight: .semibold))
                         Spacer()
                         Button { rec.selection = .init(start: 0, end: s.meta.duration) } label: { Label("Trim", systemImage: "scissors") }
                             .help("Select the whole take, then drag the handles in to cut silence or mistakes (or drag on the waveform)")
@@ -436,7 +436,7 @@ struct RecordingsView: View {
                         GridRow { Text("Preset").foregroundStyle(.secondary)
                             Text(s.meta.preset.isEmpty ? "—" : s.meta.preset + (s.meta.source.map { " (\($0))" } ?? "")) }
                     }
-                    .font(.system(size: 11 * UI))
+                    .font(.inter(size: T(11) * UI))
 
                     box("Live re-amp", "Play this take's dry guitar through the rig in a loop while you change settings in real time.") {
                         Button(rec.liveReamp ? "Stop live re-amp" : "Live re-amp") {
@@ -463,8 +463,8 @@ struct RecordingsView: View {
     func box<C: View>(_ title: String, _ desc: String, @ViewBuilder _ action: () -> C) -> some View {
         HStack(alignment: .center, spacing: 14) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.system(size: 12 * UI, weight: .semibold))
-                Text(desc).font(.system(size: 10 * UI)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Text(title).font(.inter(size: T(12) * UI, weight: .semibold))
+                Text(desc).font(.inter(size: T(10) * UI)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
             action()
@@ -514,7 +514,7 @@ struct TrimOverlay: View {
         ZStack {
             Rectangle().fill(Color.yellow).frame(width: 2, height: h)
             RoundedRectangle(cornerRadius: 3).fill(Color.yellow).frame(width: 12, height: 34)
-            Image(systemName: "line.3.horizontal").rotationEffect(.degrees(90)).font(.system(size: 8, weight: .bold)).foregroundStyle(.black)
+            Image(systemName: "line.3.horizontal").rotationEffect(.degrees(90)).font(.inter(size: 8, weight: .bold)).foregroundStyle(.black)
         }
         .frame(width: 14, height: h)
         .contentShape(Rectangle())
@@ -549,7 +549,7 @@ struct WaveformView: View {
                         while t <= duration {
                             let x = CGFloat(t / duration) * size.width
                             ctx.fill(Path(CGRect(x: x, y: ruler - 6, width: 1, height: 6)), with: .color(.gray))
-                            ctx.draw(Text(mmss(t)).font(.system(size: 10)).foregroundColor(.gray), at: CGPoint(x: x + 3, y: 8), anchor: .leading)
+                            ctx.draw(Text(mmss(t)).font(.inter(size: 10)).foregroundColor(.gray), at: CGPoint(x: x + 3, y: 8), anchor: .leading)
                             t += stepS
                         }
                     }
@@ -597,6 +597,41 @@ final class SettingsUI: ObservableObject {
     @Published var section = UserDefaults.standard.string(forKey: "settingsSection") ?? "Audio" {
         didSet { UserDefaults.standard.set(section, forKey: "settingsSection") }
     }
+    /// Search box text, and the row a search result pointed at (highlighted for a moment, then cleared).
+    @Published var query = ""
+    @Published var highlight: String?
+    func go(_ e: SettingsEntry) {
+        section = e.section; query = ""; highlight = e.label
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in if self?.highlight == e.label { self?.highlight = nil } }
+    }
+}
+
+/// Every settings row, for search (Windows: built from the laid-out rows, same labels). Matches the label, its
+/// section and heading, and its hover explanation, so "buffer" also finds Latency.
+struct SettingsEntry: Hashable { let section, heading, label, key: String }
+let SETTINGS_INDEX: [SettingsEntry] = [
+    ("Audio", "Devices", "Input", "inputDevice"), ("Audio", "Devices", "Input channel", "inputChannel"),
+    ("Audio", "Devices", "Output", "outputDevice"), ("Audio", "Speed", "Buffer", "settings:buffer"),
+    ("Audio", "Speed", "Latency", "settings:latency"), ("Audio", "Speed", "Engine", "settings:engine"),
+    ("Audio", "Amp captures", "Calibrate input", "settings:namCalibrate"), ("Audio", "Amp captures", "Interface level", "settings:interfaceLevel"),
+    ("Audio", "Tuner", "Reference", "settings:a4"), ("Audio", "Tuner", "Guitar tuning", "settings:tuning"),
+    ("MIDI", "Connection", "Devices", "settings:midiDevices"), ("MIDI", "Connection", "Last message", "settings:midiLast"),
+    ("MIDI", "Presets", "Program change", "settings:programChange"), ("MIDI", "Assignments", "Assign", "settings:midiAssign"),
+    ("Library", "", "Recordings", "settings:recordings"), ("Library", "", "Recordings folder", "settings:recordingsFolder"),
+    ("Library", "", "NAM captures", "settings:nam"), ("Library", "", "Cab IRs", "settings:cabIRs"), ("Library", "", "Your captures", "settings:captures"),
+    ("Appearance", "", "Accent colour", "settings:accent"), ("Appearance", "", "Zoom", "settings:zoom"), ("Appearance", "", "Explanations", "settings:explain"),
+    ("About", "Updates", "Version", "settings:version"), ("About", "Updates", "Automatic", "settings:autoUpdate"),
+    ("About", "Feedback", "GitHub", "settings:feedback"), ("About", "Feedback", "Debug log", "settings:debugLog"),
+    ("About", "License", "Leviathan", "settings:license"),
+].map { SettingsEntry(section: $0.0, heading: $0.1, label: $0.2, key: $0.3) }
+
+func searchSettings(_ query: String) -> [SettingsEntry] {
+    let words = query.lowercased().split(separator: " ").map(String.init)
+    guard !words.isEmpty else { return [] }
+    func text(_ e: SettingsEntry) -> String { "\(e.label) \(e.heading) \(e.section) \(EXPLAIN[e.key] ?? "")".lowercased() }
+    let hits = SETTINGS_INDEX.filter { e in let t = text(e); return words.allSatisfy { t.contains($0) } }
+    // label matches first, then the rest in their usual order
+    return hits.filter { e in words.allSatisfy { e.label.lowercased().contains($0) } } + hits.filter { e in !words.allSatisfy { e.label.lowercased().contains($0) } }
 }
 
 struct SettingsView: View {
@@ -618,24 +653,61 @@ struct SettingsView: View {
         }
     }
 
+    /// The section menu sits against the app's sidebar, a quarter of the width; the section fills the rest.
     var body: some View {
-        HStack(alignment: .top, spacing: 0) {
-            navigation
-                .background(RoundedRectangle(cornerRadius: 12).fill(Color(white: 0.07)))
-                .overlay(RoundedRectangle(cornerRadius: 12).stroke(line))
-                .padding(.vertical, 18)
-            ScrollView { section.padding(24).frame(maxWidth: 940, alignment: .leading).frame(maxWidth: .infinity, alignment: .leading) }
+        GeometryReader { geo in
+            HStack(alignment: .top, spacing: 0) {
+                navigation
+                    .frame(width: min(max(geo.size.width * 0.25, 220 * Z), 320 * Z))
+                    .background(Color(white: 0.07))
+                    .overlay(alignment: .trailing) { Rectangle().fill(line).frame(width: 1) }
+                ScrollViewReader { scroll in
+                    ScrollView {
+                        section.font(.inter(size: T(10.5) * UI))   // one body size for labels and controls' text
+                            .padding(.horizontal, 36 * Z).padding(.vertical, 28 * Z)
+                            .frame(maxWidth: 1000 * Z, alignment: .leading).frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .onChange(of: ui.highlight) { h in if let h { withAnimation { scroll.scrollTo(h, anchor: .center) } } }
+                }
+            }
         }
-        .padding(.horizontal, 24)
-        .frame(maxWidth: 1240)                                  // centred on wide windows instead of hugging the sidebar
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .safeAreaInset(edge: .bottom, spacing: 0) { if m.explainOnHover { HoverHelpStrip(idle: "Hover over a setting for an explanation.") } }
     }
 
     var navigation: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text("SETTINGS").font(.system(size: 10 * UI, weight: .bold)).tracking(2).foregroundStyle(.secondary)
-                .padding(.horizontal, 10).padding(.bottom, 12)
+            Text("SETTINGS").font(.inter(size: T(10) * UI, weight: .bold)).tracking(2).foregroundStyle(.secondary)
+                .padding(.horizontal, 10).padding(.bottom, 10)
+            HStack(spacing: 6 * Z) {
+                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                TextField("Search settings", text: $ui.query).textFieldStyle(.plain)
+                    .onSubmit { if let first = searchSettings(ui.query).first { ui.go(first) } }
+                if !ui.query.isEmpty {
+                    Button { ui.query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }.buttonStyle(.plain)
+                }
+            }
+            .font(.inter(size: T(10.5) * UI))
+            .padding(.horizontal, 10).padding(.vertical, 7)
+            .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.06)))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(line))
+            .padding(.bottom, 12)
+            if !ui.query.isEmpty {
+                let hits = searchSettings(ui.query)
+                if hits.isEmpty { Text("No settings match.").foregroundStyle(.secondary).padding(.horizontal, 10) }
+                ForEach(hits, id: \.self) { e in
+                    Button { ui.go(e) } label: {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(e.label).font(.inter(size: T(10.5) * UI))
+                            Text(e.heading.isEmpty ? e.section : "\(e.section) \u{203A} \(e.heading)").font(.inter(size: T(9) * UI)).foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 10).padding(.vertical, 5)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            } else {
             ForEach(SettingsView.nav, id: \.name) { item in
                 let on = SettingsView.current(ui.section) == item.name
                 Button { ui.section = item.name } label: {
@@ -645,7 +717,7 @@ struct SettingsView: View {
                         Spacer()
                         if item.name == "About" && updater.available != nil { Circle().fill(.red).frame(width: 8, height: 8) }
                     }
-                    .font(.system(size: 12 * UI))
+                    .font(.inter(size: T(10.5) * UI))
                     .foregroundStyle(on ? Color.accentColor : .primary)
                     .padding(.horizontal, 10).padding(.vertical, 7)
                     .background(RoundedRectangle(cornerRadius: 7).fill(on ? Color.white.opacity(0.08) : .clear))
@@ -653,10 +725,10 @@ struct SettingsView: View {
                 }
                 .buttonStyle(.plain)
             }
+            }
             Spacer()
         }
         .padding(14)
-        .frame(width: 220 * Z)
         .frame(maxHeight: .infinity, alignment: .top)
     }
 
@@ -706,7 +778,7 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(latencySummary(i)).monospacedDigit()
                     Text(String(format: "Input %.1f · buffers %.1f · output %.1f ms · %.1f kHz", i.inMs, i.bufferMs, i.outMs, i.sampleRate / 1000))
-                        .font(.system(size: 11 * UI)).foregroundStyle(.secondary).monospacedDigit()
+                        .font(.inter(size: T(11) * UI)).foregroundStyle(.secondary).monospacedDigit()
                 }
             }
             SettingsRow("Engine", explain: "settings:engine") { EngineLoad(mt: m.meters) }
@@ -724,7 +796,7 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(calibrationLine("Amp", m.s.nam, m.namHost))
                     if m.s.ampBOn && !m.s.ampBNam.isEmpty { Text(calibrationLine("Amp B", m.s.ampBNam, m.namHostB)) }
-                }.font(.system(size: 11 * UI)).foregroundStyle(.secondary).monospacedDigit()
+                }.font(.inter(size: T(11) * UI)).foregroundStyle(.secondary).monospacedDigit()
             }
         }
 
@@ -856,13 +928,10 @@ struct SettingsCard<C: View>: View {
     init(_ title: String, @ViewBuilder content: () -> C) { self.title = title; self.content = content() }
     var body: some View {
         VStack(alignment: .leading, spacing: 10 * Z) {
-            Text(title).font(.system(size: 16 * UI, weight: .semibold)).padding(.bottom, 4 * Z)
+            Text(title).font(.inter(size: T(22) * UI, weight: .semibold)).padding(.bottom, 8 * Z)
             content
         }
-        .padding(20 * Z)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 12).fill(panel))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(line))
     }
 }
 
@@ -873,7 +942,7 @@ struct SettingsHeading: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8 * Z) {
             if !first { Rectangle().fill(line).frame(height: 1).padding(.top, 8 * Z) }
-            Text(text.uppercased()).font(.system(size: 9 * UI, weight: .semibold)).tracking(1.2).foregroundStyle(.secondary)
+            Text(text.uppercased()).font(.inter(size: T(9) * UI, weight: .semibold)).tracking(1.2).foregroundStyle(.secondary)
         }
     }
 }
@@ -887,6 +956,7 @@ enum SettingsLayout {
 }
 
 struct SettingsRow<C: View>: View {
+    @ObservedObject private var ui = SettingsUI.shared
     let label: String, key: String?
     @ViewBuilder let content: C
     init(_ label: String, explain key: String? = nil, @ViewBuilder content: () -> C) { self.label = label; self.key = key; self.content = content() }
@@ -897,6 +967,11 @@ struct SettingsRow<C: View>: View {
             Spacer(minLength: 0)
         }
         .frame(minHeight: 30 * Z)
+        .padding(.horizontal, 8 * Z).padding(.vertical, 2 * Z)
+        .background(RoundedRectangle(cornerRadius: 7).fill(Color.accentColor.opacity(ui.highlight == label && !label.isEmpty ? 0.18 : 0)))
+        .animation(.easeOut(duration: 0.3), value: ui.highlight)
+        .padding(.horizontal, -8 * Z)
+        .id(label)
         .contentShape(Rectangle())
         .onHover { inside in
             guard let key else { return }
@@ -1056,7 +1131,7 @@ struct LatencyLabel: View {
     @ObservedObject var mt: Meters
     var body: some View {
         let total = info.latencyMs + Double(mt.pitchLatency)
-        Text(String(format: "~%.1f ms", total)).font(.system(size: 10 * UI).monospacedDigit())
+        Text(String(format: "~%.1f ms", total)).font(.inter(size: T(10) * UI).monospacedDigit())
             .foregroundStyle(total > 15 ? Color.orange : Color.secondary)
             .help(info.breakdown + (mt.pitchLatency > 0 ? String(format: " + pitch %.0f ms", mt.pitchLatency) : ""))
     }
@@ -1113,7 +1188,7 @@ struct UpdateBanner: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: "arrow.down.circle.fill").foregroundStyle(Color.accentColor)
-            Text("Leviathan \(release.version) is available (you have \(updater.current)).").font(.system(size: 12 * UI))
+            Text("Leviathan \(release.version) is available (you have \(updater.current)).").font(.inter(size: T(12) * UI))
             Spacer()
             Button("What\u{2019}s new") { updater.showNotes = true }
             Button("Update now") { updater.install(release) }.buttonStyle(.borderedProminent)
@@ -1147,7 +1222,7 @@ struct UpdateProgressBanner: View {
     }
     private func row<C: View>(@ViewBuilder _ c: () -> C) -> some View {
         HStack(spacing: 12) { Image(systemName: "arrow.down.circle.fill").foregroundStyle(Color.accentColor); c(); Spacer(minLength: 0) }
-            .font(.system(size: 12 * UI)).padding(10).background(Color.accentColor.opacity(0.15))
+            .font(.inter(size: T(12) * UI)).padding(10).background(Color.accentColor.opacity(0.15))
     }
 }
 
@@ -1200,7 +1275,7 @@ struct IRBrowser: View {
                 }
             }
             .frame(width: 420, height: 420)
-            Text("Click to hear it straight away; the popover stays open so you can compare.").font(.system(size: 10 * UI)).foregroundStyle(.secondary)
+            Text("Click to hear it straight away; the popover stays open so you can compare.").font(.inter(size: T(10) * UI)).foregroundStyle(.secondary)
         }
         .padding(12)
     }

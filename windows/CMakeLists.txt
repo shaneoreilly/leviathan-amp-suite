@@ -119,7 +119,11 @@ if(MSVC)   # the AVX2 build of NAM, next to the exe (the installer ships it)
 endif()
 
 # control explanations, shared with the Mac app
-juce_add_binary_data(LeviathanData SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/../shared/help/explanations.json")
+juce_add_binary_data(LeviathanData SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/../shared/help/explanations.json"
+  # Inter, the app's typeface (OFL; shared with the Mac app)
+  "${CMAKE_CURRENT_SOURCE_DIR}/../shared/fonts/Inter-Regular.ttf"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../shared/fonts/Inter-SemiBold.ttf"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../shared/fonts/Inter-Bold.ttf")
 
 target_link_libraries(Leviathan PRIVATE
   LeviathanData

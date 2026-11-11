@@ -28,6 +28,8 @@ Source code: https://github.com/shaneoreilly/leviathan-amp-suite
   **nlohmann/json** (MIT, © Niels Lohmann). Fetched at build time, not stored in this repository.
 - **Bundled NAM captures** (`.nam`, both apps) are third-party content under GPLv3, credited per file in
   `shared/nam/captures/CREDITS.md`. Captures you add yourself keep their creators' licenses.
+- **Inter** typeface (all apps, `shared/fonts/`), SIL Open Font License 1.1, © The Inter Project Authors.
+  https://github.com/rsms/inter (license in `shared/fonts/OFL.txt`).
 - **JUCE** (Windows app, `windows/`), used under the GNU AGPLv3. © Raw Material Software Limited.
   https://github.com/juce-framework/JUCE
 - **Steinberg ASIO SDK** (Windows app, ASIO support), used under the GNU GPLv3; downloaded at build time, not
