@@ -445,6 +445,7 @@ std::unique_ptr<UnitBox> RigView::makePanel(const juce::String& id) {
         r->add(knob("Mix", "delayMix", 0, 1, 0.2, pct, "DELAY"));
         c->add(std::move(r));
         box = std::make_unique<UnitBox>(m, "DELAY", std::move(c), "delayOn", "panel:delay");
+        box->alignTop = true;
     } else if (id == "ampb") {
         // a second amp (any NAM capture) fed by the same pedals; Spread puts amp A left and amp B right
         auto c = col(8);
@@ -470,6 +471,7 @@ std::unique_ptr<UnitBox> RigView::makePanel(const juce::String& id) {
         r->add(knob("Size", "revSize", 0, 1, 0.45, {}, "REVERB"));
         r->add(knob("Mix", "revMix", 0, 1, 0.18, pct, "REVERB"));
         box = std::make_unique<UnitBox>(m, "REVERB", std::move(r), "revOn", "panel:reverb");
+        box->alignTop = true;
     } else {
         box = std::make_unique<UnitBox>(m, id.toUpperCase(), nullptr);
     }

@@ -2091,7 +2091,7 @@ struct ContentView: View {
     }
 
     var delay: some View {
-        UnitBox(title: "DELAY", on: $m.s.delayOn, onKey: "delayOn", color: ch) {
+        UnitBox(title: "DELAY", on: $m.s.delayOn, onKey: "delayOn", color: ch, alignTop: true) {
           VStack(alignment: .center, spacing: 8) {
             HStack(spacing: 6) {
                 Picker("", selection: $m.s.delaySync) {
@@ -2114,7 +2114,7 @@ struct ContentView: View {
     }
 
     var reverb: some View {
-        UnitBox(title: "REVERB", on: $m.s.revOn, onKey: "revOn", color: ch) {
+        UnitBox(title: "REVERB", on: $m.s.revOn, onKey: "revOn", color: ch, alignTop: true) {
             HStack(spacing: 2) {
                 Knob(label: "Size", value: $m.s.revSize, key: "revSize", range: 0...1, def: 0.45, color: ch)
                 Knob(label: "Mix", value: $m.s.revMix, key: "revMix", range: 0...1, def: 0.18, fmt: pct, color: ch)
