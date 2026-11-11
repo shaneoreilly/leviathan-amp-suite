@@ -676,7 +676,7 @@ let SETTINGS_INDEX: [SettingsEntry] = [
     ("Audio", "Devices", "Output", "outputDevice"), ("Audio", "Output EQ", "Output EQ", "settings:outputEQ"), ("Audio", "Speed", "Buffer", "settings:buffer"),
     ("Audio", "Speed", "Latency", "settings:latency"), ("Audio", "Speed", "Engine", "settings:engine"),
     ("Audio", "Amp captures", "Calibrate input", "settings:namCalibrate"), ("Audio", "Amp captures", "Interface level", "settings:interfaceLevel"),
-    ("Audio", "Tuner", "Reference", "settings:a4"), ("Audio", "Tuner", "Guitar tuning", "settings:tuning"),
+    ("Audio", "Pitch shifter", "Low lag on chords", "pitchLowLag"), ("Audio", "Tuner", "Reference", "settings:a4"), ("Audio", "Tuner", "Guitar tuning", "settings:tuning"),
     ("MIDI", "Connection", "Devices", "settings:midiDevices"), ("MIDI", "Connection", "Last message", "settings:midiLast"),
     ("MIDI", "Presets", "Program change", "settings:programChange"), ("MIDI", "Assignments", "Assign", "settings:midiAssign"),
     ("Library", "", "Recordings", "settings:recordings"), ("Library", "", "Recordings folder", "settings:recordingsFolder"),
@@ -881,6 +881,11 @@ struct SettingsView: View {
                     if m.s.ampBOn && !m.s.ampBNam.isEmpty { Text(calibrationLine("Amp B", m.s.ampBNam, m.namHostB)) }
                 }.font(.inter(size: T(11) * UI)).foregroundStyle(.secondary).monospacedDigit()
             }
+        }
+
+        SettingsHeading("Pitch shifter")
+        SettingsRow("Low lag on chords", explain: "pitchLowLag") {
+            Toggle("Less delay on low chords (they may shimmer slightly)", isOn: $m.s.pitchLowLag)
         }
 
         SettingsHeading("Tuner")

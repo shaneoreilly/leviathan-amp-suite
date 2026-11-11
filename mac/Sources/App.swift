@@ -1825,15 +1825,10 @@ struct ContentView: View {
         UnitBox(title: "PITCH", on: $m.s.pitchOn, onKey: "pitchOn", color: ch, trailing: AnyView(PitchLatency(mt: m.meters))) {
             VStack(alignment: .center, spacing: 8) {
                 // the button shows just the tuning's name, the menu shows the notes too (keeps the panel narrow)
-                HStack(spacing: 6) {
-                    Menu("Guitar: \(m.tuning.name)") {
-                        ForEach(TUNINGS.indices, id: \.self) { i in Button(TUNINGS[i].label) { m.tuningIndex = i } }
-                    }
-                    .frame(width: 135 * W)
-                    Button("Low lag") { m.s.pitchLowLag.toggle() }
-                        .buttonStyle(TopBarToggle(on: m.s.pitchLowLag))
-                        .explain("pitchLowLag", "Pitch · Low lag")
+                Menu("Guitar: \(m.tuning.name)") {
+                    ForEach(TUNINGS.indices, id: \.self) { i in Button(TUNINGS[i].label) { m.tuningIndex = i } }
                 }
+                .frame(width: 135 * W)
                 HStack(spacing: 4) {
                     Button { m.playAs(max(Int(m.s.pitchSemis.rounded()) - 1, -12)) } label: { Image(systemName: "minus") }
                         .help("Down a semitone")

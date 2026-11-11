@@ -287,12 +287,6 @@ std::unique_ptr<UnitBox> RigView::makePanel(const juce::String& id) {
         auto tune = std::make_unique<Picker>((int) (140 * theme::W), [&m] { return m.tuningIndex + 1; }, [&m](int i) { m.setTuningIndex(i - 1); });
         for (size_t i = 0; i < TUNINGS.size(); ++i) tune->addItem(tuningLabel(TUNINGS[i]), (int) i + 1);
         r1->add(std::move(tune));
-        {   // Low lag: chords splice at the root's period (less lag, slight shimmer on chords)
-            auto ll = textButton("Low lag", [&m] { m.set("pitchLowLag", !m.s().b("pitchLowLag")); });
-            ll->setClickingTogglesState(true); ll->setToggleState(m.s().b("pitchLowLag"), juce::dontSendNotification);
-            ll->setTooltip(Model::explain("pitchLowLag"));
-            r1->add(std::move(ll));
-        }
         c->add(std::move(r1));
         auto r2 = row(4);
         r2->add(std::make_unique<IconButton>(IconButton::minus, [&m] { m.playAs(std::max((int) std::round(m.s().d("pitchSemis")) - 1, -12)); }, 12))->setTooltip("Down a semitone");

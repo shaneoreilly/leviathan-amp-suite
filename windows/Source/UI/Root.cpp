@@ -984,6 +984,8 @@ struct SettingsScreen : Screen_ {
         // output EQ: the output in use keeps its own (Model::OutputEQ)
         outEqT.onClick = [this] { auto e = model.outputEQ; e.on = outEqT.getToggleState(); model.setOutputEQ(e); resized(); };
         audio.addAndMakeVisible(outEqT);
+        lowLagT.onClick = [this] { model.set("pitchLowLag", lowLagT.getToggleState()); };
+        audio.addAndMakeVisible(lowLagT);
         for (int i = 0; i < 4; ++i) {
             auto& sl = outEqS[(size_t) i];
             sl.setSliderStyle(juce::Slider::LinearHorizontal); sl.setRange(-12, i == 3 ? 6 : 12, 0.5);
@@ -1133,6 +1135,7 @@ struct SettingsScreen : Screen_ {
         inputCh.setSelectedId(m.s().i("inputChannel") + 1, juce::dontSendNotification);
         a4.setValue(m.a4, juce::dontSendNotification);
         outEqT.setToggleState(m.outputEQ.on, juce::dontSendNotification);
+        lowLagT.setToggleState(m.s().b("pitchLowLag"), juce::dontSendNotification);
         { const double v[] = { m.outputEQ.low, m.outputEQ.mid, m.outputEQ.high, m.outputEQ.level };
           for (int i = 0; i < 4; ++i) outEqS[(size_t) i].setValue(v[i], juce::dontSendNotification); }
         namCalT.setToggleState(m.namCalibrate, juce::dontSendNotification);
@@ -1194,6 +1197,8 @@ struct SettingsScreen : Screen_ {
                 Group::place(lay.row("Interface level", "settings:interfaceLevel"), { { &ifaceLvl, 160 } });
                 nowY = lay.row("Now", "settings:namCalibrate", model.s().b("ampBOn") && model.s().s("ampBNam").isNotEmpty() ? 46 : rowH);
             }
+            lay.heading("Pitch shifter");
+            Group::place(lay.row("Low lag on chords", "pitchLowLag"), { { &lowLagT, 420 } });
             lay.heading("Tuner");
             Group::place(lay.row("Reference", "settings:a4"), { { &a4, 160 } });
             Group::place(lay.row("Guitar tuning", "settings:tuning"), { { &tuning, 320 } });
@@ -1542,6 +1547,7 @@ struct SettingsScreen : Screen_ {
     juce::ComboBox inputCh; AudioInfo audioInfo { model };
     juce::Slider a4; juce::ComboBox tuning;
     juce::ToggleButton outEqT; std::array<juce::Slider, 4> outEqS;
+    juce::ToggleButton lowLagT { "Less delay on low chords (they may shimmer slightly)" };
     juce::ToggleButton namCalT; juce::Slider ifaceLvl;
     /// "Amp: +3.0 dB (captured at 9.0 dBu)": what input calibration is doing to a loaded capture.
     static juce::String calibrationLine(const juce::String& label, const juce::String& name, bool loaded, std::optional<double> level, double trim) {
