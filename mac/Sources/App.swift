@@ -511,8 +511,9 @@ final class Model: ObservableObject {
     @Published var info: HALEngine.Info? {
         didSet {
             guard let i = info else { return }
-            let line = String(format: "CoreAudio: in \"%@\", out \"%@\", %.0f Hz, buffer %d (%.1f ms); latency in %.1f + out %.1f = %.1f ms",
+            var line = String(format: "CoreAudio: in \"%@\", out \"%@\", %.0f Hz, buffer %d (%.1f ms); latency in %.1f + out %.1f = %.1f ms",
                               input?.name ?? "", output?.name ?? "", i.sampleRate, i.buffer, i.bufferMs, i.inMs, i.outMs, i.latencyMs)
+            if i.buffer < bufferSize { line += " (asked for \(bufferSize): the device kept a smaller buffer)" }
             if line != loggedDevice { loggedDevice = line; DebugLog.write("audio", line) }
         }
     }
@@ -881,6 +882,17 @@ final class Model: ObservableObject {
         recentOverloads = []
         let separate = i.uid != o.uid
         let why = separate ? " Input (\(i.name)) and output (\(o.name)) are separate devices with separate clocks; one interface for both, or the Mac's own speakers or headphones, is the most stable." : ""
+        // the device may run a smaller buffer than asked for (another app using it holds it small): asking for more
+        // can't help then, so say what will
+        if let actual = info?.buffer, actual < bufferSize {
+            if adviseOverloads {
+                adviseOverloads = false
+                status = "Audio is dropping out: \(o.name) is running at \(actual) samples although Leviathan asked for \(bufferSize). "
+                    + "Another app using it is probably holding it small: quit other audio apps, or pick another output." + why
+                fixIn("Audio")
+            }
+            return
+        }
         // keep dropouts from going on: step the buffer up (it restarts the engine), up to 256 samples
         if let bigger = [16, 32, 64, 128, 256].first(where: { $0 > bufferSize }) {
             status = "Audio was dropping out (crackles), so the buffer is now \(bigger) samples (Settings → Audio)." + why
@@ -1999,7 +2011,7 @@ struct ContentView: View {
 
     var amp: some View {
         UnitBox(title: "AMP", on: $m.s.ampOn, onKey: "ampOn", color: ch, alignTop: true) {
-            VStack(alignment: .center, spacing: 10) {
+            VStack(alignment: .center, spacing: 8) {
                 AmpPicker(secondAmp: false)
                 if !m.s.nam.isEmpty {
                     HStack(spacing: 2) {
@@ -2129,6 +2141,7 @@ struct ContentView: View {
                 Text(m.syncedDelayMs.map { String(format: "%.0f BPM · %.0f ms", m.bpm, $0) } ?? String(format: "%.0f BPM", m.bpm))
                     .font(.inter(size: T(10) * UI).monospacedDigit()).foregroundStyle(.secondary)
             }
+            .frame(height: PICKER_ROW_H)   // as tall as the picker rows beside it, so the knobs line up
             HStack(spacing: 2) {
                 if m.s.delaySync == 0 {
                     Knob(label: "Time", value: $m.s.delayTime, key: "delayTime", range: 40...1500, def: 420, fmt: { "\(Int($0)) ms" }, color: ch)
@@ -2143,10 +2156,13 @@ struct ContentView: View {
 
     var reverb: some View {
         UnitBox(title: "REVERB", on: $m.s.revOn, onKey: "revOn", color: ch, alignTop: true) {
+          VStack(spacing: 8) {
+            Color.clear.frame(height: PICKER_ROW_H)   // where the panels beside it have a picker row
             HStack(spacing: 2) {
                 Knob(label: "Size", value: $m.s.revSize, key: "revSize", range: 0...1, def: 0.45, color: ch)
                 Knob(label: "Mix", value: $m.s.revMix, key: "revMix", range: 0...1, def: 0.18, fmt: pct, color: ch)
             }
+          }
         }
     }
 

@@ -18,6 +18,10 @@ func namDisplayTitle(_ file: String) -> String {
     return words.joined(separator: " ")
 }
 
+/// The height of the row above the knobs in AMP, AMP B, CABINET and DELAY (and the gap REVERB leaves for it), so the
+/// first row of knobs lines up across the rig row (Windows: pickerRowH).
+var PICKER_ROW_H: CGFloat { 44 * Z }
+
 /// ‹ [badge · name / detail ▾] › — the row shared by the cabinet and amp pickers.
 struct SourceButtonRow<Popover: View, MenuItems: View>: View {
     let badge: String, name: String, detail: String, help: String
@@ -59,6 +63,7 @@ struct SourceButtonRow<Popover: View, MenuItems: View>: View {
                     .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
             }
         }
+        .frame(height: PICKER_ROW_H)
     }
 }
 

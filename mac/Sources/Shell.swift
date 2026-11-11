@@ -998,7 +998,7 @@ struct SettingsView: View {
         SettingsHeading("Look", first: true)
         SettingsRow("Theme", explain: "settings:theme") {
             Picker("", selection: $m.theme) { Text("Dark").tag("dark"); Text("Light").tag("light") }
-                .pickerStyle(.segmented).labelsHidden().frame(width: 180 * Z)
+                .pickerStyle(.segmented).labelsHidden().fixedSize()   // starts at the control column like every row
         }
         SettingsRow("Background", explain: "settings:background") {
             Button { BackgroundColourPanel.shared.open(m) } label: {

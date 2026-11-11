@@ -17,6 +17,19 @@ std::unique_ptr<Stack> col(int gap = 8, juce::Justification j = juce::Justificat
 
 /// Holds one component and reports at least `min` as its size: top left aligned, or centred across when `centre`.
 /// Keeps a panel whose contents change (the cab type) the same size, so the panels around it don't move.
+/// The height of the row above the knobs in AMP, AMP B, CABINET and DELAY (and the gap REVERB leaves for it), so
+/// the first row of knobs lines up across the rig row (Mac: PICKER_ROW_H).
+constexpr int pickerRowH = 40;
+
+/// A child centred vertically in a fixed height: a top row as tall as the picker rows beside it.
+struct RowHeight : juce::Component {
+    RowHeight(std::unique_ptr<juce::Component> c, int h) : child(std::move(c)) {
+        addAndMakeVisible(*child); setPref(*this, pref(*child).x, std::max(h, pref(*child).y));
+    }
+    void resized() override { const auto p = pref(*child); child->setBounds((getWidth() - p.x) / 2, (getHeight() - p.y) / 2, p.x, p.y); }
+    std::unique_ptr<juce::Component> child;
+};
+
 struct MinSize : juce::Component {
     MinSize(std::unique_ptr<juce::Component> c, juce::Point<int> min, bool centre) : child(std::move(c)), centred(centre) {
         addAndMakeVisible(*child);
@@ -309,7 +322,7 @@ std::unique_ptr<UnitBox> RigView::makePanel(const juce::String& id) {
         auto lat = std::make_unique<LiveLabel>([&m] { const float l = m.params.pitchLatencyMs.load(); return l > 0 ? juce::String::formatted("+%.0f ms", l) : juce::String(); }, 10);
         setPref(*lat, 56, 20); liveReg(lat.get()); box->addTrailing(std::move(lat));
     } else if (id == "amp") {
-        auto c = col(10);
+        auto c = col(8);
         auto r1 = row(6);
         // ‹ [current amp] › ⋯, like the cabinet (UI/AmpBrowser.cpp)
         r1->add(std::make_unique<IconButton>(IconButton::chevronLeft, [&m] { amp::step(m, -1, false); }, 12))->setTooltip("Previous amp");
@@ -437,7 +450,7 @@ std::unique_ptr<UnitBox> RigView::makePanel(const juce::String& id) {
             return juce::String::formatted("%.0f BPM", m.bpm);
         }, 10);
         setPref(*info, 130, 20); r1->add(std::move(info));
-        c->add(std::move(r1));
+        c->add(std::make_unique<RowHeight>(std::move(r1), pickerRowH));
         auto r = row();
         if (s.i("delaySync") == 0) r->add(knob("Time", "delayTime", 40, 1500, 420, intUnit("ms"), "DELAY"));
         r->add(knob("Feedback", "delayFeedback", 0, 0.92, 0.28, pct, "DELAY"));
@@ -467,9 +480,12 @@ std::unique_ptr<UnitBox> RigView::makePanel(const juce::String& id) {
         r->add(knob("Time", "doublerTime", 8, 40, 20, intUnit("ms"), "DOUBLER"));
         box = std::make_unique<UnitBox>(m, "DOUBLER", std::move(r), "doublerOn", "panel:doubler");
     } else if (id == "reverb") {
-        auto r = row();
-        r->add(knob("Size", "revSize", 0, 1, 0.45, {}, "REVERB"));
-        r->add(knob("Mix", "revMix", 0, 1, 0.18, pct, "REVERB"));
+        auto knobsRow = row();
+        knobsRow->add(knob("Size", "revSize", 0, 1, 0.45, {}, "REVERB"));
+        knobsRow->add(knob("Mix", "revMix", 0, 1, 0.18, pct, "REVERB"));
+        // the space a picker row takes in the panels beside it, so these knobs line up with theirs
+        auto gap = std::make_unique<juce::Component>(); setPref(*gap, 1, pickerRowH);
+        auto r = col(8); r->add(std::move(gap)); r->add(std::move(knobsRow));
         box = std::make_unique<UnitBox>(m, "REVERB", std::move(r), "revOn", "panel:reverb");
         box->alignTop = true;
     } else {
