@@ -640,7 +640,14 @@ struct RecordingsScreen : Screen_ {
     explicit RecordingsScreen(Model& m) : model(m), wave(m),
         prevB(IconButton::prev, [this] { step(-1); }, 14), playB(IconButton::play, [&m] { m.sessions->togglePlay(); }, 18), nextB(IconButton::next, [this] { step(1); }, 14),
         folderB(IconButton::folder, [&m] { m.sessions->reveal(); }, 16), trashB(IconButton::trash, [&m] { m.sessions->remove(); }, 16),
-        liveB(""), reampB("Re-amp with current rig"), originalB(""), importB("Import recordings (WAV)" + ellipsis) {
+        liveB(""), reampB("Re-amp with current rig"), originalB(""), importB("Import recordings (WAV)" + ellipsis), wetB("Wet"), dryB("Dry") {
+        for (auto* b : { &wetB, &dryB }) {   // Wet / Dry: which take the player plays
+            b->setClickingTogglesState(true); b->setRadioGroupId(4711); addAndMakeVisible(*b);
+            b->setTooltip("Wet: the take through the rig. Dry: your guitar as it went in, before the rig.");
+        }
+        wetB.setConnectedEdges(juce::Button::ConnectedOnRight); dryB.setConnectedEdges(juce::Button::ConnectedOnLeft);
+        wetB.onClick = [&m] { m.sessions->setPlayDry(false); };
+        dryB.onClick = [&m] { m.sessions->setPlayDry(true); };
         for (auto* c : std::initializer_list<juce::Component*> { &listView, &wave, &prevB, &playB, &nextB, &nameEd, &folderB, &trashB, &liveB, &reampB, &originalB, &progress, &importB })
             addAndMakeVisible(c);
         listView.setViewedComponent(&listInner, false); listView.setScrollBarsShown(true, false);
@@ -705,6 +712,7 @@ struct RecordingsScreen : Screen_ {
         for (auto* c : std::initializer_list<juce::Component*> { &wave, &prevB, &playB, &nextB, &nameEd, &folderB, &trashB, &liveB, &reampB }) c->setVisible(has);
         folderB.setVisible(has && canRevealFiles);
         playB.icon = s.playing ? IconButton::pause : IconButton::play;
+        wetB.setToggleState(!s.playDry, juce::dontSendNotification); dryB.setToggleState(s.playDry, juce::dontSendNotification);
         liveB.setButtonText(s.liveReamp ? "Stop live re-amp" : "Live re-amp");
         reampB.setVisible(has && !s.rendering); progress.setVisible(has && s.rendering.has_value());
         progressValue = s.rendering.value_or(0);
@@ -736,6 +744,8 @@ struct RecordingsScreen : Screen_ {
         }
         auto transport = d.removeFromTop(44);
         playB.setBounds(transport.withSizeKeepingCentre(40, 32)); prevB.setBounds(playB.getBounds().translated(-48, 0)); nextB.setBounds(playB.getBounds().translated(48, 0));
+        {   auto wd = transport.reduced(14, 8).removeFromRight(120);
+            wetB.setBounds(wd.removeFromLeft(60)); dryB.setBounds(wd); }
         d.reduce(18, 18);
         auto nameRow = d.removeFromTop(40);
         trashB.setBounds(nameRow.removeFromRight(32)); if (canRevealFiles) folderB.setBounds(nameRow.removeFromRight(32));
@@ -820,6 +830,7 @@ struct RecordingsScreen : Screen_ {
     };
     Model& model; juce::Viewport listView; juce::Component listInner; std::vector<std::unique_ptr<SessionRow>> rows; juce::String listSig;
     Waveform wave; IconButton prevB, playB, nextB, folderB, trashB; juce::TextEditor nameEd;
+    juce::TextButton wetB, dryB;
     juce::TextButton liveB, reampB, originalB, importB;
     double progressValue = 0; juce::ProgressBar progress { progressValue };
     std::vector<juce::Rectangle<int>> boxes;

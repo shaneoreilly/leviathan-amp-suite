@@ -461,6 +461,14 @@ struct RecordingsView: View {
                 Spacer()
             }
             .padding(.vertical, 8)
+            .overlay(alignment: .trailing) {
+                Picker("", selection: Binding(get: { rec.playDry }, set: { rec.setPlayDry($0) })) {
+                    Text("Wet").tag(false); Text("Dry").tag(true)
+                }
+                .pickerStyle(.segmented).labelsHidden().frame(width: 120 * Z).padding(.trailing, 14)
+                .help("Wet: the take through the rig. Dry: your guitar as it went in, before the rig.")
+                .explain("rec:wetDry", "Wet / Dry")
+            }
             .background(Color(white: 0.08))
 
             ScrollView {

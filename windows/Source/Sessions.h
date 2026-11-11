@@ -112,6 +112,12 @@ private:
     float liveLo = 0, liveHi = 0; int liveN = 0;
     /// The take last loaded for playback, kept so clicking around the waveform doesn't reload the file.
     juce::File loadedFile; double loadedRate = 0; std::vector<std::vector<float>> loadedCh;
+public:
+    /// Play the dry take (your guitar as recorded, before the rig) instead of the wet one. Switching while playing
+    /// carries on from the same point in the other file (Mac: Sessions.setPlayDry).
+    bool playDry = false;
+    void setPlayDry(bool dry);
+private:
     // buffers handed to the audio thread; swapped-out ones are freed a second later
     std::vector<std::vector<float>> live, retired;
     int retireCountdown = 0;

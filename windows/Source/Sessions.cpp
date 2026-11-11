@@ -294,10 +294,11 @@ void Sessions::play(double from, double to) {
     }
     stopLiveReamp();
     const double sr = m.engineRate();
-    if (loadedFile != s->wet() || loadedRate != sr) {
-        auto a = loadAudio(s->wet(), sr);
+    const auto file = playDry && s->dry().existsAsFile() ? s->dry() : s->wet();   // dry is mono: both sides
+    if (loadedFile != file || loadedRate != sr) {
+        auto a = loadAudio(file, sr);
         if (a.channels.empty()) { message = "Could not read the recording."; m.changed(); return; }
-        loadedCh = std::move(a.channels); loadedFile = s->wet(); loadedRate = sr;
+        loadedCh = std::move(a.channels); loadedFile = file; loadedRate = sr;
     }
     WavData w; w.channels = loadedCh; w.rate = sr;
     auto& p = m.params;
@@ -312,6 +313,13 @@ void Sessions::play(double from, double to) {
     p.bkPos.store(std::min((int) (from * sr), std::max(len - 1, 0)));
     p.bkPlaying.store(true, std::memory_order_release);
     playLen = len; fullLen = full; playRate = sr; playing = true;
+    m.changed();
+}
+
+void Sessions::setPlayDry(bool dry) {
+    if (dry == playDry) return;
+    playDry = dry;
+    if (playing) play(playPos, playLen < fullLen ? (double) playLen / playRate : -1.0);
     m.changed();
 }
 

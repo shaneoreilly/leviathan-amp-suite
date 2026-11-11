@@ -140,7 +140,15 @@ final class Sessions: ObservableObject {
     let liveWave = LiveWave()
     private var liveBin: (lo: Float, hi: Float, n: Int) = (0, 0, 0)
     /// The take last loaded for playback, kept so clicking around the waveform doesn't reload the file.
-    private var loaded: (id: URL, rate: Double, l: [Float], r: [Float])?
+    private var loaded: (id: URL, rate: Double, l: [Float], r: [Float])?   // id: the file it was read from
+    /// Play the dry take (your guitar as recorded, before the rig) instead of the wet one. Switching while playing
+    /// carries on from the same point in the other file.
+    @Published private(set) var playDry = false
+    func setPlayDry(_ dry: Bool) {
+        guard dry != playDry else { return }
+        playDry = dry
+        if playing { play(from: playPos, to: playLen < fullLen ? Double(playLen) / playRate : nil) }
+    }
     @Published var liveReamp = false
     @Published var rendering: Double? = nil      // progress 0...1 while an offline re-amp runs
     @Published var waveform: [Float] = []        // min/max pairs
@@ -339,11 +347,12 @@ final class Sessions: ObservableObject {
         stopLiveReamp()
         let sr = Double(dsp.sr)
         let l: [Float], r: [Float]
-        if let c = loaded, c.id == s.id, c.rate == sr { l = c.l; r = c.r }
+        let file = playDry && FileManager.default.fileExists(atPath: s.dry.path) ? s.dry : s.wet   // dry is mono: both sides
+        if let c = loaded, c.id == file, c.rate == sr { l = c.l; r = c.r }
         else {
-            guard let ch = try? loadAudio(s.wet, rate: sr), let first = ch.first else { message = "Could not read the recording."; return }
+            guard let ch = try? loadAudio(file, rate: sr), let first = ch.first else { message = "Could not read the recording."; return }
             l = first; r = ch.count > 1 ? ch[1] : first
-            loaded = (s.id, sr, l, r)
+            loaded = (file, sr, l, r)
         }
         let p = m.params
         p.bkPlaying = false
