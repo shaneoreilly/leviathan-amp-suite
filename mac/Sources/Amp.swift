@@ -21,6 +21,8 @@ func namDisplayTitle(_ file: String) -> String {
 /// ‹ [badge · name / detail ▾] › — the row shared by the cabinet and amp pickers.
 struct SourceButtonRow<Popover: View, MenuItems: View>: View {
     let badge: String, name: String, detail: String, help: String
+    var width: CGFloat = 210   // button width (times W); the amp panels use a narrower one
+    var showMenu = true
     @Binding var open: Bool
     let prev: () -> Void, next: () -> Void
     @ViewBuilder let popover: () -> Popover
@@ -42,7 +44,7 @@ struct SourceButtonRow<Popover: View, MenuItems: View>: View {
                     Image(systemName: "chevron.down").foregroundStyle(.secondary)
                 }
                 .padding(.horizontal, 8).padding(.vertical, 5)
-                .frame(width: 210 * W)
+                .frame(width: width * W)
                 .background(RoundedRectangle(cornerRadius: 7).fill(Color.white.opacity(0.06)))
                 .overlay(RoundedRectangle(cornerRadius: 7).stroke(open ? Color.accentColor : Color.white.opacity(0.1)))
                 .contentShape(Rectangle())
@@ -52,8 +54,10 @@ struct SourceButtonRow<Popover: View, MenuItems: View>: View {
             .help(help)
             Button(action: next) { Image(systemName: "chevron.right").frame(width: 18 * Z, height: 30 * Z).contentShape(Rectangle()) }
                 .buttonStyle(.borderless).help("Next")
-            Menu(content: menu) { Image(systemName: "ellipsis.circle") }
-                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+            if showMenu {
+                Menu(content: menu) { Image(systemName: "ellipsis.circle") }
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+            }
         }
     }
 }
@@ -108,6 +112,7 @@ struct AmpPicker: View {
         let id = secondAmp ? (m.s.ampBNam.isEmpty ? "" : "nam:" + m.s.ampBNam) : m.ampID
         SourceButtonRow(badge: secondAmp && id.isEmpty ? "OFF" : m.ampBadge(id), name: m.ampName(id, secondAmp: secondAmp),
                         detail: m.ampDetail(id, secondAmp: secondAmp), help: secondAmp ? "Choose a second amp" : "Choose an amp",
+                        width: 150, showMenu: false,   // narrow panels; adding captures is in the browser
                         open: $ui.open, prev: { m.stepAmp(-1, secondAmp: secondAmp) }, next: { m.stepAmp(1, secondAmp: secondAmp) },
                         popover: { AmpBrowser(secondAmp: secondAmp, ui: ui).environmentObject(m) },
                         menu: {
@@ -165,8 +170,15 @@ struct AmpBrowser: View {
                 .onAppear { proxy.scrollTo(cur, anchor: .center) }
             }
             Divider()
-            Text("Click to hear it · add captures with ⋯").font(.inter(size: T(9) * UI)).foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12).padding(.vertical, 7)
+            HStack {
+                Text("Click to hear it").foregroundStyle(.secondary)
+                Spacer()
+                Button("Add NAM captures…") { m.importNam() }
+                Button("Open NAM folder") { NSWorkspace.shared.open(NamHost.dir) }
+                Button("Rescan") { m.reloadCaptures(); m.rescanNam() }
+            }
+            .font(.inter(size: T(9) * UI)).buttonStyle(.borderless)
+            .padding(.horizontal, 12).padding(.vertical, 7)
         }
         .font(.inter(size: T(10.5) * UI))
         .frame(width: 520 * Z, height: 480 * Z)

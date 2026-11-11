@@ -58,6 +58,10 @@ public:
         search.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
         search.onTextChange = [this] { refresh(); };
         addAndMakeVisible(search);
+        addB.onClick = [this] { model.importNamDialog(); };
+        rescanB.onClick = [this] { model.reloadCaptures(); model.rescanNam(); refresh(); };
+        addAndMakeVisible(addB); addAndMakeVisible(rescanB);
+        if (canRevealFiles) { openB.onClick = [] { Model::namDir().revealToUser(); }; addAndMakeVisible(openB); }
         list.setModel(this); list.setRowHeight(onAndroid ? 40 : 26);
         list.setColour(juce::ListBox::backgroundColourId, juce::Colours::transparentBlack);
         addAndMakeVisible(list);
@@ -66,9 +70,18 @@ public:
         refresh();
     }
     void visibilityChanged() override { if (isShowing() && !onAndroid) search.grabKeyboardFocus(); }
-    void resized() override { search.setBounds(12, 12, getWidth() - 24, 36); list.setBounds(getLocalBounds().withTrimmedTop(56).reduced(6, 4)); }
+    void resized() override {
+        search.setBounds(12, 12, getWidth() - 24, 36);
+        auto foot = getLocalBounds().removeFromBottom(40).reduced(10, 6);
+        for (auto* b : { &rescanB, &openB, &addB }) {
+            if (!b->isVisible()) continue;
+            const int w = juce::GlyphArrangement::getStringWidthInt(theme::font(10), b->getButtonText()) + 24;
+            b->setBounds(foot.removeFromRight(w)); foot.removeFromRight(6);
+        }
+        list.setBounds(getLocalBounds().withTrimmedTop(56).withTrimmedBottom(42).reduced(6, 4));
+    }
     void paint(juce::Graphics& g) override {
-        g.setColour(theme::line); g.fillRect(0, 54, getWidth(), 1);
+        g.setColour(theme::line); g.fillRect(0, 54, getWidth(), 1); g.fillRect(0, getHeight() - 41, getWidth(), 1);
         if (rows.empty()) {
             g.setColour(theme::secondary); g.setFont(theme::font(10.5f));
             g.drawText(juce::String::fromUTF8("No amp matches \xe2\x80\x9c") + search.getText() + juce::String::fromUTF8("\xe2\x80\x9d."),
@@ -112,6 +125,7 @@ private:
     }
     Model& model; bool secondAmp;
     juce::TextEditor search; juce::ListBox list;
+    juce::TextButton addB { juce::String::fromUTF8("Add NAM captures\xe2\x80\xa6") }, openB { "Open NAM folder" }, rescanB { "Rescan" };
     std::vector<Row> rows;
 };
 } // namespace
@@ -127,7 +141,8 @@ std::unique_ptr<juce::Component> makeButton(Model& m, bool second) {
     auto b = std::make_unique<SourceButton>([&m, second] { return badge(currentId(m, second), second); },
                                             [&m, second] { return name(currentId(m, second), second); },
                                             [&m, second] { return detail(m, currentId(m, second), second); },
-                                            [&m, second](SourceButton& self) { juce::CallOutBox::launchAsynchronously(std::make_unique<Browser>(m, second), self.getScreenBounds(), nullptr); });
+                                            [&m, second](SourceButton& self) { juce::CallOutBox::launchAsynchronously(std::make_unique<Browser>(m, second), self.getScreenBounds(), nullptr); },
+                                            150);   // narrow panels; adding captures is in the browser
     b->setTooltip(second ? "Choose a second amp" : "Choose an amp");
     return b;
 }

@@ -321,7 +321,7 @@ struct TopBar : juce::Component {
                 setSize(400, 230);
             }
             void resized() override {
-                metroT.setBounds(130, 10, 120, 28); bpmS.setBounds(130, 50, 170, 28); tapB.setBounds(310, 50, 70, 28);
+                metroT.setBounds(130, 10, 44, 28); bpmS.setBounds(130, 50, 170, 28); tapB.setBounds(310, 50, 70, 28);
                 beats.setBounds(130, 88, 80, 28); vol.setBounds(130, 128, 250, 28); clockT.setBounds(130, 168, 250, 26);
             }
             void paint(juce::Graphics& g) override {

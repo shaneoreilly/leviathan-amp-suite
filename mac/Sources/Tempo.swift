@@ -25,7 +25,7 @@ struct TempoControl: View {
             HStack(spacing: 6) {
                 Image(systemName: "metronome")
                 Text(String(format: m.bpm.truncatingRemainder(dividingBy: 1) == 0 ? "%.0f" : "%.1f", m.bpm)).monospacedDigit()
-                if m.metroOn { BeatLights(mt: m.meters, beats: m.beatsPerBar) }
+                BeatLights(mt: m.meters, beats: m.beatsPerBar).opacity(m.metroOn ? 1 : 0)   // space kept: toggling never moves the bar
             }
         }
         .buttonStyle(TopBarToggle(on: m.metroOn))
@@ -38,6 +38,20 @@ struct TempoControl: View {
 }
 
 final class TempoUI: ObservableObject { @Published var open = false }
+
+/// A flat on/off switch: a plain track and a plain dot, no shadow or label.
+struct FlatSwitch: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        let on = configuration.isOn
+        return Capsule().fill(on ? Color.accentColor : Color.white.opacity(0.16))
+            .frame(width: 36, height: 20)
+            .overlay(alignment: on ? .trailing : .leading) { Circle().fill(.white).frame(width: 14, height: 14).padding(3) }
+            .animation(.easeOut(duration: 0.15), value: on)
+            .contentShape(Capsule())
+            .onTapGesture { configuration.isOn.toggle() }
+            .accessibilityRepresentation { Toggle(isOn: configuration.$isOn) { configuration.label } }
+    }
+}
 
 struct BeatLights: View {
     @ObservedObject var mt: Meters
@@ -58,7 +72,7 @@ struct TempoPopover: View {
         Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 10) {
             GridRow {
                 Text("Metronome").foregroundStyle(.secondary)
-                Toggle(isOn: $m.metroOn) { Text(m.metroOn ? "On" : "Off") }.toggleStyle(.switch)
+                Toggle("Metronome", isOn: $m.metroOn).toggleStyle(FlatSwitch()).labelsHidden()
             }
             GridRow {
                 Text("Tempo").foregroundStyle(.secondary)

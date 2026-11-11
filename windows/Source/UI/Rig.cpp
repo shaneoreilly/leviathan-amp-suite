@@ -315,9 +315,6 @@ std::unique_ptr<UnitBox> RigView::makePanel(const juce::String& id) {
         r1->add(std::make_unique<IconButton>(IconButton::chevronLeft, [&m] { amp::step(m, -1, false); }, 12))->setTooltip("Previous amp");
         r1->add(amp::makeButton(m, false));
         r1->add(std::make_unique<IconButton>(IconButton::chevronRight, [&m] { amp::step(m, 1, false); }, 12))->setTooltip("Next amp");
-        r1->add(moreButton({ { juce::String::fromUTF8("Add NAM captures (.nam)\xe2\x80\xa6"), [&m] { m.importNamDialog(); } },
-                             { "Open NAM folder", openFolder(Model::namDir()) },
-                             { "Rescan", [&m] { m.reloadCaptures(); m.rescanNam(); } } }, "Add or rescan amp captures"));
         c->add(std::move(r1));
         if (m.s().s("nam").isNotEmpty()) {
             auto r = row();
@@ -450,9 +447,6 @@ std::unique_ptr<UnitBox> RigView::makePanel(const juce::String& id) {
         r1->add(std::make_unique<IconButton>(IconButton::chevronLeft, [&m] { amp::step(m, -1, true); }, 12))->setTooltip("Previous amp");
         r1->add(amp::makeButton(m, true));
         r1->add(std::make_unique<IconButton>(IconButton::chevronRight, [&m] { amp::step(m, 1, true); }, 12))->setTooltip("Next amp");
-        r1->add(moreButton({ { juce::String::fromUTF8("Add NAM captures (.nam)\xe2\x80\xa6"), [&m] { m.importNamDialog(); } },
-                             { "Open NAM folder", openFolder(Model::namDir()) },
-                             { "Rescan", [&m] { m.reloadCaptures(); m.rescanNam(); } } }, "Add or rescan amp captures"));
         c->add(std::move(r1));
         auto r = row();
         r->add(knob("Level", "ampBLevel", -12, 12, 0, dbSigned, "AMP B"));

@@ -140,26 +140,24 @@ juce::String namTitle(juce::String n);
 class SourceButton : public juce::Component, public juce::SettableTooltipClient {
 public:
     SourceButton(std::function<juce::String()> badge, std::function<juce::String()> name, std::function<juce::String()> detail,
-                 std::function<void(SourceButton&)> onOpen);
+                 std::function<void(SourceButton&)> onOpen, int width = 210);   // width times theme::W; the amp panels use a narrower one
     void paint(juce::Graphics&) override;
     void mouseUp(const juce::MouseEvent&) override;
     std::function<juce::String()> badge, name, detail;
     std::function<void(SourceButton&)> onOpen;
 };
 
-/// An on/off switch (a pill with a knob) reading "On" or "Off" beside it, instead of a checkbox.
+/// A flat on/off switch: a plain track and a plain dot, no label (instead of a checkbox).
 class SwitchButton : public juce::ToggleButton {
 public:
     explicit SwitchButton(std::function<juce::Colour()> accent) : accentOf(std::move(accent)) {}
     void paintButton(juce::Graphics& g, bool over, bool) override {
         const bool on = getToggleState();
-        const auto track = juce::Rectangle<float>(2, (float) getHeight() / 2 - 10, 38, 20);
+        const auto track = juce::Rectangle<float>(2, (float) getHeight() / 2 - 10, 36, 20);
         g.setColour(on ? accentOf() : juce::Colours::white.withAlpha(over ? 0.22f : 0.16f));
         g.fillRoundedRectangle(track, 10);
-        const float x = on ? track.getRight() - 18 : track.getX() + 2;
-        g.setColour(juce::Colours::white); g.fillEllipse(x, track.getY() + 2, 16, 16);
-        g.setColour(theme::text); g.setFont(theme::font(10.5f));
-        g.drawText(on ? "On" : "Off", getLocalBounds().withTrimmedLeft(50), juce::Justification::centredLeft);
+        const float x = on ? track.getRight() - 17 : track.getX() + 3;
+        g.setColour(juce::Colours::white); g.fillEllipse(x, track.getY() + 3, 14, 14);
     }
     std::function<juce::Colour()> accentOf;
 };

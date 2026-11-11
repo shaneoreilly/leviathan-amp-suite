@@ -47,9 +47,9 @@ juce::String namTitle(juce::String n) {
     return w.joinIntoString(" ");
 }
 
-SourceButton::SourceButton(std::function<juce::String()> b, std::function<juce::String()> n, std::function<juce::String()> d, std::function<void(SourceButton&)> open)
+SourceButton::SourceButton(std::function<juce::String()> b, std::function<juce::String()> n, std::function<juce::String()> d, std::function<void(SourceButton&)> open, int width)
     : badge(std::move(b)), name(std::move(n)), detail(std::move(d)), onOpen(std::move(open)) {
-    setPref(*this, (int) (210 * theme::W), 40);
+    setPref(*this, (int) ((float) width * theme::W), 40);
     setMouseCursor(juce::MouseCursor::PointingHandCursor);
 }
 
