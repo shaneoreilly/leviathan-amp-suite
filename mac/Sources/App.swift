@@ -656,6 +656,17 @@ final class Model: ObservableObject {
         }
     }()
     /// Accent colour: a picked colour, or (when none is set) the colour of the active amp channel.
+    /// Theme (Settings > Appearance): "dark" or "light", and your own background colour for each (hex; empty = default).
+    /// Not in presets. Changing any of them rebuilds the window with the new palette (Theme.swift).
+    @Published var theme = UserDefaults.standard.string(forKey: "theme") ?? "dark" { didSet { UserDefaults.standard.set(theme, forKey: "theme"); applyTheme() } }
+    @Published var bgDark = UserDefaults.standard.string(forKey: "bgDark") ?? "" { didSet { UserDefaults.standard.set(bgDark, forKey: "bgDark"); applyTheme() } }
+    @Published var bgLight = UserDefaults.standard.string(forKey: "bgLight") ?? "" { didSet { UserDefaults.standard.set(bgLight, forKey: "bgLight"); applyTheme() } }
+    @Published private(set) var themeStamp = 0
+    var themeBackground: RGB { theme == "light" ? (RGB(hex: bgLight) ?? Palette.defaultLight) : (RGB(hex: bgDark) ?? Palette.defaultDark) }
+    func applyTheme() { PAL = Palette.make(themeBackground); themeStamp += 1 }
+    /// The background colour for the theme in use (empty string = back to the default).
+    func setBackground(_ hex: String) { if theme == "light" { bgLight = hex } else { bgDark = hex } }
+
     @Published var accentRGB: [Double]? = UserDefaults.standard.array(forKey: "accent") as? [Double] {
         didSet { UserDefaults.standard.set(accentRGB, forKey: "accent") }
     }
@@ -720,6 +731,7 @@ final class Model: ObservableObject {
         }
         DebugLog.setEnabled(UserDefaults.standard.bool(forKey: "debugLog"))
         loadOutputEQ()
+        applyTheme()
         timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
         }
@@ -1415,7 +1427,7 @@ extension Font {
 var W: CGFloat { 1.4 * Z }
 
 let channelColors: [Color] = [Color(red: 0.35, green: 0.7, blue: 1), Color(red: 0.91, green: 0.57, blue: 0.23), Color(red: 1, green: 0.3, blue: 0.3)]
-let panel = Color(white: 0.085), panel2 = Color(white: 0.12), line = Color(white: 0.2)
+var panel: Color { PAL.panel }; var panel2: Color { PAL.panel2 }; var line: Color { PAL.line }   // Theme.swift
 
 final class DragStart: ObservableObject { var start: Double? }
 
@@ -1448,13 +1460,13 @@ struct Knob: View {
         let t = toPos(value)
         VStack(spacing: 2) {
             ZStack {
-                Circle().fill(Color(white: 0.15)).frame(width: 44 * Z, height: 44 * Z)
+                Circle().fill(PAL.knobFace).frame(width: 44 * Z, height: 44 * Z)
                     .shadow(color: .black.opacity(0.6), radius: 2, y: 1)
-                Circle().trim(from: 0, to: 0.75).stroke(Color(white: 0.22), style: .init(lineWidth: 5 * Z, lineCap: .round))
+                Circle().trim(from: 0, to: 0.75).stroke(PAL.knobTrack, style: .init(lineWidth: 5 * Z, lineCap: .round))
                     .rotationEffect(.degrees(135)).frame(width: 60 * Z, height: 60 * Z)
                 Circle().trim(from: 0, to: 0.75 * t).stroke(color, style: .init(lineWidth: 5 * Z, lineCap: .round))
                     .rotationEffect(.degrees(135)).frame(width: 60 * Z, height: 60 * Z)
-                Capsule().fill(.white).frame(width: 3 * Z, height: 14 * Z).offset(y: -12 * Z).rotationEffect(.degrees(-135 + 270 * t))
+                Capsule().fill(PAL.text).frame(width: 3 * Z, height: 14 * Z).offset(y: -12 * Z).rotationEffect(.degrees(-135 + 270 * t))
             }
             .frame(width: 66 * Z, height: 66 * Z)
             .contentShape(Rectangle())
@@ -1480,7 +1492,7 @@ struct Knob: View {
                     .frame(width: 22 * Z, height: 14 * Z).contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .foregroundStyle(value == def ? Color(white: 0.3) : color)
+            .foregroundStyle(value == def ? PAL.dim : color)
             .disabled(value == def)
             .help("Reset to \(fmt(def))")
         }
@@ -1496,7 +1508,7 @@ struct Footswitch: View {
     var body: some View {
         Button { on.toggle() } label: {
             HStack(spacing: 5) {
-                Circle().fill(on ? color : Color(white: 0.2)).frame(width: 8, height: 8).shadow(color: on ? color : .clear, radius: 4)
+                Circle().fill(on ? color : PAL.off).frame(width: 8, height: 8).shadow(color: on ? color : .clear, radius: 4)
                 // always as wide as "OFF", so switching never changes the panel's width (and reflows the rig)
                 ZStack(alignment: .leading) {
                     Text("OFF").hidden()
@@ -1584,8 +1596,8 @@ struct Fader: View {
         let y = { (v: Double) in thumb / 2 + travel * CGFloat(1 - (v - range.lowerBound) / span) }
         let zeroY = y(min(max(0, range.lowerBound), range.upperBound)), vy = y(value)
         ZStack(alignment: .top) {
-            Capsule().fill(Color(white: 0.2)).frame(width: 6, height: height)
-            Rectangle().fill(Color(white: 0.4)).frame(width: 16, height: 1).offset(y: zeroY)
+            Capsule().fill(PAL.off).frame(width: 6, height: height)
+            Rectangle().fill(PAL.dim).frame(width: 16, height: 1).offset(y: zeroY)
             Capsule().fill(color).frame(width: 6, height: abs(vy - zeroY)).offset(y: min(vy, zeroY))
             Circle().fill(.white).frame(width: thumb, height: thumb).shadow(color: .black.opacity(0.6), radius: 2, y: 1)
                 .offset(y: vy - thumb / 2)
@@ -1636,7 +1648,7 @@ struct LevelMeters: View {
 
 struct GateDot: View {
     @ObservedObject var mt: Meters
-    var body: some View { Circle().fill(mt.gateOpen ? Color.green : Color(white: 0.2)).frame(width: 7, height: 7) }
+    var body: some View { Circle().fill(mt.gateOpen ? Color.green : PAL.off).frame(width: 7, height: 7) }
 }
 
 struct PitchLatency: View {
@@ -1653,7 +1665,7 @@ struct Meter: View {
         let db = 20 * log10(max(Double(level), 1e-6)), t = min(max((db + 60) / 60, 0), 1)
         GeometryReader { g in
             ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 3).fill(.black)
+                RoundedRectangle(cornerRadius: 3).fill(PAL.off)
                 RoundedRectangle(cornerRadius: 3).fill(db > -1 ? Color.red : db > -9 ? Color.yellow : Color.green).frame(width: g.size.width * t)
             }
         }
@@ -1772,10 +1784,10 @@ struct ContentView: View {
             Text(m.tunerNote).font(.inter(size: T(64) * UI, weight: .heavy)).foregroundStyle(inTune ? Color.green : .primary)
             GeometryReader { g in
                 ZStack {
-                    LinearGradient(colors: [.red.opacity(0.4), Color(white: 0.2), .green.opacity(0.5), Color(white: 0.2), .red.opacity(0.4)],
+                    LinearGradient(colors: [.red.opacity(0.4), PAL.off, .green.opacity(0.5), PAL.off, .red.opacity(0.4)],
                                    startPoint: .leading, endPoint: .trailing).clipShape(Capsule())
-                    Rectangle().fill(.white.opacity(0.4)).frame(width: 1)
-                    Capsule().fill(inTune ? Color.green : .white).frame(width: 4, height: 26)
+                    Rectangle().fill(PAL.text.opacity(0.4)).frame(width: 1)
+                    Capsule().fill(inTune ? Color.green : PAL.text).frame(width: 4, height: 26)
                         .offset(x: CGFloat(min(max(m.tunerCents, -50), 50) / 50) * g.size.width / 2)
                         .shadow(color: inTune ? .green : .clear, radius: 6)
                         .animation(.easeOut(duration: 0.08), value: m.tunerCents)
@@ -2175,7 +2187,7 @@ struct LeviathanApp: App {
         WindowGroup("Leviathan - v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")") {
             RootView().environmentObject(model).environmentObject(model.sessions).environmentObject(model.midi).environmentObject(model.updater)
                 .font(.inter(size: T(12) * UI))   // default for any text without its own font
-                .preferredColorScheme(.dark).frame(minWidth: 900, minHeight: 600)
+                .frame(minWidth: 900, minHeight: 600)
                 .background(WindowFrameSaver())
         }
         .windowResizability(.contentMinSize)
@@ -2228,7 +2240,7 @@ struct HoverHelpStrip: View {
         .lineLimit(2)
         .padding(.horizontal, 14).padding(.vertical, 8)
         .frame(minHeight: 44 * Z, alignment: .leading)
-        .background(Color(white: 0.07))
+        .background(PAL.bar)
         .overlay(alignment: .top) { Rectangle().fill(line).frame(height: 1) }
     }
 }

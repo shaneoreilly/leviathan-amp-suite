@@ -158,8 +158,8 @@ public:
         g.setFont(theme::font(10.5f));
         for (auto& c : chips) {
             const auto r = c.r.toFloat().reduced(0.5f);
-            g.setColour(c.on ? model.accent().withAlpha(0.22f) : juce::Colours::white.withAlpha(0.05f)); g.fillRoundedRectangle(r, r.getHeight() / 2);
-            g.setColour(c.on ? model.accent() : juce::Colours::white.withAlpha(0.12f)); g.drawRoundedRectangle(r, r.getHeight() / 2, 1);
+            g.setColour(c.on ? model.accent().withAlpha(0.22f) : theme::tint.withAlpha(0.05f)); g.fillRoundedRectangle(r, r.getHeight() / 2);
+            g.setColour(c.on ? model.accent() : theme::tint.withAlpha(0.12f)); g.drawRoundedRectangle(r, r.getHeight() / 2, 1);
             g.setColour(c.on ? theme::text : theme::secondary); g.drawText(c.label, c.r, juce::Justification::centred);
         }
     }
@@ -175,7 +175,7 @@ public:
         tab = m.props().getValue("cabTab", "library");
         search.setTextToShowWhenEmpty(juce::String::fromUTF8("Search every cab: name, band, folder\xe2\x80\xa6"), theme::secondary);
         search.setFont(theme::font(10.5f)); search.setIndents(30, 0); search.setJustification(juce::Justification::centredLeft);
-        search.setColour(juce::TextEditor::backgroundColourId, juce::Colours::white.withAlpha(0.06f));
+        search.setColour(juce::TextEditor::backgroundColourId, theme::tint.withAlpha(0.06f));
         search.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
         search.onTextChange = [this] { refresh(); };
         addAndMakeVisible(search);
@@ -319,7 +319,7 @@ private:
         void paintListBoxItem(int row, juce::Graphics& g, int w, int h, bool) override {
             if (!juce::isPositiveAndBelow(row, b.folderNames.size())) return;
             const auto f = key(row);
-            if (f == b.folder) { g.setColour(juce::Colours::white.withAlpha(0.08f)); g.fillRoundedRectangle(0, 1, (float) w, (float) h - 2, 6); }
+            if (f == b.folder) { g.setColour(theme::tint.withAlpha(0.08f)); g.fillRoundedRectangle(0, 1, (float) w, (float) h - 2, 6); }
             int n = 0; for (const auto& rel : b.model.cabIRs.all()) if (f.isEmpty() || folderOf(rel) == f) ++n;
             g.setColour(theme::text); g.setFont(theme::font(10.5f));
             g.drawText(b.folderNames[row] == "\x01all" ? juce::String("All") : f.isEmpty() ? juce::String("(top level)") : f, 8, 0, w - 50, h, juce::Justification::centredLeft, true);

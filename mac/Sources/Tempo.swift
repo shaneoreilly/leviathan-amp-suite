@@ -43,7 +43,7 @@ final class TempoUI: ObservableObject { @Published var open = false }
 struct FlatSwitch: ToggleStyle {
     func makeBody(configuration: Configuration) -> some View {
         let on = configuration.isOn
-        return Capsule().fill(on ? Color.accentColor : Color.white.opacity(0.16))
+        return Capsule().fill(on ? Color.accentColor : PAL.tint.opacity(0.16))
             .frame(width: 36, height: 20)
             .overlay(alignment: on ? .trailing : .leading) { Circle().fill(.white).frame(width: 14, height: 14).padding(3) }
             .animation(.easeOut(duration: 0.15), value: on)
@@ -59,7 +59,7 @@ struct BeatLights: View {
     var body: some View {
         HStack(spacing: 3) {
             ForEach(0..<min(beats, 12), id: \.self) { i in
-                Circle().fill(mt.beat == i ? (i == 0 ? Color.accentColor : .white) : Color(white: 0.25)).frame(width: 6, height: 6)
+                Circle().fill(mt.beat == i ? (i == 0 ? Color.accentColor : PAL.text) : PAL.off).frame(width: 6, height: 6)
             }
         }
     }

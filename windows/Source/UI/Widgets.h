@@ -8,8 +8,14 @@
 namespace lev {
 
 namespace theme {
-const juce::Colour bg { 0xff0d0d0d }, bar { 0xff121212 }, panel { 0xff161616 }, panel2 { 0xff1f1f1f }, line { 0xff333333 },
-                   knobFace { 0xff262626 }, knobTrack { 0xff383838 }, text { 0xffeeeeee }, secondary { 0xff9a9a9a };
+/// The palette in use, worked out from the background colour by apply() (the Mac app's Theme.swift, the same
+/// formula): dark or light text follows how bright the background is, panels and lines are mixes of the two.
+inline juce::Colour bg { 0xff0d0d0d }, bar { 0xff121212 }, panel { 0xff161616 }, panel2 { 0xff1f1f1f }, line { 0xff333333 },
+                    knobFace { 0xff262626 }, knobTrack { 0xff383838 }, text { 0xffeeeeee }, secondary { 0xff9a9a9a },
+                    off { 0xff2f2f2f }, dim { 0xff4d4d4d }, tint { 0xffffffff }, warnBg { 0xff291f0f }, warnFg { 0xffffd999 };
+inline bool isLight = false;
+const juce::Colour defaultDark { 0xff0d0d0d }, defaultLight { 0xffececee };
+void apply(juce::Colour background);
 /// SwiftUI point size -> JUCE font (SwiftUI's 1.5x text scale, JUCE heights include line spacing).
 juce::Font font(float pt, bool bold = false, float tracking = 0);
 /// A design size snapped to the type scale (9, 10.5, 12, 13, 16, 22; larger sizes unchanged).
@@ -21,6 +27,8 @@ class LookAndFeel : public juce::LookAndFeel_V4 {
 public:
     LookAndFeel();
     void setAccent(juce::Colour c);
+    /// Re-reads the theme:: palette (after theme::apply).
+    void refreshTheme();
     juce::Font getComboBoxFont(juce::ComboBox&) override { return theme::font(10.5f); }
     /// Never squeeze a combo box's text narrower (JUCE's default): too long ends in "..." instead.
     void positionComboBoxText(juce::ComboBox& box, juce::Label& label) override {
@@ -154,7 +162,7 @@ public:
     void paintButton(juce::Graphics& g, bool over, bool) override {
         const bool on = getToggleState();
         const auto track = juce::Rectangle<float>(2, (float) getHeight() / 2 - 10, 36, 20);
-        g.setColour(on ? accentOf() : juce::Colours::white.withAlpha(over ? 0.22f : 0.16f));
+        g.setColour(on ? accentOf() : theme::tint.withAlpha(over ? 0.22f : 0.16f));
         g.fillRoundedRectangle(track, 10);
         const float x = on ? track.getRight() - 17 : track.getX() + 3;
         g.setColour(juce::Colours::white); g.fillEllipse(x, track.getY() + 3, 14, 14);

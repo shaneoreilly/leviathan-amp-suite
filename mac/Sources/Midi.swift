@@ -223,7 +223,7 @@ struct MidiLearnOverlay: View {
     private var fillColor: Color {
         if isArmed { return Color.accentColor.opacity(0.35) }
         if mapped != nil { return Color.accentColor.opacity(0.15) }
-        return Color.white.opacity(0.04)
+        return PAL.tint.opacity(0.04)
     }
 
     private var label: String {
@@ -329,7 +329,7 @@ struct TopBarToggle: ButtonStyle {
             .font(.inter(size: T(9) * UI))   // the size of the bar's other buttons (Save, the preset menu)
             .foregroundStyle(on ? Color.accentColor : Color.primary)
             .padding(.horizontal, 10).padding(.vertical, 5)
-            .background(RoundedRectangle(cornerRadius: 6).fill(on ? Color.accentColor.opacity(0.2) : Color.white.opacity(configuration.isPressed ? 0.16 : 0.09)))
+            .background(RoundedRectangle(cornerRadius: 6).fill(on ? Color.accentColor.opacity(0.2) : PAL.tint.opacity(configuration.isPressed ? 0.16 : 0.09)))
             .contentShape(RoundedRectangle(cornerRadius: 6))
     }
 }

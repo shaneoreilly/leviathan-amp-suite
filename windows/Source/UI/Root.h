@@ -29,6 +29,8 @@ private:
     juce::String bannerSig;
     std::unique_ptr<juce::Component> whatsNew;   // the What's new popup, over everything
     Screen shown = Screen::rig;
+    int themeShown = -1;
+    void buildScreens();   // every screen, at the current theme (rebuilt when it changes)
 
     void changeListenerCallback(juce::ChangeBroadcaster*) override;
     void timerCallback() override;

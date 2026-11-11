@@ -100,11 +100,11 @@ struct MarkdownView: View {
                 .padding(.top, first ? 0 : (level == 1 ? 16 : 8) * Z)
                 .fixedSize(horizontal: false, vertical: true)
         case .para(let s):
-            Text(Markdown.inline(s)).font(body13).foregroundStyle(Color(white: 0.85)).fixedSize(horizontal: false, vertical: true)
+            Text(Markdown.inline(s)).font(body13).foregroundStyle(PAL.text.opacity(0.9)).fixedSize(horizontal: false, vertical: true)
         case .item(let level, let marker, let s):
             HStack(alignment: .firstTextBaseline, spacing: 6 * Z) {
                 Text(marker).font(body13).foregroundStyle(.secondary).frame(minWidth: 12 * Z, alignment: .leading)
-                Text(Markdown.inline(s)).font(body13).foregroundStyle(Color(white: 0.85)).fixedSize(horizontal: false, vertical: true)
+                Text(Markdown.inline(s)).font(body13).foregroundStyle(PAL.text.opacity(0.9)).fixedSize(horizontal: false, vertical: true)
             }
             .padding(.leading, CGFloat(level) * 18 * Z)
         case .row(let cells, let header):

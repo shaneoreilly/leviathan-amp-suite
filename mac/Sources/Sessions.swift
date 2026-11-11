@@ -813,7 +813,7 @@ struct LiveWaveView: View {
     var color: Color
     var body: some View {
         Canvas { ctx, size in
-            ctx.fill(Path(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: 5), with: .color(Color(white: 0.1)))
+            ctx.fill(Path(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: 5), with: .color(PAL.panel2))
             let n = wave.pairs.count / 2
             guard n > 0 else { return }
             let cols = max(Int(size.width / 2), 1), per = max(Double(n) / Double(cols), 1)

@@ -333,6 +333,6 @@ struct WhatsNewSheet: View {
         }
         .frame(width: 600 * Z)
         .controlSize(.large)
-        .background(Color(white: 0.07))
+        .background(PAL.bar)
     }
 }

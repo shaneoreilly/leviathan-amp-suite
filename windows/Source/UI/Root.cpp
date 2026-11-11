@@ -62,7 +62,7 @@ struct Sidebar : juce::Component {
     }
     void drawItem(juce::Graphics& g, juce::Rectangle<int> r, Screen s, const juce::String& label, bool badge) {
         const bool on = model.screen == s;
-        if (on) { g.setColour(juce::Colours::white.withAlpha(0.07f)); g.fillRoundedRectangle(r.toFloat(), 10); }
+        if (on) { g.setColour(theme::tint.withAlpha(0.07f)); g.fillRoundedRectangle(r.toFloat(), 10); }
         const auto c = on ? model.accent() : theme::secondary;
         auto icon = r.toFloat().removeFromTop(44).withSizeKeepingCentre(22, 22).translated(0, 6);
         g.setColour(c);
@@ -104,7 +104,7 @@ struct Meters : juce::Component {
         auto bar = [&](int y, float level, const char* label) {
             g.setColour(theme::secondary); g.setFont(theme::font(9)); g.drawText(label, 0, y, 30, 16, juce::Justification::centredRight);
             auto r = juce::Rectangle<float>(36, (float) y + 4, (float) getWidth() - 40, 8);
-            g.setColour(juce::Colours::black); g.fillRoundedRectangle(r, 3);
+            g.setColour(theme::off); g.fillRoundedRectangle(r, 3);
             const float db = 20 * std::log10(std::max(level, 1e-6f)), t = juce::jlimit(0.f, 1.f, (db + 60) / 60);
             g.setColour(db > -1 ? juce::Colours::red : db > -9 ? juce::Colours::yellow : juce::Colour(0xff4cd964));
             g.fillRoundedRectangle(r.withWidth(r.getWidth() * t), 3);
@@ -136,7 +136,7 @@ struct LiveWave : juce::Component, private juce::Timer {
     explicit LiveWave(Model& m) : model(m) { startTimerHz(15); }
     void timerCallback() override { if (isVisible()) repaint(); }
     void paint(juce::Graphics& g) override {
-        g.setColour(juce::Colour(0xff1a1a1a)); g.fillRoundedRectangle(getLocalBounds().toFloat(), 5);
+        g.setColour(theme::panel2); g.fillRoundedRectangle(getLocalBounds().toFloat(), 5);
         const auto& w = model.sessions->liveWave;
         const size_t n = w.size() / 2;
         if (n == 0) return;
@@ -360,7 +360,7 @@ struct PresetsScreen : Screen_, juce::FileDragAndDropTarget {
         viewport.setViewedComponent(&list, false); viewport.setScrollBarsShown(true, false);
         search.setTextToShowWhenEmpty("Search presets and tags", theme::secondary);
         search.setFont(theme::font(10.5f)); search.setIndents(10, 0); search.setJustification(juce::Justification::centredLeft);
-        search.setColour(juce::TextEditor::backgroundColourId, juce::Colours::white.withAlpha(0.06f));
+        search.setColour(juce::TextEditor::backgroundColourId, theme::tint.withAlpha(0.06f));
         search.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
         search.onTextChange = [this] { signature.clear(); refresh(); };
         search.onEscapeKey = [this] { search.clear(); };
@@ -502,8 +502,8 @@ struct PresetsScreen : Screen_, juce::FileDragAndDropTarget {
                 if (t.isEmpty()) { g.setColour(theme::secondary); g.setFont(theme::font(9)); g.drawText("Clear", r, juce::Justification::centred); continue; }
                 const bool on = picked.contains(t);
                 const auto rf = r.toFloat().reduced(0.5f);
-                g.setColour(on ? model.accent().withAlpha(0.22f) : juce::Colours::white.withAlpha(0.05f)); g.fillRoundedRectangle(rf, rf.getHeight() / 2);
-                g.setColour(on ? model.accent() : juce::Colours::white.withAlpha(0.12f)); g.drawRoundedRectangle(rf, rf.getHeight() / 2, 1);
+                g.setColour(on ? model.accent().withAlpha(0.22f) : theme::tint.withAlpha(0.05f)); g.fillRoundedRectangle(rf, rf.getHeight() / 2);
+                g.setColour(on ? model.accent() : theme::tint.withAlpha(0.12f)); g.drawRoundedRectangle(rf, rf.getHeight() / 2, 1);
                 int n = 0; for (auto& [tt, c] : all) if (tt == t) n = c;
                 g.setFont(theme::font(9));
                 g.setColour(theme::text); g.drawText(t, r.withTrimmedLeft(12), juce::Justification::centredLeft);
@@ -556,7 +556,7 @@ struct Waveform : juce::Component {
         auto& s = *model.sessions;
         const auto* cur = s.current();
         const float w = (float) getWidth(), h = (float) getHeight(), ruler = 22;
-        g.fillAll(juce::Colour(0xff171717));
+        g.fillAll(theme::panel2);
         const double dur = cur ? cur->duration : 0;
         if (dur > 0) {
             double step = 300; for (double st : { 1.0, 2.0, 5.0, 10.0, 15.0, 30.0, 60.0, 120.0 }) if (w / (float) (dur / st) > 50) { step = st; break; }
@@ -576,10 +576,10 @@ struct Waveform : juce::Component {
                 g.fillRect(x, mid - hi * amp, std::max(w / (float) n, 1.f), std::max((hi - lo) * amp, 1.f));
             }
         } else if (cur) { g.setColour(theme::secondary); g.setFont(theme::font(10)); g.drawText(juce::String("loading") + ellipsis, getLocalBounds(), juce::Justification::centred); }
-        if (s.playing && dur > 0) { g.setColour(juce::Colours::white); g.fillRect((float) (s.playPos / dur) * w, 0.f, 2.f, h); }
+        if (s.playing && dur > 0) { g.setColour(theme::text); g.fillRect((float) (s.playPos / dur) * w, 0.f, 2.f, h); }
         if (s.selection && dur > 0) {
             const float xs = (float) (s.selection->first / dur) * w, xe = (float) (s.selection->second / dur) * w;
-            g.setColour(juce::Colours::black.withAlpha(0.6f)); g.fillRect(0.f, 0.f, xs, h); g.fillRect(xe, 0.f, w - xe, h);
+            g.setColour(theme::bg.withAlpha(0.65f)); g.fillRect(0.f, 0.f, xs, h); g.fillRect(xe, 0.f, w - xe, h);
             for (float x : { xs, xe }) {
                 g.setColour(juce::Colours::yellow); g.fillRect(x - 1, 0.f, 2.f, h);
                 g.fillRoundedRectangle(x - 6, h / 2 - 17, 12, 34, 3);
@@ -766,9 +766,9 @@ struct RecordingsScreen : Screen_ {
         auto& s = *model.sessions;
         const auto* cur = s.current();
         const auto& sel = s.selection;
-        if (cur) { g.setColour(juce::Colour(0xff141414)); g.fillRect(detail().withTrimmedTop(sel ? 264 : 220).withHeight(44)); }
+        if (cur) { g.setColour(theme::bar); g.fillRect(detail().withTrimmedTop(sel ? 264 : 220).withHeight(44)); }
         if (cur && sel) {
-            g.setColour(juce::Colour(0xff1c1c1c)); g.fillRect(detail().withTrimmedTop(220).withHeight(44));
+            g.setColour(theme::panel2); g.fillRect(detail().withTrimmedTop(220).withHeight(44));
             auto tt = [](double t) { t = std::max(t, 0.0); return juce::String((int) t / 60) + ":" + juce::String::formatted("%04.1f", std::fmod(t, 60.0)); };
             g.setColour(theme::text); g.setFont(theme::font(12));
             g.drawText("Selected " + tt(sel->first) + juce::String::fromUTF8(" \xe2\x80\x93 ") + tt(sel->second) + " (" + tt(sel->second - sel->first) + ")"
@@ -940,7 +940,7 @@ struct Swatch : juce::Component {
     void paint(juce::Graphics& g) override {
         auto r = getLocalBounds().toFloat().reduced(2);
         g.setColour(colour); g.fillEllipse(r);
-        if (model.accentPick && *model.accentPick == colour) { g.setColour(juce::Colours::white.withAlpha(0.9f)); g.drawEllipse(r.reduced(1), 2); }
+        if (model.accentPick && *model.accentPick == colour) { g.setColour(theme::text.withAlpha(0.9f)); g.drawEllipse(r.reduced(1), 2); }
     }
     void mouseUp(const juce::MouseEvent&) override { model.setAccent(colour); }
     Model& model; juce::Colour colour;
@@ -985,6 +985,14 @@ struct SettingsScreen : Screen_ {
         outEqT.onClick = [this] { auto e = model.outputEQ; e.on = outEqT.getToggleState(); model.setOutputEQ(e); resized(); };
         audio.addAndMakeVisible(outEqT);
         showHiddenB.onClick = [this] { model.showHiddenMessages(); };
+        for (auto* b : { &themeDarkB, &themeLightB }) { b->setClickingTogglesState(true); b->setRadioGroupId(4712); look.addAndMakeVisible(*b); }
+        themeDarkB.setConnectedEdges(juce::Button::ConnectedOnRight); themeLightB.setConnectedEdges(juce::Button::ConnectedOnLeft);
+        themeDarkB.setToggleState(model.themeName != "light", juce::dontSendNotification);
+        themeLightB.setToggleState(model.themeName == "light", juce::dontSendNotification);
+        themeDarkB.onClick = [this] { if (model.themeName != "dark") model.setTheme("dark"); };
+        themeLightB.onClick = [this] { if (model.themeName != "light") model.setTheme("light"); };
+        bgResetB.onClick = [this] { model.setBackground({}); };
+        look.addAndMakeVisible(bgSwatch); look.addAndMakeVisible(bgResetB);
         look.addAndMakeVisible(showHiddenB);
         lowLagT.onClick = [this] { model.set("pitchLowLag", lowLagT.getToggleState()); };
         audio.addAndMakeVisible(lowLagT);
@@ -1282,6 +1290,10 @@ struct SettingsScreen : Screen_ {
         // APPEARANCE
         {
             Group::Lay lay { look };
+            Group::place(lay.row("Theme", "settings:theme"), { { &themeDarkB, 80 }, { &themeLightB, 80 } });
+            const int by = lay.row("Background", "settings:background");
+            Group::place(by, { { &bgSwatch, 52 }, { &bgResetB, 80 } });
+            bgResetB.setEnabled((model.themeName == "light" ? model.bgLight : model.bgDark).isNotEmpty());
             const int ay = lay.row("Accent colour", "settings:accent");
             { int sx = ctrlX; for (auto& s : swatchButtons) { s->setBounds(sx, ay + 3, 24, 24); sx += 30; } Group::place(ay, { { &followAmp, 170 } }, sx + 6); }
             const int zy = lay.row("Zoom", "settings:zoom");
@@ -1437,7 +1449,7 @@ struct SettingsScreen : Screen_ {
             addAndMakeVisible(query);
             query.setTextToShowWhenEmpty("Search settings", theme::secondary);
             query.setFont(theme::font(10.5f)); query.setIndents(30, 0); query.setJustification(juce::Justification::centredLeft);
-            query.setColour(juce::TextEditor::backgroundColourId, juce::Colours::white.withAlpha(0.06f));
+            query.setColour(juce::TextEditor::backgroundColourId, theme::tint.withAlpha(0.06f));
             query.setColour(juce::TextEditor::outlineColourId, theme::line);
             query.onTextChange = [this] { refreshResults(); };
             query.onReturnKey = [this] { if (!results.empty()) owner.go(results.front()); };
@@ -1476,7 +1488,7 @@ struct SettingsScreen : Screen_ {
             for (const auto* it : items) {
                 const juce::Rectangle<int> r(14, y, getWidth() - 28, 32);
                 const bool on = owner.section == it;
-                if (on) { g.setColour(juce::Colours::white.withAlpha(0.08f)); g.fillRoundedRectangle(r.toFloat(), 7); }
+                if (on) { g.setColour(theme::tint.withAlpha(0.08f)); g.fillRoundedRectangle(r.toFloat(), 7); }
                 g.setColour(on ? owner.model.accent() : theme::text); g.setFont(theme::font(10.5f));
                 g.drawText(it, r.withTrimmedLeft(12), juce::Justification::centredLeft);
                 if (juce::String(it) == "About" && owner.model.updater->phase == Updater::Phase::available) {
@@ -1557,6 +1569,32 @@ struct SettingsScreen : Screen_ {
     juce::Slider a4; juce::ComboBox tuning;
     juce::ToggleButton outEqT; std::array<juce::Slider, 4> outEqS;
     juce::TextButton showHiddenB { "Show all again" };
+    juce::TextButton themeDarkB { "Dark" }, themeLightB { "Light" }, bgResetB { "Reset" };
+    /// The background colour for the theme in use; opens a colour picker that stays open and applies as you pick.
+    struct BgSwatch : juce::Component {
+        explicit BgSwatch(Model& m) : model(m) { setMouseCursor(juce::MouseCursor::PointingHandCursor); }
+        void paint(juce::Graphics& g) override {
+            const auto r = getLocalBounds().toFloat().reduced(1);
+            g.setColour(model.themeBackground()); g.fillRoundedRectangle(r, 5);
+            g.setColour(theme::line); g.drawRoundedRectangle(r, 5, 1);
+        }
+        struct Picker : juce::Component, juce::ChangeListener, juce::Timer {
+            explicit Picker(Model& m) : model(m), sel(juce::ColourSelector::showColourspace | juce::ColourSelector::showSliders) {
+                sel.setCurrentColour(m.themeBackground(), juce::dontSendNotification);
+                sel.setColour(juce::ColourSelector::backgroundColourId, juce::Colours::transparentBlack);
+                sel.addChangeListener(this); addAndMakeVisible(sel); setSize(300, 300);
+            }
+            void resized() override { sel.setBounds(getLocalBounds()); }
+            void changeListenerCallback(juce::ChangeBroadcaster*) override { startTimer(150); }   // apply once it stops moving
+            void timerCallback() override { stopTimer(); model.setBackground(sel.getCurrentColour().toDisplayString(false)); }
+            Model& model; juce::ColourSelector sel;
+        };
+        void mouseUp(const juce::MouseEvent& e) override {
+            if (getLocalBounds().contains(e.getPosition()))
+                juce::CallOutBox::launchAsynchronously(std::make_unique<Picker>(model), getScreenBounds(), nullptr);
+        }
+        Model& model;
+    } bgSwatch { model };
     juce::ToggleButton lowLagT { "Less delay on low chords (they may shimmer slightly)" };
     juce::ToggleButton namCalT; juce::Slider ifaceLvl;
     /// "Amp: +3.0 dB (captured at 9.0 dBu)": what input calibration is doing to a loaded capture.
@@ -1657,7 +1695,7 @@ struct WhatsNew : juce::Component {
     void paint(juce::Graphics& g) override {
         g.fillAll(juce::Colours::black.withAlpha(0.55f));
         const auto c = card().toFloat();
-        g.setColour(juce::Colour(0xff121212)); g.fillRoundedRectangle(c, 12);
+        g.setColour(theme::bar); g.fillRoundedRectangle(c, 12);
         g.setColour(theme::line); g.drawRoundedRectangle(c.reduced(0.5f), 12, 1);
         g.fillRect(c.getX(), c.getY() + (float) headH, c.getWidth(), 1.f);
         g.fillRect(c.getX(), c.getBottom() - (float) footH, c.getWidth(), 1.f);
@@ -1692,14 +1730,7 @@ struct WhatsNew : juce::Component {
 
 Root::Root(Model& m) : model(m) {
     setLookAndFeel(&lnf);
-    lnf.setAccent(m.accent());
-    sidebar = std::make_unique<Sidebar>(m); addAndMakeVisible(*sidebar);
-    topbar = std::make_unique<TopBar>(m); addAndMakeVisible(*topbar);
-    rig = std::make_unique<RigView>(m); addChildComponent(*rig);
-    rig->onScroll = [this] { if (onAndroid && model.screen == Screen::rig) resized(); };   // the top bar follows the scroll
-    presets = std::make_unique<PresetsScreen>(m); addChildComponent(*presets);
-    recordings = std::make_unique<RecordingsScreen>(m); addChildComponent(*recordings);
-    settings = std::make_unique<SettingsScreen>(m); addChildComponent(*settings);
+    buildScreens();
     m.addChangeListener(this);
     setWantsKeyboardFocus(true);
     startTimerHz(15);
@@ -1707,6 +1738,22 @@ Root::Root(Model& m) : model(m) {
 }
 
 Root::~Root() { model.removeChangeListener(this); setLookAndFeel(nullptr); }
+
+void Root::buildScreens() {
+    auto& m = model;
+    themeShown = m.themeStamp;
+    theme::apply(m.themeBackground());
+    lnf.refreshTheme(); lnf.setAccent(m.accent());
+    whatsNew.reset(); banners.clear(); bannerSig = {};
+    sidebar = std::make_unique<Sidebar>(m); addAndMakeVisible(*sidebar);
+    topbar = std::make_unique<TopBar>(m); addAndMakeVisible(*topbar);
+    rig = std::make_unique<RigView>(m); addChildComponent(*rig);
+    rig->onScroll = [this] { if (onAndroid && model.screen == Screen::rig) resized(); };   // the top bar follows the scroll
+    presets = std::make_unique<PresetsScreen>(m); addChildComponent(*presets);
+    recordings = std::make_unique<RecordingsScreen>(m); addChildComponent(*recordings);
+    settings = std::make_unique<SettingsScreen>(m); addChildComponent(*settings);
+    sendLookAndFeelChange();
+}
 
 void Root::timerCallback() {
     if (auto* t = dynamic_cast<TopBar*>(topbar.get())) { t->meters.repaint(); if (model.sessions->recording) t->sync(); t->repaint(); }
@@ -1724,7 +1771,7 @@ void Root::rebuildBanners() {
     if (sig.joinIntoString("|") == bannerSig) return;
     bannerSig = sig.joinIntoString("|");
     banners.clear();
-    const juce::Colour warnBg(0xff291f0f), warnFg(0xffffd999);
+    const juce::Colour warnBg = theme::warnBg, warnFg = theme::warnFg;
     const auto updBg = m.accent().withAlpha(0.18f).overlaidWith(theme::bg.withAlpha(0.0f));
     if (m.updater->showBanner())
         banners.add(new Banner("Leviathan " + m.updater->release->version + " is available (you have " + Updater::current() + ").", updBg, theme::text,
@@ -1762,6 +1809,13 @@ void Root::rebuildBanners() {
 }
 
 void Root::changeListenerCallback(juce::ChangeBroadcaster*) {
+    if (themeShown >= 0 && model.themeStamp != themeShown) {
+        // a new theme: build every screen again in it, after the click that changed it (it came from one of them)
+        themeShown = model.themeStamp;
+        juce::Component::SafePointer<Root> self(this);
+        juce::MessageManager::callAsync([self] { if (self) { self->buildScreens(); self->changeListenerCallback(nullptr); self->resized(); self->repaint(); } });
+        return;
+    }
     lnf.setAccent(model.accent());
     rebuildBanners();
     const bool notesOpen = model.updater->showNotes && model.updater->release.has_value();

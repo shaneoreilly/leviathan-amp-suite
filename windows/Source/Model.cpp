@@ -36,6 +36,7 @@ Model::Model() {
     presetName = p.getValue("preset", FACTORY[0].name);
     favorites = juce::StringArray::fromLines(p.getValue("favorites")); favorites.removeEmptyStrings();
     hiddenMessages = juce::StringArray::fromLines(p.getValue("hiddenMessages")); hiddenMessages.removeEmptyStrings();
+    themeName = p.getValue("theme", "dark"); bgDark = p.getValue("bgDark"); bgLight = p.getValue("bgLight");
     if (auto v = juce::JSON::parse(p.getValue("presetMeta")); auto* obj = v.getDynamicObject())
         for (const auto& kv : obj->getProperties())
         {

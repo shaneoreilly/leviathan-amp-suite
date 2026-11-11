@@ -55,13 +55,13 @@ SourceButton::SourceButton(std::function<juce::String()> b, std::function<juce::
 
 void SourceButton::paint(juce::Graphics& g) {
     auto r = getLocalBounds().toFloat().reduced(0.5f);
-    g.setColour(juce::Colours::white.withAlpha(0.06f)); g.fillRoundedRectangle(r, 7);
-    g.setColour(juce::Colours::white.withAlpha(0.1f)); g.drawRoundedRectangle(r, 7, 1);
+    g.setColour(theme::tint.withAlpha(0.06f)); g.fillRoundedRectangle(r, 7);
+    g.setColour(theme::tint.withAlpha(0.1f)); g.drawRoundedRectangle(r, 7, 1);
     auto in = getLocalBounds().reduced(8, 3);
     const auto bdg = badge();
     const int bw = juce::GlyphArrangement::getStringWidthInt(theme::font(9, true), bdg) + 10;
     const auto br = in.removeFromLeft(bw).withSizeKeepingCentre(bw, 18);
-    g.setColour(juce::Colours::white.withAlpha(0.08f)); g.fillRoundedRectangle(br.toFloat(), 4);
+    g.setColour(theme::tint.withAlpha(0.08f)); g.fillRoundedRectangle(br.toFloat(), 4);
     g.setColour(theme::secondary); g.setFont(theme::font(9, true)); g.drawText(bdg, br, juce::Justification::centred);
     in.removeFromLeft(8);
     const auto chev = in.removeFromRight(14);
@@ -76,21 +76,50 @@ void SourceButton::mouseUp(const juce::MouseEvent& e) { if (getLocalBounds().con
 
 // MARK: - look and feel
 
+void theme::apply(juce::Colour b) {
+    isLight = b.getPerceivedBrightness() > 0.45f;
+    const juce::Colour fg = isLight ? juce::Colour(0xff141414) : juce::Colour(0xffeeeeee), white = juce::Colours::white;
+    auto m = [&](float t) { return b.interpolatedWith(fg, t); };
+    bg = b;
+    bar = m(isLight ? 0.03f : 0.025f);
+    panel = isLight ? b.interpolatedWith(white, 0.7f) : m(0.04f);       // light: cards lift towards white
+    panel2 = m(isLight ? 0.06f : 0.08f);
+    line = m(isLight ? 0.16f : 0.17f);
+    knobFace = isLight ? b.interpolatedWith(white, 0.95f) : m(0.11f);
+    knobTrack = m(isLight ? 0.16f : 0.19f);
+    off = m(isLight ? 0.18f : 0.15f);
+    dim = m(isLight ? 0.38f : 0.3f);
+    text = fg; secondary = fg.interpolatedWith(b, 0.42f);
+    tint = isLight ? juce::Colours::black : juce::Colours::white;
+    warnBg = isLight ? juce::Colour(0xfffff0d4) : juce::Colour(0xff291f0f);
+    warnFg = isLight ? juce::Colour(0xff6a4600) : juce::Colour(0xffffd999);
+}
+
 LookAndFeel::LookAndFeel() {
     setDefaultSansSerifTypeface(interRegular());   // anything drawn without theme::font
-    setColourScheme(juce::LookAndFeel_V4::getDarkColourScheme());
+    refreshTheme();
+    setAccent(juce::Colours::red);
+}
+
+void LookAndFeel::refreshTheme() {
+    setColourScheme(theme::isLight ? juce::LookAndFeel_V4::getLightColourScheme() : juce::LookAndFeel_V4::getDarkColourScheme());
     setColour(juce::ResizableWindow::backgroundColourId, theme::bg);
     setColour(juce::TextButton::buttonColourId, theme::panel2);
     setColour(juce::TextButton::textColourOffId, theme::text);
     setColour(juce::ComboBox::backgroundColourId, theme::panel2);
     setColour(juce::ComboBox::outlineColourId, juce::Colours::transparentBlack);
-    setColour(juce::PopupMenu::backgroundColourId, juce::Colour(0xff1c1c1c));
+    setColour(juce::PopupMenu::backgroundColourId, theme::panel2);
+    setColour(juce::PopupMenu::textColourId, theme::text);
     setColour(juce::TextEditor::backgroundColourId, theme::panel2);
     setColour(juce::TextEditor::outlineColourId, theme::line);
     setColour(juce::ListBox::backgroundColourId, juce::Colours::transparentBlack);
-    setColour(juce::ScrollBar::thumbColourId, juce::Colour(0x55ffffff));
+    setColour(juce::ScrollBar::thumbColourId, theme::tint.withAlpha(0.33f));
     setColour(juce::Label::textColourId, theme::text);
-    setAccent(juce::Colours::red);
+    setColour(juce::ToggleButton::textColourId, theme::text);
+    setColour(juce::TextEditor::textColourId, theme::text);
+    setColour(juce::Slider::textBoxTextColourId, theme::text);
+    setColour(juce::ListBox::textColourId, theme::text);
+    setAccent(accent);   // the scheme above reset the accent-coloured parts
 }
 
 void LookAndFeel::setAccent(juce::Colour c) {
@@ -177,7 +206,7 @@ void LearnOverlay::paint(juce::Graphics& g) {
     const auto* mapped = midi.mapFor(armed.key);
     const auto acc = model.accent();
     auto b = getLocalBounds().toFloat().reduced(1);
-    g.setColour(isArmed ? acc.withAlpha(0.35f) : mapped ? acc.withAlpha(0.15f) : juce::Colours::white.withAlpha(0.04f));
+    g.setColour(isArmed ? acc.withAlpha(0.35f) : mapped ? acc.withAlpha(0.15f) : theme::tint.withAlpha(0.04f));
     g.fillRoundedRectangle(b, r);
     // a light tint on every assignable control; a solid outline only on the one you're pointing at or arming
     // (dashed outlines on every control looked like a rendering glitch)
@@ -250,7 +279,7 @@ void Knob::paint(juce::Graphics& g) {
     // pointer
     const float ang = -span / 2 + span * (float) t;
     juce::Path ptr; ptr.addRoundedRectangle(-1.5f, -19.f, 3.f, 14.f, 1.5f);
-    g.setColour(juce::Colours::white);
+    g.setColour(theme::text);
     g.fillPath(ptr, juce::AffineTransform::rotation(ang).translated(c.x, c.y));
     // value + label
     g.setColour(theme::text); g.setFont(theme::font(11));
@@ -259,7 +288,7 @@ void Knob::paint(juce::Graphics& g) {
     g.drawText(label.toUpperCase(), juce::Rectangle<float>(0, 86, (float) getWidth(), 16), juce::Justification::centred);
     // reset: bright when the knob is away from its default
     const bool atDef = std::abs(value() - def) < 1e-9;
-    g.setColour(atDef ? juce::Colour(0xff4d4d4d) : acc);
+    g.setColour(atDef ? theme::dim : acc);
     g.strokePath(IconButton::pathFor(IconButton::reset, resetArea().withSizeKeepingCentre(13, 13)), juce::PathStrokeType(1.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 }
 
@@ -311,7 +340,7 @@ void Footswitch::paint(juce::Graphics& g) {
     g.setColour(theme::line); g.drawRoundedRectangle(r, r.getHeight() / 2, 1);
     const float cy = r.getCentreY();
     if (on) { g.setColour(acc.withAlpha(0.5f)); g.fillEllipse(10 - 6, cy - 6, 12, 12); }
-    g.setColour(on ? acc : juce::Colour(0xff333333)); g.fillEllipse(10 - 4, cy - 4, 8, 8);
+    g.setColour(on ? acc : theme::off); g.fillEllipse(10 - 4, cy - 4, 8, 8);
     g.setColour(theme::text); g.setFont(theme::font(9, true, 1));
     g.drawText(on ? "ON" : "OFF", r.withTrimmedLeft(18).withTrimmedRight(6), juce::Justification::centred);
 }

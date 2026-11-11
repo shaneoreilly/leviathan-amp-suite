@@ -54,7 +54,7 @@ public:
     Browser(Model& m, bool second) : model(m), secondAmp(second) {
         search.setTextToShowWhenEmpty(juce::String::fromUTF8("Search amps: name, model, creator\xe2\x80\xa6"), theme::secondary);
         search.setFont(theme::font(10.5f)); search.setIndents(10, 0); search.setJustification(juce::Justification::centredLeft);
-        search.setColour(juce::TextEditor::backgroundColourId, juce::Colours::white.withAlpha(0.06f));
+        search.setColour(juce::TextEditor::backgroundColourId, theme::tint.withAlpha(0.06f));
         search.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
         search.onTextChange = [this] { refresh(); };
         addAndMakeVisible(search);

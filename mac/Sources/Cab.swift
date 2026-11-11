@@ -123,7 +123,7 @@ struct CabBrowser: View {
                 if !ui.query.isEmpty { Button { ui.query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }.buttonStyle(.plain) }
             }
             .padding(.horizontal, 10).padding(.vertical, 8)
-            .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.06)))
+            .background(RoundedRectangle(cornerRadius: 8).fill(PAL.tint.opacity(0.06)))
             .padding(12)
             if ui.query.isEmpty {
                 HStack(spacing: 2) {
@@ -196,7 +196,7 @@ struct CabBrowser: View {
         Button { ui.folder = f } label: {
             HStack { Text(label).lineLimit(1); Spacer(); Text("\(n)").foregroundStyle(.secondary) }
                 .padding(.horizontal, 8).padding(.vertical, 5)
-                .background(RoundedRectangle(cornerRadius: 6).fill(ui.folder == f ? Color.white.opacity(0.08) : .clear))
+                .background(RoundedRectangle(cornerRadius: 6).fill(ui.folder == f ? PAL.tint.opacity(0.08) : .clear))
                 .contentShape(Rectangle())
         }.buttonStyle(.plain)
     }
@@ -282,8 +282,8 @@ struct GodsCabPicker: View {
                         Text(o).lineLimit(1).frame(maxWidth: .infinity)
                             .padding(.horizontal, 10).padding(.vertical, 6)
                             .foregroundStyle(on ? Color.primary : .secondary)
-                            .background(Capsule().fill(on ? Color.accentColor.opacity(0.22) : Color.white.opacity(0.05)))
-                            .overlay(Capsule().stroke(on ? Color.accentColor : Color.white.opacity(0.12)))
+                            .background(Capsule().fill(on ? Color.accentColor.opacity(0.22) : PAL.tint.opacity(0.05)))
+                            .overlay(Capsule().stroke(on ? Color.accentColor : PAL.tint.opacity(0.12)))
                             .contentShape(Capsule())
                     }.buttonStyle(.plain)
                 }

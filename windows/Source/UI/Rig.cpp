@@ -615,9 +615,9 @@ std::unique_ptr<juce::Component> RigView::makeTuner() {
             g.drawText(model.tunerNote, getLocalBounds().withY(50).withHeight(110), juce::Justification::centred);
             const float bw = 420, bx = ((float) getWidth() - bw) / 2, by = 170;
             juce::ColourGradient grad(juce::Colours::red.withAlpha(0.4f), bx, 0, juce::Colours::red.withAlpha(0.4f), bx + bw, 0, false);
-            grad.addColour(0.25, juce::Colour(0xff333333)); grad.addColour(0.5, juce::Colours::green.withAlpha(0.5f)); grad.addColour(0.75, juce::Colour(0xff333333));
+            grad.addColour(0.25, theme::off); grad.addColour(0.5, juce::Colours::green.withAlpha(0.5f)); grad.addColour(0.75, juce::Colour(0xff333333));
             g.setGradientFill(grad); g.fillRoundedRectangle(bx, by, bw, 18, 9);
-            g.setColour(juce::Colours::white.withAlpha(0.4f)); g.fillRect(bx + bw / 2, by, 1.f, 18.f);
+            g.setColour(theme::tint.withAlpha(0.4f)); g.fillRect(bx + bw / 2, by, 1.f, 18.f);
             const float nx = bx + bw / 2 + (float) (juce::jlimit(-50.0, 50.0, model.tunerCents) / 50) * bw / 2;
             g.setColour(inTune ? juce::Colour(0xff4cd964) : juce::Colours::white); g.fillRoundedRectangle(nx - 2, by - 4, 4, 26, 2);
             g.setColour(theme::secondary); g.setFont(theme::font(12));

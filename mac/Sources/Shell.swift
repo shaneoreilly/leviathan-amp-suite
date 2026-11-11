@@ -32,7 +32,7 @@ struct RootView: View {
                     }
                     .font(.inter(size: T(10.5) * UI))
                     .padding(10)
-                    .background(Color(red: 0.16, green: 0.12, blue: 0.06)).foregroundStyle(Color(red: 1, green: 0.85, blue: 0.6))
+                    .background(PAL.warnBg).foregroundStyle(PAL.warnFg)
                 }
                 if midi.learning && m.screen == .rig { MidiLearnBanner() }
                 switch m.screen {
@@ -43,10 +43,11 @@ struct RootView: View {
                 }
             }
         }
-        .id(m.zoom)   // rebuild everything at the new size
+        .id("\(m.zoom)·\(m.themeStamp)")   // rebuild everything at the new size, or in the new theme
+        .preferredColorScheme(PAL.isLight ? .light : .dark)
         .font(.inter(size: T(13) * UI))
         .controlSize(.large)
-        .background(Color(white: 0.05))
+        .background(PAL.bg)
         .tint(ch)
         .sheet(isPresented: $updater.showNotes) {
             if let r = updater.available { WhatsNewSheet(updater: updater, release: r).tint(ch) }
@@ -80,7 +81,7 @@ struct Sidebar: View {
         }
         .padding(.vertical, 10)
         .frame(width: 92 * Z)
-        .background(Color(white: 0.07))
+        .background(PAL.bar)
     }
 
     var zoomControl: some View {
@@ -95,7 +96,7 @@ struct Sidebar: View {
             }
             .buttonStyle(.plain)
             .font(.inter(size: T(13) * Z, weight: .semibold))
-            .background(RoundedRectangle(cornerRadius: 7).fill(Color.white.opacity(0.06)))
+            .background(RoundedRectangle(cornerRadius: 7).fill(PAL.tint.opacity(0.06)))
             Button { m.zoom = 1 } label: {
                 Text("\(Int((m.zoom * 100).rounded()))%").font(.inter(size: T(9) * UI).monospacedDigit())
             }
@@ -115,7 +116,7 @@ struct Sidebar: View {
             }
             .frame(width: 80 * Z, height: 70 * Z)
             .foregroundStyle(on ? Color.accentColor : .secondary)
-            .background(RoundedRectangle(cornerRadius: 10).fill(on ? Color.white.opacity(0.07) : .clear))
+            .background(RoundedRectangle(cornerRadius: 10).fill(on ? PAL.tint.opacity(0.07) : .clear))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -148,7 +149,7 @@ struct TopBar: View {
             Spacer(minLength: 8)
             Button { rec.toggleRecord() } label: {
                 HStack(spacing: 6) {
-                    Circle().fill(rec.recording ? Color.red : Color(white: 0.5)).frame(width: 12, height: 12)
+                    Circle().fill(rec.recording ? Color.red : PAL.dim).frame(width: 12, height: 12)
                     Text(rec.recording ? mmss(rec.recSeconds) : "Rec").monospacedDigit()
                 }
             }
@@ -181,7 +182,7 @@ struct TopBar: View {
         }
         .lineLimit(1)
         .padding(.horizontal, 14).padding(.vertical, 10)
-        .background(Color(white: 0.07))
+        .background(PAL.bar)
         .overlay(alignment: .bottom) { Rectangle().fill(line).frame(height: 1) }
     }
 }
@@ -250,7 +251,7 @@ struct PresetsView: View {
                     if !ui.query.isEmpty { Button { ui.query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }.buttonStyle(.plain) }
                 }
                 .padding(.horizontal, 10).padding(.vertical, 6).frame(width: 280 * Z)
-                .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.06)))
+                .background(RoundedRectangle(cornerRadius: 8).fill(PAL.tint.opacity(0.06)))
                 Spacer()
                 Button("Import…") { m.importPresetsPanel() }.help("Add .leviathan preset files (or drop them here)")
                 Button("Export all…") { m.exportAllPresets() }.help("Save every preset as a .leviathan file in a folder")
@@ -302,8 +303,8 @@ struct PresetsView: View {
                         HStack(spacing: 4) { Text(t.tag); Text("\(t.count)").foregroundStyle(.secondary) }
                             .font(.inter(size: T(9) * UI))
                             .padding(.horizontal, 9).padding(.vertical, 4)
-                            .background(Capsule().fill(on ? Color.accentColor.opacity(0.22) : Color.white.opacity(0.05)))
-                            .overlay(Capsule().stroke(on ? Color.accentColor : Color.white.opacity(0.12)))
+                            .background(Capsule().fill(on ? Color.accentColor.opacity(0.22) : PAL.tint.opacity(0.05)))
+                            .overlay(Capsule().stroke(on ? Color.accentColor : PAL.tint.opacity(0.12)))
                             .contentShape(Capsule())
                     }.buttonStyle(.plain)
                 }
@@ -452,7 +453,7 @@ struct RecordingsView: View {
                         .disabled(sel.end - sel.start < 0.05 || (sel.start <= 0.001 && sel.end >= s.meta.duration - 0.001))
                 }
                 .padding(.horizontal, 14).padding(.vertical, 8)
-                .background(Color(white: 0.11))
+                .background(PAL.panel2)
             }
             HStack(spacing: 10) {
                 Spacer()
@@ -472,7 +473,7 @@ struct RecordingsView: View {
                 .help("Wet: the take through the rig. Dry: your guitar as it went in, before the rig.")
                 .explain("rec:wetDry", "Wet / Dry")
             }
-            .background(Color(white: 0.08))
+            .background(PAL.bar)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
@@ -561,8 +562,8 @@ struct TrimOverlay: View {
             let w = g.size.width, h = g.size.height
             let xs = CGFloat(start / max(duration, 0.001)) * w, xe = CGFloat(end / max(duration, 0.001)) * w
             ZStack(alignment: .topLeading) {
-                Rectangle().fill(Color.black.opacity(0.6)).frame(width: max(xs, 0), height: h).allowsHitTesting(false)
-                Rectangle().fill(Color.black.opacity(0.6)).frame(width: max(w - xe, 0), height: h).offset(x: xe).allowsHitTesting(false)
+                Rectangle().fill(PAL.bg.opacity(0.65)).frame(width: max(xs, 0), height: h).allowsHitTesting(false)
+                Rectangle().fill(PAL.bg.opacity(0.65)).frame(width: max(w - xe, 0), height: h).offset(x: xe).allowsHitTesting(false)
                 handle(h).offset(x: xs - 7)
                     .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .named("trim")).onChanged { v in
                         start = min(max(Double(v.location.x / w) * duration, 0), end - 0.05)
@@ -605,7 +606,7 @@ struct WaveformView: View {
         GeometryReader { g in
             let w = g.size.width, h = g.size.height, ruler: CGFloat = 22
             ZStack(alignment: .topLeading) {
-                Rectangle().fill(Color(white: 0.09))
+                Rectangle().fill(PAL.panel)
                 Canvas { ctx, size in
                     // ruler
                     if duration > 0 {
@@ -631,7 +632,7 @@ struct WaveformView: View {
                     ctx.fill(path, with: .color(Color.accentColor.opacity(0.85)))
                 }
                 if let position, duration > 0 {
-                    Rectangle().fill(Color.white).frame(width: 2, height: h).offset(x: CGFloat(position / duration) * w)
+                    Rectangle().fill(PAL.text).frame(width: 2, height: h).offset(x: CGFloat(position / duration) * w)
                 }
                 if samples.isEmpty {
                     Text("loading…").foregroundStyle(.secondary).frame(width: w, height: h)
@@ -684,6 +685,7 @@ let SETTINGS_INDEX: [SettingsEntry] = [
     ("MIDI", "Presets", "Program change", "settings:programChange"), ("MIDI", "Assignments", "Assign", "settings:midiAssign"),
     ("Library", "", "Recordings", "settings:recordings"), ("Library", "", "Recordings folder", "settings:recordingsFolder"),
     ("Library", "", "NAM captures", "settings:nam"), ("Library", "", "Cab IRs", "settings:cabIRs"), ("Library", "", "Your captures", "settings:captures"),
+    ("Appearance", "", "Theme", "settings:theme"), ("Appearance", "", "Background", "settings:background"),
     ("Appearance", "", "Accent colour", "settings:accent"), ("Appearance", "", "Zoom", "settings:zoom"), ("Appearance", "", "Explanations", "settings:explain"),
     ("Appearance", "Messages", "Hidden messages", "settings:hiddenMessages"),
     ("About", "Updates", "Version", "settings:version"), ("About", "Updates", "Automatic", "settings:autoUpdate"),
@@ -725,7 +727,7 @@ struct SettingsView: View {
             HStack(alignment: .top, spacing: 0) {
                 navigation
                     .frame(width: min(max(geo.size.width * 0.25, 220 * Z), 320 * Z))
-                    .background(Color(white: 0.07))
+                    .background(PAL.bar)
                     .overlay(alignment: .trailing) { Rectangle().fill(line).frame(width: 1) }
                 ScrollViewReader { scroll in
                     ScrollView {
@@ -755,7 +757,7 @@ struct SettingsView: View {
             }
             .font(.inter(size: T(10.5) * UI))
             .padding(.horizontal, 10).padding(.vertical, 7)
-            .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.06)))
+            .background(RoundedRectangle(cornerRadius: 8).fill(PAL.tint.opacity(0.06)))
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(line))
             .padding(.bottom, 12)
             if !ui.query.isEmpty {
@@ -786,7 +788,7 @@ struct SettingsView: View {
                     .font(.inter(size: T(10.5) * UI))
                     .foregroundStyle(on ? Color.accentColor : .primary)
                     .padding(.horizontal, 10).padding(.vertical, 7)
-                    .background(RoundedRectangle(cornerRadius: 7).fill(on ? Color.white.opacity(0.08) : .clear))
+                    .background(RoundedRectangle(cornerRadius: 7).fill(on ? PAL.tint.opacity(0.08) : .clear))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -990,12 +992,25 @@ struct SettingsView: View {
     // MARK: Appearance
 
     @ViewBuilder var appearance: some View {
+        SettingsRow("Theme", explain: "settings:theme") {
+            Picker("", selection: $m.theme) { Text("Dark").tag("dark"); Text("Light").tag("light") }
+                .pickerStyle(.segmented).labelsHidden().frame(width: 180 * Z)
+        }
+        SettingsRow("Background", explain: "settings:background") {
+            Button { BackgroundColourPanel.shared.open(m) } label: {
+                RoundedRectangle(cornerRadius: 5).fill(m.themeBackground.color).frame(width: 44 * Z, height: 22 * Z)
+                    .overlay(RoundedRectangle(cornerRadius: 5).stroke(PAL.line))
+            }
+            .buttonStyle(.plain).help("Choose a background colour")
+            Button("Reset") { m.setBackground("") }.disabled((m.theme == "light" ? m.bgLight : m.bgDark).isEmpty)
+            SettingsCount(m.theme == "light" ? "for the light theme" : "for the dark theme")
+        }
         SettingsRow("Accent colour", explain: "settings:accent") {
             ColorPicker("", selection: m.accentBinding, supportsOpacity: false).labelsHidden()
             ForEach(Array(accentSwatches.enumerated()), id: \.offset) { _, c in
                 Button { m.accentRGB = c } label: {
                     Circle().fill(Color(red: c[0], green: c[1], blue: c[2])).frame(width: 22 * Z, height: 22 * Z)
-                        .overlay(Circle().stroke(Color.white.opacity(m.accentRGB == c ? 0.9 : 0), lineWidth: 2))
+                        .overlay(Circle().stroke(PAL.tint.opacity(m.accentRGB == c ? 0.9 : 0), lineWidth: 2))
                 }.buttonStyle(.plain)
             }
             Button("Follow amp channel") { m.accentRGB = nil }.disabled(m.accentRGB == nil)

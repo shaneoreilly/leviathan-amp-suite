@@ -35,7 +35,7 @@ struct SourceButtonRow<Popover: View, MenuItems: View>: View {
             Button { open.toggle() } label: {
                 HStack(spacing: 8) {
                     Text(badge).font(.inter(size: T(9) * UI, weight: .bold)).foregroundStyle(.secondary)
-                        .padding(.horizontal, 5).padding(.vertical, 2).background(RoundedRectangle(cornerRadius: 4).fill(Color.white.opacity(0.08)))
+                        .padding(.horizontal, 5).padding(.vertical, 2).background(RoundedRectangle(cornerRadius: 4).fill(PAL.tint.opacity(0.08)))
                     VStack(alignment: .leading, spacing: 1) {
                         Text(name).font(.inter(size: T(10.5) * UI, weight: .semibold)).lineLimit(1)
                         Text(detail).font(.inter(size: T(9) * UI)).foregroundStyle(.secondary).lineLimit(1)
@@ -45,8 +45,8 @@ struct SourceButtonRow<Popover: View, MenuItems: View>: View {
                 }
                 .padding(.horizontal, 8).padding(.vertical, 5)
                 .frame(width: width * W)
-                .background(RoundedRectangle(cornerRadius: 7).fill(Color.white.opacity(0.06)))
-                .overlay(RoundedRectangle(cornerRadius: 7).stroke(open ? Color.accentColor : Color.white.opacity(0.1)))
+                .background(RoundedRectangle(cornerRadius: 7).fill(PAL.tint.opacity(0.06)))
+                .overlay(RoundedRectangle(cornerRadius: 7).stroke(open ? Color.accentColor : PAL.tint.opacity(0.1)))
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -138,7 +138,7 @@ struct AmpBrowser: View {
                 TextField("Search amps: name, model, creator…", text: $ui.query).textFieldStyle(.plain)
             }
             .padding(.horizontal, 10).padding(.vertical, 8)
-            .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.06)))
+            .background(RoundedRectangle(cornerRadius: 8).fill(PAL.tint.opacity(0.06)))
             .padding(12)
             Divider()
             ScrollViewReader { proxy in
