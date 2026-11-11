@@ -14,7 +14,10 @@ juce::String currentId(Model& m, bool second) {
 
 std::vector<Item> items(Model& m, bool second) {
     std::vector<Item> v { { {}, second ? juce::String("Off") : juce::String::fromUTF8("Leviathan amp (Clean \xc2\xb7 Rust \xc2\xb7 Hot)"), second ? juce::String() : juce::String("Leviathan") } };
-    for (auto& f : m.namFiles) v.push_back({ "nam:" + f, namTitle(f), "Real amps (NAM)" });
+    std::vector<Item> nams;
+    for (auto& f : m.namFiles) nams.push_back({ "nam:" + f, namTitle(f), "Real amps (NAM)" });
+    std::sort(nams.begin(), nams.end(), [](const Item& a, const Item& b) { return a.name.compareIgnoreCase(b.name) < 0; });   // A-Z by shown name
+    v.insert(v.end(), nams.begin(), nams.end());
     if (!second) for (auto& [k, c] : m.captures) v.push_back({ "cap:" + k, k, "Your captures" });
     return v;
 }

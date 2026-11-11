@@ -64,7 +64,8 @@ extension Model {
     var ampID: String { !s.nam.isEmpty ? "nam:" + s.nam : !s.capture.isEmpty ? "cap:" + s.capture : "" }
     func ampItems(secondAmp: Bool) -> [AmpItem] {
         var v = [AmpItem(id: "", name: secondAmp ? "Off" : "Leviathan amp (Clean · Rust · Hot)", section: secondAmp ? "" : "Leviathan")]
-        v += namHost.files.map { AmpItem(id: "nam:" + $0, name: namDisplayTitle($0), section: "Real amps (NAM)") }
+        v += namHost.files.map { AmpItem(id: "nam:" + $0, name: namDisplayTitle($0), section: "Real amps (NAM)") }   // A-Z by shown name
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         if !secondAmp { v += captures.keys.sorted().map { AmpItem(id: "cap:" + $0, name: $0, section: "Your captures") } }
         return v
     }
