@@ -60,8 +60,14 @@ public:
     juce::String settingsJump;
     int dropouts = 0;
     float cpu = 0;
-    void start();
+    /// withInput false: for playing a recording back while the amp is off. The device opens with the live input
+    /// silenced (on a phone with no interface it's the built-in mic, which would feed back through the speaker),
+    /// and Sessions turns audio off again once playback is over. start() with input turns it on from there.
+    void start(bool withInput = true);
     void stop();
+    bool playbackOnly = false;
+    std::atomic<bool> inputOff { false };   // read by the audio callback
+    bool live() const { return running && !playbackOnly; }
     /// Android: leaving the app releases the audio device entirely (its exclusive low-latency streams and CPU hint
     /// otherwise starve other apps' playback); coming back reopens it. Not while recording or live re-amping.
     void enterBackground();
@@ -69,11 +75,18 @@ public:
     bool pausedForBackground = false, wasRunningBeforeBackground = false;
     /// Diagnostic log (debuglog): the worst callback since the last perf line, and what was last written.
     std::atomic<float> callbackPeak { 0 };
-    juce::String loggedDevice, loggedStatus, loggedMessage;
+    /// Callbacks since the last perf line, the longest time between two of them (s), and the audio thread's priority:
+    /// together they tell a slow CPU (load high, gaps normal) from a driver or system stall (gaps long, load normal).
+    std::atomic<int> callbackCount { 0 }, callbackPriority { -1000 };
+    std::atomic<float> callbackGapMax { 0 };
+    juce::int64 callbackLast = 0;   // audio thread only (reset in start(), before the callback is added)
+    juce::String loggedDevice, loggedStatus, loggedMessage, loggedPower;
     int perfTick = 0, perfXRuns = 0; double perfAt = 0, perfNam = 0;
     void setDebugLog(bool on);
-    void toggle() { running ? stop() : start(); }
+    void toggle() { live() ? stop() : start(); }
     void restartAudio();
+    /// The chosen device setup (type, devices, rate, buffer, channels) as text: unchanged by opening or closing it.
+    juce::String deviceSignature() const;
     bool hasInput() const;
 
     // MARK: presets

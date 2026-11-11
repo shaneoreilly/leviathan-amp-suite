@@ -46,6 +46,35 @@ else()
   target_compile_options(levnam PRIVATE -w -O3)
 endif()
 
+# Windows: NAM twice, picked at run time (see nam/dispatch.cpp). MSVC targets SSE2 by default, which leaves NAM at
+# about twice its cost on any CPU with AVX2 and FMA; /arch:AVX2 for everything would crash CPUs without them.
+#  - levnam (above, SSE2) is linked into the app with its lev_nam_* functions renamed to levnam_sse2_*;
+#  - levnam_avx2.dll is a second copy built with /arch:AVX2, shipped next to Leviathan.exe;
+#  - levnam_dispatch defines the lev_nam_* the app calls and forwards them to one or the other.
+if(MSVC)
+  set(LEV_NAM_FUNCS load free reset process expected_rate has_loudness loudness measure_level measure_level_in
+                    polarity has_input_level input_level)
+  set(LEV_NAM_DEF "EXPORTS\n")
+  foreach(f ${LEV_NAM_FUNCS})
+    target_compile_definitions(levnam PRIVATE "lev_nam_${f}=levnam_sse2_${f}")
+    string(APPEND LEV_NAM_DEF "  lev_nam_${f}\n")
+  endforeach()
+  file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/levnam_avx2.def" "${LEV_NAM_DEF}")
+
+  add_library(levnam_dispatch STATIC "${CMAKE_CURRENT_SOURCE_DIR}/nam/dispatch.cpp")
+  target_include_directories(levnam_dispatch PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/../shared/nam")
+  target_compile_options(levnam_dispatch PRIVATE /O2)
+  target_link_libraries(levnam INTERFACE levnam_dispatch)
+
+  add_library(levnam_avx2 SHARED ${NAM_SOURCES} "${CMAKE_CURRENT_SOURCE_DIR}/../shared/nam/lev_nam.cpp"
+                                 "${CMAKE_CURRENT_BINARY_DIR}/levnam_avx2.def")
+  target_include_directories(levnam_avx2 PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../shared/nam" "${nam_SOURCE_DIR}"
+                                                 "${nam_SOURCE_DIR}/Dependencies/nlohmann")
+  target_include_directories(levnam_avx2 SYSTEM PRIVATE "${nam_SOURCE_DIR}/Dependencies/eigen")
+  target_compile_definitions(levnam_avx2 PRIVATE NAM_SAMPLE_FLOAT NOMINMAX WIN32_LEAN_AND_MEAN)
+  target_compile_options(levnam_avx2 PRIVATE /bigobj /W0 /O2 /arch:AVX2)
+endif()
+
 juce_add_gui_app(Leviathan
   PRODUCT_NAME "Leviathan"
   COMPANY_NAME "Leviathan"
@@ -83,6 +112,11 @@ target_compile_definitions(Leviathan PRIVATE
 add_custom_command(TARGET Leviathan POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/../shared/nam/captures"
           "$<IF:$<BOOL:${APPLE}>,$<TARGET_BUNDLE_CONTENT_DIR:Leviathan>/Resources/NAM,$<TARGET_FILE_DIR:Leviathan>/NAM>")
+if(MSVC)   # the AVX2 build of NAM, next to the exe (the installer ships it)
+  add_dependencies(Leviathan levnam_avx2)
+  add_custom_command(TARGET Leviathan POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:levnam_avx2>" "$<TARGET_FILE_DIR:Leviathan>")
+endif()
 
 # control explanations, shared with the Mac app
 juce_add_binary_data(LeviathanData SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/../shared/help/explanations.json")

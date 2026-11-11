@@ -174,8 +174,10 @@ struct TopBar : juce::Component {
     }
     void sync() {
         auto& m = model;
-        power.setButtonText(m.running ? juce::String::fromUTF8("\xe2\x8f\xbb On") : juce::String::fromUTF8("\xe2\x8f\xbb Start"));
-        power.setColour(juce::TextButton::buttonOnColourId, m.running ? juce::Colour(0xff34c759) : m.accent());
+        // the power symbol (U+23FB) isn't in Android's fonts: it shows as an empty box there
+        const juce::String sym = onAndroid ? juce::String() : juce::String::fromUTF8("\xe2\x8f\xbb ");
+        power.setButtonText(sym + (m.live() ? "On" : "Start"));
+        power.setColour(juce::TextButton::buttonOnColourId, m.live() ? juce::Colour(0xff34c759) : m.accent());
         power.setToggleState(true, juce::dontSendNotification);
         rec.setButtonText(m.sessions->recording ? juce::String::fromUTF8("\xe2\x97\x8f ") + mmss(m.sessions->recSeconds) : juce::String::fromUTF8("\xe2\x97\x8f Rec"));
         rec.setColour(juce::TextButton::textColourOffId, m.sessions->recording ? juce::Colours::red : theme::text);
@@ -856,7 +858,13 @@ struct SettingsScreen : Screen_ {
         audio.addAndMakeVisible(inputCh); audio.addAndMakeVisible(audioInfo);
         inputCh.onChange = [this] { if (inputCh.getSelectedId() > 0) model.set("inputChannel", inputCh.getSelectedId() - 1); };
         m.devices.addChangeListener(&audioWatch);
-        audioWatch.fn = [this] { model.restartAudio(); signature.clear(); refresh(); };
+        // Restart only when the setup itself changed (picked in the selector above). The manager also broadcasts
+        // when the device opens or closes, which start()/stop() do on Android; restarting on those looped forever.
+        deviceSetup = model.deviceSignature();
+        audioWatch.fn = [this] {
+            if (const auto now = model.deviceSignature(); now != deviceSetup) { deviceSetup = now; model.restartAudio(); }
+            signature.clear(); refresh();
+        };
         a4.setSliderStyle(juce::Slider::IncDecButtons); a4.setRange(430, 450, 1); a4.setTextValueSuffix(" Hz");
         a4.onValueChange = [this] { model.setA4(a4.getValue()); };
         for (size_t i = 0; i < TUNINGS.size(); ++i) tuning.addItem(tuningLabel(TUNINGS[i]), (int) i + 1);
@@ -966,6 +974,7 @@ struct SettingsScreen : Screen_ {
         return "Audio";
     }
 
+    juce::String deviceSetup;   // model.deviceSignature() when audioWatch last restarted audio
     struct Watch : juce::ChangeListener { std::function<void()> fn; void changeListenerCallback(juce::ChangeBroadcaster*) override { if (fn) fn(); } } audioWatch;
 
     void refresh() override {

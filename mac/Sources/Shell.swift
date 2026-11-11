@@ -133,8 +133,8 @@ struct TopBar: View {
                 Text("OPEN GUITAR RIG").font(.system(size: 9 * UI)).tracking(1.5).foregroundStyle(.secondary)
             }
             .fixedSize()
-            Button(m.running ? "⏻ On" : "⏻ Start") { m.toggle() }
-                .buttonStyle(.borderedProminent).tint(m.running ? .green : ch)
+            Button(m.live ? "⏻ On" : "⏻ Start") { m.toggle() }
+                .buttonStyle(.borderedProminent).tint(m.live ? .green : ch)
                 .keyboardShortcut(m.screen == .recordings ? nil : KeyboardShortcut(.space, modifiers: []))
                 .explain("top:power", "Audio on/off")
             LevelMeters(mt: m.meters).explain("top:meters", "Levels")

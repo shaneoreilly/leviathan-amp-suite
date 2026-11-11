@@ -743,10 +743,35 @@ final class Model: ObservableObject {
         }
     }
 
-    func toggle() { running ? stop() : start() }
+    func toggle() { live ? stop() : start() }
 
-    func start() {
+    /// Audio is on only to play a recording back (started by Sessions while the amp was off): no input is open, so a
+    /// built-in mic can't feed back through the speakers, and Sessions turns it off again when playback is over.
+    @Published private(set) var playbackOnly = false
+    var live: Bool { running && !playbackOnly }
+
+    /// withInput false: output only, for playback. With input while playing back: restart with the input.
+    func start(withInput: Bool = true) {
         if ProcessInfo.processInfo.environment["LEVIATHAN_NO_AUDIO"] != nil { return }   // UI testing: never open audio devices
+        if running {
+            guard withInput && playbackOnly else { return }
+            stop()
+        }
+        if !withInput {
+            guard let o = output else { status = "Pick an output device in Settings → Audio."; fixIn("Audio"); return }
+            do {
+                info = try engine.start(input: nil, output: o, buffer: bufferSize)
+                running = true; playbackOnly = true
+                DebugLog.write("audio", "started for playback (input off)")
+                perfDropouts = 0; perfAt = Date(); perfNam = params.namSeconds; perfPeak = 0
+                adviseOverloads = true; recentOverloads = []; startedAt = Date()
+                updateIR(); updateNam(); updateNamB()
+            } catch {
+                engine.stop(); running = false; info = nil
+                status = startFailure(error, input: nil, output: o)
+            }
+            return
+        }
         switch input == nil ? .authorized : AVCaptureDevice.authorizationStatus(for: .audio) {   // no input: no mic needed
         case .authorized: break
         case .notDetermined:
@@ -760,6 +785,7 @@ final class Model: ObservableObject {
             info = try engine.start(input: i, output: o, buffer: bufferSize)
             running = true
             DebugLog.write("audio", "started")
+            perfDropouts = 0; perfAt = Date(); perfNam = params.namSeconds; perfPeak = 0   // the engine's count restarts with it
             adviseOverloads = true; recentOverloads = []; startedAt = Date()
             status = i.map { latencyAdvice($0, o) }
                 ?? (inputUID == Model.noInput ? "" : "Your input isn\u{2019}t connected, so Leviathan is running without one. Plug it in, or pick another in the Input panel.")
@@ -782,7 +808,7 @@ final class Model: ObservableObject {
             : "Leviathan couldn\u{2019}t start \(o.name). Pick another output, or unplug it and plug it back in." + detail
     }
 
-    func stop() { engine.stop(); running = false; info = nil; DebugLog.write("audio", "stopped") }
+    func stop() { engine.stop(); running = false; playbackOnly = false; info = nil; DebugLog.write("audio", "stopped") }
 
     /// Hardware advice: most of the round trip is the devices, not the app.
     func latencyAdvice(_ i: AudioDevice, _ o: AudioDevice) -> String {
@@ -801,7 +827,8 @@ final class Model: ObservableObject {
         fixIn("privacy:microphone")
     }
 
-    private func restartIfRunning() { if running { start() } }
+    /// A new device or buffer: reopen with it, keeping playback-only audio without input.
+    private func restartIfRunning() { if running { let withInput = !playbackOnly; stop(); start(withInput: withInput) } }
 
     private var lastOverloadInfo = Date.distantPast, recentOverloads: [Date] = [], adviseOverloads = true, startedAt = Date.distantPast
 

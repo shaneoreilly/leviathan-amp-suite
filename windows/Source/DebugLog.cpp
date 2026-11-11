@@ -1,5 +1,6 @@
 #include "DebugLog.h"
 #include "Library.h"
+#include "SysInfo.h"
 
 namespace lev::debuglog {
 
@@ -26,7 +27,11 @@ void header() {
     if (S::hasNeon()) features.add("NEON");
     out->writeText("CPU:     " + S::getCpuModel() + " (" + S::getCpuVendor() + "), " + juce::String(S::getNumPhysicalCpus()) + " cores / "
                    + juce::String(S::getNumCpus()) + " threads, " + juce::String(S::getCpuSpeedInMegahertz()) + " MHz, " + features.joinIntoString(" ") + "\n", false, false, nullptr);
-    out->writeText("Memory:  " + juce::String(S::getMemorySizeInMegabytes()) + " MB\n\n", false, false, nullptr);
+    out->writeText("Memory:  " + juce::String(S::getMemorySizeInMegabytes()) + " MB\n", false, false, nullptr);
+    out->writeText("NAM:     " + juce::String(sysinfo::namEngine()) + "\n", false, false, nullptr);
+    if (const auto pw = sysinfo::power(); !pw.empty()) out->writeText("Power:   " + juce::String(pw) + "\n", false, false, nullptr);
+    if (const auto pr = sysinfo::processPriority(); !pr.empty()) out->writeText("Process: priority " + juce::String(pr) + "\n", false, false, nullptr);
+    out->writeText("\n", false, false, nullptr);
     out->flush();
 }
 } // namespace

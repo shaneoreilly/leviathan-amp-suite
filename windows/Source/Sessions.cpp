@@ -210,7 +210,7 @@ std::unique_ptr<juce::AudioFormatWriter> Sessions::openWriter(const juce::File& 
 void Sessions::startRecording() {
     if (recording) return;
     if (moving) { message = "Wait for the recordings to finish moving, then record."; m.changed(); return; }
-    if (!m.running || m.engineRate() <= 0) { message = "Turn the amp on to record."; fixIn("amp:on"); m.changed(); return; }
+    if (!m.live() || m.engineRate() <= 0) { message = "Turn the amp on to record."; fixIn("amp:on"); m.changed(); return; }
     stopPlayback();
     const double sr = m.engineRate();
     const auto dir = root().getChildFile(juce::Time::getCurrentTime().formatted("%Y-%m-%d %H.%M.%S"));
@@ -269,6 +269,10 @@ void Sessions::tick() {
         if (!p.bkPlaying.load()) { playing = false; playPos = 0; m.changed(); }
     }
     if (p.srcDone.exchange(false)) { liveReamp = false; m.changed(); }
+    // audio started only to play a recording back: turn it off again after 2 s with nothing playing
+    // (long enough for play()'s 600 ms start-up and for pause / play)
+    if (m.playbackOnly && !playing && !liveReamp && !p.bkPlaying.load()) { if (++idleTicks >= 60) { idleTicks = 0; m.stop(); } }
+    else idleTicks = 0;
     if (retireCountdown > 0 && --retireCountdown == 0) retired.clear();
 }
 
@@ -285,7 +289,7 @@ void Sessions::play(double from, double to) {
     if (!s) return;
     if (!m.running || m.engineRate() <= 0) {
         // audio is off: start it, then play from the same point once the engine is up
-        if (!m.running) { m.start(); juce::Timer::callAfterDelay(600, [this, from, to] { if (m.running) play(from, to); }); }
+        if (!m.running) { m.start(false); juce::Timer::callAfterDelay(600, [this, from, to] { if (m.running) play(from, to); }); }
         return;
     }
     stopLiveReamp();

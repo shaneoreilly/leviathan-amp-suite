@@ -40,6 +40,7 @@ public:
     std::vector<Session> list;
     juce::File selected;
     bool recording = false, playing = false, liveReamp = false;
+    int idleTicks = 0;   // ticks with nothing playing while audio is on only for playback
     double recSeconds = 0, playPos = 0;
     std::optional<double> rendering;     // offline re-amp progress 0...1
     std::vector<float> waveform;         // min/max pairs

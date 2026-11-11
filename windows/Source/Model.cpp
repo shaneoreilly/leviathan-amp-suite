@@ -4,6 +4,7 @@
 #include "Midi.h"
 #include "Updater.h"
 #include "DebugLog.h"
+#include "SysInfo.h"
 
 namespace lev {
 
@@ -258,8 +259,15 @@ void Model::ensureInputs() {
     }
 }
 
-void Model::start() {
-    if (running) return;
+void Model::start(bool withInput) {
+    if (running) {
+        if (withInput && playbackOnly) {   // already playing a recording back: just turn the input on
+            playbackOnly = false; inputOff.store(false);
+            debuglog::write("audio", "input on");
+            changed();
+        }
+        return;
+    }
     if (devices.getCurrentAudioDevice() == nullptr) devices.restartLastAudioDevice();   // closed while off (Android)
     if (devices.getCurrentAudioDevice() == nullptr) {
         const auto err = devices.initialise(8, 2, nullptr, true);
@@ -269,11 +277,16 @@ void Model::start() {
         }
         ensureInputs();
     }
+    callbackLast = 0;
+    playbackOnly = !withInput; inputOff.store(!withInput);   // before the callback runs: never a moment of live input
     devices.addAudioCallback(this);
     running = true;
-    debuglog::write("audio", "started");
+    debuglog::write("audio", withInput ? "started" : "started for playback (input off)");
     adviseOverloads = true; recentOverloads.clear(); startedAt = juce::Time::getMillisecondCounterHiRes() / 1000.0;
     lastXRuns = devices.getXRunCount();
+    perfXRuns = lastXRuns;   // the driver's count restarts with the device; the next perf line counts from here
+    perfAt = startedAt; perfNam = params.namSeconds.load(); callbackPeak.store(0);
+    callbackCount.store(0); callbackGapMax.store(0); callbackPriority.store(sysinfo::unknownPriority);
     refreshInfo();
     changed();
 }
@@ -281,7 +294,7 @@ void Model::start() {
 void Model::stop() {
     if (!running) return;
     devices.removeAudioCallback(this);
-    running = false;
+    running = false; playbackOnly = false; inputOff.store(false);
     debuglog::write("audio", "stopped");
     params.inPeak.store(0); params.outPeak.store(0);
     // Android: off means the audio device is released too (its exclusive streams would hold up other apps' sound)
@@ -300,7 +313,7 @@ void Model::enterBackground() {
     if (pausedForBackground || sessions->recording || sessions->liveReamp) return;
     debuglog::write("app", "to the background: audio released");
     pausedForBackground = true;
-    wasRunningBeforeBackground = running;
+    wasRunningBeforeBackground = live();   // playback-only audio stays off: the playback stopped with it
     saveState();
     stop();
     devices.closeAudioDevice();
@@ -319,6 +332,13 @@ void Model::restartAudio() {
     ensureInputs();
     if (running) { stop(); start(); }
     saveState();
+}
+
+juce::String Model::deviceSignature() const {
+    const auto s = devices.getAudioDeviceSetup();
+    return devices.getCurrentAudioDeviceType() + "|" + s.inputDeviceName + "|" + s.outputDeviceName + "|" + juce::String(s.sampleRate)
+         + "|" + juce::String(s.bufferSize) + "|" + s.inputChannels.toString(2) + "|" + s.outputChannels.toString(2)
+         + "|" + (s.useDefaultInputChannels ? "1" : "0") + (s.useDefaultOutputChannels ? "1" : "0");
 }
 
 void Model::refreshInfo() {
@@ -370,10 +390,17 @@ void Model::audioDeviceIOCallbackWithContext(const float* const* in, int numIn, 
             if (load > m.callbackPeak.load(std::memory_order_relaxed)) m.callbackPeak.store(load, std::memory_order_relaxed);
         }
     } peak { *this, t0, n };
+    if (callbackLast != 0) {
+        const float gap = (float) juce::Time::highResolutionTicksToSeconds(t0 - callbackLast);
+        if (gap > callbackGapMax.load(std::memory_order_relaxed)) callbackGapMax.store(gap, std::memory_order_relaxed);
+    }
+    callbackLast = t0;
+    if (callbackCount.fetch_add(1, std::memory_order_relaxed) == 0 && callbackPriority.load(std::memory_order_relaxed) == sysinfo::unknownPriority)
+        callbackPriority.store(sysinfo::currentThreadPriority(), std::memory_order_relaxed);
     DSP* d = dsp.get();
     if (d == nullptr || numOut == 0) { for (int c = 0; c < numOut; ++c) if (out[c]) juce::FloatVectorOperations::clear(out[c], n); return; }
     const int ch = juce::jlimit(0, std::max(numIn - 1, 0), params.inputChannel);
-    const float* src = numIn > 0 && in[ch] ? in[ch] : zeros.data();
+    const float* src = numIn > 0 && in[ch] && !inputOff.load(std::memory_order_relaxed) ? in[ch] : zeros.data();
     for (int off = 0; off < n; off += DSP::maxN) {
         const int k = std::min(DSP::maxN, n - off);
         float* l = out[0] ? out[0] + off : scratchL.data();
@@ -442,10 +469,34 @@ void Model::timerCallback() {
         const double now = juce::Time::getMillisecondCounterHiRes() / 1000.0, nam = params.namSeconds.load();
         const double span = std::max(now - perfAt, 1e-3);
         const int xr = devices.getXRunCount();
+        // callbacks: how many arrived against how many the buffer size implies, and the longest wait between two
+        juce::String timing;
+        if (auto* dev = devices.getCurrentAudioDevice()) {
+            const int buf = dev->getCurrentBufferSizeSamples();
+            const double rate = dev->getCurrentSampleRate();
+            if (buf > 0 && rate > 0)
+                timing << "; callbacks " << callbackCount.exchange(0) << " of ~" << juce::roundToInt(span * rate / buf)
+                       << ", longest gap " << juce::roundToInt(callbackGapMax.exchange(0) * 1000) << " ms (buffer "
+                       << juce::String(buf / rate * 1000, 1) << " ms)";
+        }
+        // the whole machine next to Leviathan: a busy system with Leviathan steady points at another program
+        const auto use = sysinfo::cpuUse();
+        if (use.system >= 0)
+            timing << "; CPU all apps " << juce::roundToInt(use.system) << "%, Leviathan " << juce::roundToInt(use.process) << "%";
         debuglog::write("perf", "load avg " + juce::String(juce::roundToInt(devices.getCpuUsage() * 100)) + "%, peak " + juce::String(juce::roundToInt(callbackPeak.exchange(0) * 100))
                                 + "%; NAM " + juce::String(juce::roundToInt((nam - perfNam) / span * 100)) + "% of real time; dropouts +" + juce::String(xr - perfXRuns)
-                                + " (" + juce::String(xr) + " total); \"" + presetName + "\", amp " + (settings.s("nam").isNotEmpty() ? "NAM \"" + settings.s("nam") + "\"" : juce::String("built-in")));
+                                + " (" + juce::String(xr) + " total)" + timing + "; \"" + presetName + "\", amp " + (settings.s("nam").isNotEmpty() ? "NAM \"" + settings.s("nam") + "\"" : juce::String("built-in")));
         perfAt = now; perfNam = nam; perfXRuns = xr;
+        // once per start: the audio thread's priority (drivers set it; a low one lets other programs interrupt audio)
+        const int pri = callbackPriority.exchange(sysinfo::unknownPriority - 1);
+        if (pri != sysinfo::unknownPriority && pri != sysinfo::unknownPriority - 1)
+            debuglog::write("audio", "audio thread priority " + juce::String(sysinfo::priorityName(pri)));
+        else if (pri == sysinfo::unknownPriority) callbackPriority.store(pri);   // no callback yet: try again next time
+        // power plan / source changes while playing (a laptop unplugged, a power mode switched)
+        if (const juce::String pw = sysinfo::power(); pw != loggedPower) {
+            if (loggedPower.isNotEmpty()) debuglog::write("power", pw);   // the first is in the log header
+            loggedPower = pw;
+        }
     }
     const int x = devices.getXRunCount();
     if (x > lastXRuns) { dropouts += x - lastXRuns; lastXRuns = x; refreshInfo(); overloaded(); }

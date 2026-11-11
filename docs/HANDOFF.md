@@ -43,6 +43,8 @@ These are built and reasoned through, but nobody has tried them on real hardware
 - **Long IRs** are cut at 4096 samples (`DSP.maxIR`), with a fade.
 - **Delay wrapping:** in the default layout, Delay wraps onto its own row at common window widths. It wasn't in the owner's requested order.
 - **Android audio:** JUCE quits when Android destroys its activity, so anything that recreates it (some config changes, a second launch) closes the app. Known triggers are handled (single-instance guard off on Android, `build.sh install` doesn't double-launch); others may exist. NAM at the lowest buffer (1 ms callbacks) can crackle; the owner chose "lowest, then only change it by hand".
+- **Windows NAM runs as two builds** (`windows/nam/dispatch.cpp`): `levnam_avx2.dll` (/arch:AVX2) on CPUs with AVX2+FMA, the SSE2 copy linked into the exe otherwise. The diagnostic log's `NAM:` line says which one runs and why; `LEVIATHAN_NAM=sse2` forces SSE2 to compare. The speed-up is unmeasured on real hardware (issue #1).
+- **Playback while the amp is off** starts audio with the live input silenced (`Model::start(false)` / `start(withInput: false)`, `playbackOnly`), and Sessions stops it after 2 s idle. Start, Rec or `amp:on` turns the input on.
 - **The Python capture fitter** (`mac/Capture/`) predates NAM, which gives better results for high-gain amps. Both apps still load the models it writes, so it stays until that feature is removed.
 
 ## Backlog (owner's wishes and sensible next steps)

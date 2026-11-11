@@ -238,7 +238,7 @@ final class Sessions: ObservableObject {
     func startRecording() {
         guard !recording else { return }
         guard !moving else { message = "Wait for the recordings to finish moving, then record."; return }
-        guard m.running, let dsp = m.engine.dsp else { message = "Turn the amp on to record."; fixIn("amp:on"); return }
+        guard m.live, let dsp = m.engine.dsp else { message = "Turn the amp on to record."; fixIn("amp:on"); return }
         stopPlayback()
         let sr = Double(dsp.sr)
         let stamp = DateFormatter.folder.string(from: Date())
@@ -284,7 +284,13 @@ final class Sessions: ObservableObject {
             if !p.bkPlaying { playing = false; playPos = 0 }
         }
         if p.srcDone { p.srcDone = false; liveReamp = false }
+        // audio started only to play a recording back: turn it off again after 2 s with nothing playing
+        // (long enough for play()'s 0.6 s start-up and for pause / play)
+        if m.playbackOnly && !playing && !liveReamp && !p.bkPlaying {
+            if let t = idleSince { if Date().timeIntervalSince(t) >= 2 { idleSince = nil; m.stop() } } else { idleSince = Date() }
+        } else { idleSince = nil }
     }
+    private var idleSince: Date?
 
     private func drain() {
         let p = m.params
@@ -327,7 +333,7 @@ final class Sessions: ObservableObject {
         guard let s = current else { return }
         guard m.running, let dsp = m.engine.dsp else {
             // audio is off: start it, then play from the same point once the engine is up
-            if !m.running { m.start(); DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in if self?.m.running == true { self?.play(from: t, to: end) } } }
+            if !m.running { m.start(withInput: false); DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in if self?.m.running == true { self?.play(from: t, to: end) } } }
             return
         }
         stopLiveReamp()
