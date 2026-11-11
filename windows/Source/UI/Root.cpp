@@ -158,19 +158,19 @@ struct LiveWave : juce::Component, private juce::Timer {
 struct TopBar : juce::Component {
     explicit TopBar(Model& m) : model(m),
         power(""), rec(""), tuner("Tuner"), midi("MIDI"), save("Save"), saveAs("Save as..."), presetMenu(""), undoB(juce::String::fromUTF8("\xe2\x86\xb6")),
-        metro(IconButton::metronome, [&m] { m.setMetro(!m.metroOn); }, 16),
+        metro(IconButton::metronome, [this] { showTempo(); }, 16),   // every metronome setting in one popup
         prev(IconButton::chevronLeft, [&m] { m.confirmLoad([&m] { m.stepPreset(-1); }); }, 13), next(IconButton::chevronRight, [&m] { m.confirmLoad([&m] { m.stepPreset(1); }); }, 13),
-        tap(m, "Tap", [&m] { m.tap(); }, MidiArmed::action("@tap", "Tap tempo")), bpm(""), meters(m),
+        bpm(""), meters(m),
         tunerLearn(m, MidiArmed::action("@tuner", "Tuner"), 6), metroLearn(m, MidiArmed::action("@metro", "Metronome"), 6),
         prevLearn(m, MidiArmed::action("@prev", "Previous preset"), 6), nextLearn(m, MidiArmed::action("@next", "Next preset"), 6) {
         undoB.onClick = [&m] { m.undo(); }; undoB.setTooltip("Undo the last change to the rig (Ctrl+Z)");
         hover.add(undoB, "top:undo", "Undo");
-        for (auto* c : std::initializer_list<juce::Component*> { &power, &rec, &tuner, &midi, &save, &saveAs, &presetMenu, &metro, &prev, &next, &tap, &bpm, &meters, &undoB })
+        for (auto* c : std::initializer_list<juce::Component*> { &power, &rec, &tuner, &midi, &save, &saveAs, &presetMenu, &metro, &prev, &next, &bpm, &meters, &undoB })
             addAndMakeVisible(c);
         for (auto* o : { &tunerLearn, &metroLearn, &prevLearn, &nextLearn }) addAndMakeVisible(o);
         addChildComponent(wave);
         hover.add(power, "top:power", "Audio on/off"); hover.add(meters, "top:meters", "Levels"); hover.add(rec, "top:rec", "Record");
-        hover.add(metro, "top:metro", "Metronome"); hover.add(bpm, "top:tempo", "Tempo"); hover.add(tap, "top:tap", "Tap tempo");
+        hover.add(metro, "top:metro", "Metronome"); hover.add(bpm, "top:metro", "Metronome");
         hover.add(tuner, "top:tuner", "Tuner"); hover.add(midi, "top:midi", "MIDI learn"); hover.add(prev, "top:prev", "Previous preset");
         hover.add(next, "top:next", "Next preset"); hover.add(presetMenu, "top:preset", "Preset"); hover.add(save, "top:save", "Save");
         hover.add(saveAs, "top:saveAs", "Save as"); hover.add(wave, "top:recWave", "Recording");
@@ -183,8 +183,8 @@ struct TopBar : juce::Component {
         saveAs.setButtonText("Save as" + juce::String::fromUTF8("\xe2\x80\xa6"));
         saveAs.onClick = [&m] { askText("Save preset as", m.presetName.isEmpty() ? juce::String() : m.presetName + " copy", "Save", [&m](juce::String n) { m.savePreset(n); }); };
         saveAs.setTooltip("Save as a new preset, leaving this one unchanged (Ctrl+Shift+S)");
-        metro.setTooltip("Metronome"); prev.setTooltip("Previous preset"); next.setTooltip("Next preset");
-        bpm.onClick = [this] { showTempo(); }; bpm.setTooltip("Tempo and metronome settings");
+        metro.setTooltip("Metronome and tempo"); prev.setTooltip("Previous preset"); next.setTooltip("Next preset");
+        bpm.onClick = [this] { showTempo(); }; bpm.setTooltip("Metronome and tempo");
         presetMenu.onClick = [this] { showPresetMenu(); };
         sync();
     }
@@ -239,7 +239,7 @@ struct TopBar : juce::Component {
             placeR(presetMenu, presetW());
             placeR(prev, 26); prevLearn.setBounds(prev.getBounds());
             placeR(midi, 60); placeR(tuner, 66); tunerLearn.setBounds(tuner.getBounds());
-            placeR(tap, 50); placeR(bpm, 54); placeR(metro, 34); metroLearn.setBounds(metro.getBounds());
+            placeR(bpm, 54); r += 6; placeR(metro, 34); metroLearn.setBounds(metro.getBounds());   // touching: one control
             placeR(rec, 84);
             latencyX = x - 100;
             return;
@@ -256,7 +256,7 @@ struct TopBar : juce::Component {
         place(next, 26, 28, top); nextLearn.setBounds(next.getBounds());
         x += 10;
         place(rec, 84, 28, top); place(metro, 34, 28, top); metroLearn.setBounds(metro.getBounds());
-        place(bpm, 54, 28, top); place(tap, 50, 28, top);
+        x -= 6; place(bpm, 54, 28, top);   // touching the icon: one control
         place(tuner, 66, 28, top); tunerLearn.setBounds(tuner.getBounds()); place(midi, 60, 28, top);
         wave.setBounds(x, top + (compactRowH - 34) / 2, std::max(0, std::min(200, getWidth() - 14 - x)), 34);
     }
@@ -320,21 +320,20 @@ struct TopBar : juce::Component {
                 setSize(400, 230);
             }
             void resized() override {
-                bpmS.setBounds(130, 10, 170, 28); tapB.setBounds(310, 10, 70, 28); metroT.setBounds(130, 50, 250, 26);
+                metroT.setBounds(130, 10, 250, 26); bpmS.setBounds(130, 50, 170, 28); tapB.setBounds(310, 50, 70, 28);
                 beats.setBounds(130, 88, 80, 28); vol.setBounds(130, 128, 250, 28); clockT.setBounds(130, 168, 250, 26);
             }
             void paint(juce::Graphics& g) override {
                 g.setColour(theme::secondary); g.setFont(theme::font(10));
-                int y = 10; for (auto* t : { "Tempo", "Metronome", "Beats per bar", "Click volume", "MIDI clock" }) { g.drawText(t, 10, y, 115, 28, juce::Justification::centredLeft); y += y == 10 ? 40 : 39; }
+                int y = 10; for (auto* t : { "Metronome", "Tempo", "Beats per bar", "Click volume", "MIDI clock" }) { g.drawText(t, 10, y, 115, 28, juce::Justification::centredLeft); y += y == 10 ? 40 : 39; }
             }
             Model& model; juce::Slider bpmS, vol; ActionButton tapB; juce::ToggleButton metroT, clockT; juce::ComboBox beats;
         };
-        juce::CallOutBox::launchAsynchronously(std::make_unique<Tempo>(model), bpm.getScreenBounds(), nullptr);
+        juce::CallOutBox::launchAsynchronously(std::make_unique<Tempo>(model), metro.getScreenBounds().getUnion(bpm.getScreenBounds()), nullptr);
     }
     Model& model;
     juce::TextButton power, rec, tuner, midi, save, saveAs, presetMenu, undoB;
     IconButton metro, prev, next;
-    ActionButton tap;
     juce::TextButton bpm;
     Meters meters;
     LearnOverlay tunerLearn, metroLearn, prevLearn, nextLearn;

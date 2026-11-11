@@ -63,6 +63,7 @@ public:
     static juce::File root() { return appDataDir().getChildFile("IRs/GodsCab"); }
     void scan(double sampleRate);
     bool isEmpty() const { return files.empty(); }
+    int size() const { return (int) files.size(); }
     juce::StringArray mics() const;
     const IRFile* file(const juce::String& rel) const;
     juce::StringArray positions(const juce::String& mic, bool ts) const;

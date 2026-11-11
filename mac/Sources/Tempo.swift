@@ -15,28 +15,23 @@ struct TapButton: View {
     }
 }
 
-/// Top-bar tempo: metronome switch with beat lights, the tempo (click for options) and tap.
+/// Top-bar metronome: one button (icon, tempo, beat lights while it plays) that opens every metronome setting.
 struct TempoControl: View {
     @EnvironmentObject var m: Model
     @StateObject private var ui = TempoUI()
 
     var body: some View {
-        HStack(spacing: 4) {
-            Toggle(isOn: $m.metroOn) { Image(systemName: "metronome") }
-                .toggleStyle(.button).help("Metronome")
-                .overlay { MidiLearnOverlay(armed: .action("@metro", "Metronome"), cornerRadius: 6) }
-                .explain("top:metro", "Metronome")
-            Button { ui.open.toggle() } label: {
-                HStack(spacing: 6) {
-                    Text(String(format: m.bpm.truncatingRemainder(dividingBy: 1) == 0 ? "%.0f" : "%.1f", m.bpm)).monospacedDigit()
-                    if m.metroOn { BeatLights(mt: m.meters, beats: m.beatsPerBar) }
-                }
+        Button { ui.open.toggle() } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "metronome").foregroundStyle(m.metroOn ? Color.accentColor : .primary)
+                Text(String(format: m.bpm.truncatingRemainder(dividingBy: 1) == 0 ? "%.0f" : "%.1f", m.bpm)).monospacedDigit()
+                if m.metroOn { BeatLights(mt: m.meters, beats: m.beatsPerBar) }
             }
-            .help("Tempo and metronome settings")
-            .explain("top:tempo", "Tempo")
-            .popover(isPresented: $ui.open, arrowEdge: .bottom) { TempoPopover().environmentObject(m).padding(16) }
-            TapButton().explain("top:tap", "Tap tempo")
         }
+        .help("Metronome and tempo")
+        .overlay { MidiLearnOverlay(armed: .action("@metro", "Metronome"), cornerRadius: 6) }
+        .explain("top:metro", "Metronome")
+        .popover(isPresented: $ui.open, arrowEdge: .bottom) { TempoPopover().environmentObject(m).padding(16) }
         .fixedSize()
     }
 }
@@ -61,6 +56,10 @@ struct TempoPopover: View {
     var body: some View {
         Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 10) {
             GridRow {
+                Text("Metronome").foregroundStyle(.secondary)
+                Toggle("On", isOn: $m.metroOn)
+            }
+            GridRow {
                 Text("Tempo").foregroundStyle(.secondary)
                 HStack {
                     TextField("", value: Binding(get: { m.bpm }, set: { m.bpm = min(max($0, 30), 300) }), format: .number.precision(.fractionLength(0...1)))
@@ -68,10 +67,6 @@ struct TempoPopover: View {
                     Stepper("BPM", value: Binding(get: { m.bpm }, set: { m.bpm = min(max($0.rounded(), 30), 300) }), in: 30...300, step: 1)
                     TapButton()
                 }
-            }
-            GridRow {
-                Text("Metronome").foregroundStyle(.secondary)
-                Toggle("On", isOn: $m.metroOn)
             }
             GridRow {
                 Text("Beats per bar").foregroundStyle(.secondary)

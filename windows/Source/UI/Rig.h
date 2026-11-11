@@ -65,8 +65,6 @@ private:
     std::unique_ptr<juce::Component> inputPickers();
     std::unique_ptr<UnitBox> makePedal(PedalKind k);
     std::unique_ptr<juce::Component> makeTuner();
-    std::unique_ptr<juce::Component> irLibraryRow();
-    std::unique_ptr<juce::Component> irRow(const juce::String& label, const juce::String& key, bool optional);
     template <typename T> T* liveReg(T* c) { live.push_back(c); return c; }
 };
 

@@ -1,4 +1,5 @@
 #include "Rig.h"
+#include "CabBrowser.h"
 
 namespace lev {
 
@@ -398,23 +399,15 @@ std::unique_ptr<UnitBox> RigView::makePanel(const juce::String& id) {
         if (!m.cabIRs.isEmpty()) kinds.push_back(CAB_IRLIB);
         if (!m.irLib.isEmpty()) kinds.push_back(CAB_LIB);
         if (m.userIRName.isNotEmpty()) kinds.push_back(CAB_USER);
-        auto block = [&](int kind) {
-            auto b = col(8, juce::Justification::left);
-            auto r1 = row(8);
-            auto pick = std::make_unique<Picker>((int) (200 * theme::W), [&m] { return m.s().i("cabModel") + 1; }, [&m](int i) { m.set("cabModel", i - 1); });
-            if (!m.cabIRs.isEmpty()) { pick->addSectionHeading("Your IRs"); pick->addItem("IR library (" + juce::String(m.cabIRs.all().size()) + ")", CAB_IRLIB + 1); }
-            if (!m.irLib.isEmpty()) { pick->addSectionHeading("Multi-mic"); pick->addItem(juce::String::fromUTF8("God's Cab \xc2\xb7 Mesa 4x12"), CAB_LIB + 1); }
-            pick->addSectionHeading("Built-in");
-            for (int i = 0; i < kCabCount; ++i) pick->addItem(CABS[i].name, i + 1);
-            if (m.userIRName.isNotEmpty()) { pick->addSectionHeading("File"); pick->addItem(m.userIRName, CAB_USER + 1); }
-            r1->add(std::move(pick));
+        auto block = [&](int) {   // the cab picker: current cab (opens the browser), previous / next, add IRs
+            auto r1 = row(6);
+            r1->add(cab::makeButton(m));
+            r1->add(std::make_unique<IconButton>(IconButton::chevronLeft, [&m] { cab::step(m, -1); }, 12))->setTooltip("Previous cabinet");
+            r1->add(std::make_unique<IconButton>(IconButton::chevronRight, [&m] { cab::step(m, 1); }, 12))->setTooltip("Next cabinet");
             r1->add(moreButton({ { juce::String::fromUTF8("Add IRs to the library (files or a folder)\xe2\x80\xa6"), [&m] { m.importCabIRsDialog(); } },
                                  { juce::String::fromUTF8("Load a single IR file\xe2\x80\xa6"), [&m] { m.loadIR(); } },
                                  { "Open IR library folder", openFolder(CabIRLibrary::root()) } }, "Add cabinet IRs"));
-            b->add(std::move(r1));
-            if (kind == CAB_IRLIB) b->add(irLibraryRow());
-            if (kind == CAB_LIB) { b->add(irRow("A", "irA", false)); b->add(irRow("B", "irB", true)); }
-            return b;
+            return r1;
         };
         auto knobs = [&](int kind) {
             auto r = row();
@@ -505,57 +498,6 @@ std::unique_ptr<UnitBox> RigView::makePanel(const juce::String& id) {
     return box;
 }
 
-/// Mic / position / presence / TS pickers for one God's Cab slot, plus prev/next for quick auditioning.
-namespace {
-/// Searchable list of every IR in the library. Clicking one plays it straight away; the box stays open to compare.
-class IRBrowser : public juce::Component, private juce::ListBoxModel {
-public:
-    explicit IRBrowser(Model& m) : model(m) {
-        search.setTextToShowWhenEmpty("Search " + juce::String(m.cabIRs.all().size()) + juce::String::fromUTF8(" IRs (band, song, amp\xe2\x80\xa6)"), theme::secondary);
-        search.onTextChange = [this] { filter(); };
-        addAndMakeVisible(search);
-        list.setModel(this); list.setRowHeight(onAndroid ? 40 : 24);   // finger-sized rows on touch screens
-        list.setColour(juce::ListBox::backgroundColourId, juce::Colours::transparentBlack);
-        addAndMakeVisible(list);
-        filter();
-        setSize(440, 440);
-    }
-    void resized() override { auto r = getLocalBounds().reduced(8); search.setBounds(r.removeFromTop(28)); r.removeFromTop(6); list.setBounds(r); }
-    // Desktop: type straight away. Android: focusing would raise the on-screen keyboard over the list, and the
-    // next tap would only dismiss it; tap the search box to search.
-    void visibilityChanged() override { if (isShowing() && !onAndroid) search.grabKeyboardFocus(); }
-private:
-    void filter() {
-        hits.clear();
-        const auto q = search.getText().toLowerCase();
-        for (const auto& f : model.cabIRs.all()) if (q.isEmpty() || f.toLowerCase().contains(q)) hits.add(f);
-        list.updateContent(); list.repaint();
-        const int cur = hits.indexOf(model.s().s("irFile"));
-        if (cur >= 0) list.scrollToEnsureRowIsOnscreen(cur);
-    }
-    int getNumRows() override { return hits.size(); }
-    void paintListBoxItem(int row, juce::Graphics& g, int w, int h, bool) override {
-        if (!juce::isPositiveAndBelow(row, hits.size())) return;
-        const auto& rel = hits[row];
-        const bool on = rel == model.s().s("irFile");
-        if (on) { g.setColour(model.accent().withAlpha(0.2f)); g.fillRoundedRectangle(0, 1, (float) w, (float) h - 2, 4); }
-        const auto folder = rel.containsChar('/') ? rel.upToLastOccurrenceOf("/", false, false) : juce::String();
-        g.setColour(on ? model.accent() : theme::text); g.setFont(theme::font(10.5f));
-        g.drawText(CabIRLibrary::title(rel), 8, 0, w - 160, h, juce::Justification::centredLeft, true);
-        g.setColour(theme::secondary); g.setFont(theme::font(9));
-        g.drawText(folder, w - 150, 0, 142, h, juce::Justification::centredRight, true);
-    }
-    void listBoxItemClicked(int row, const juce::MouseEvent&) override {
-        if (!juce::isPositiveAndBelow(row, hits.size())) return;
-        Settings x = model.s(); x.set("irFile", hits[row]); x.set("cabModel", CAB_IRLIB); x.set("cabOn", true); model.setSettings(x);
-        list.repaint();
-    }
-    Model& model;
-    juce::TextEditor search;
-    juce::ListBox list;
-    juce::StringArray hits;
-};
-} // namespace
 
 /// Interface and channel pickers for the Input panel (the same choices as Settings -> Audio).
 std::unique_ptr<juce::Component> RigView::inputPickers() {
@@ -581,81 +523,6 @@ std::unique_ptr<juce::Component> RigView::inputPickers() {
     return c;
 }
 
-
-/// The IR library's current IR (click to search and pick), plus prev/next for quick auditioning.
-std::unique_ptr<juce::Component> RigView::irLibraryRow() {
-    auto& m = model;
-    auto r = row(6);
-    const auto rel = m.s().s("irFile");
-    auto b = textButton(rel.isEmpty() ? juce::String::fromUTF8("Choose an IR\xe2\x80\xa6") : CabIRLibrary::title(rel), {});
-    auto* bp = b.get();
-    b->onClick = [&m, bp] {
-        if (!onAndroid) { juce::CallOutBox::launchAsynchronously(std::make_unique<IRBrowser>(m), bp->getScreenBounds(), nullptr); return; }
-        // Android: the library as a native picker, grouped by folder, the current IR selected
-        juce::PopupMenu menu;
-        const auto cur = m.s().s("irFile");
-        juce::String folder = "-";
-        for (const auto& rel : m.cabIRs.all()) {
-            const auto f = rel.containsChar('/') ? rel.upToLastOccurrenceOf("/", false, false) : juce::String();
-            if (f != folder) { folder = f; if (f.isNotEmpty()) menu.addSectionHeader(f); }
-            juce::PopupMenu::Item it(CabIRLibrary::title(rel));
-            it.setTicked(rel == cur);
-            it.setAction([&m, rel] { Settings x = m.s(); x.set("irFile", rel); x.set("cabModel", CAB_IRLIB); x.set("cabOn", true); m.setSettings(x); });
-            menu.addItem(it);
-        }
-        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(bp));
-    };
-    setPref(*b, (int) (185 * theme::W), 26);
-    b->setTooltip(rel);
-    r->add(std::move(b));
-    r->add(std::make_unique<IconButton>(IconButton::chevronLeft, [&m] { m.set("irFile", m.cabIRs.step(m.s().s("irFile"), -1)); }, 12))->setTooltip("Previous IR");
-    r->add(std::make_unique<IconButton>(IconButton::chevronRight, [&m] { m.set("irFile", m.cabIRs.step(m.s().s("irFile"), 1)); }, 12))->setTooltip("Next IR");
-    return r;
-}
-
-std::unique_ptr<juce::Component> RigView::irRow(const juce::String& label, const juce::String& key, bool optional) {
-    auto& m = model;
-    auto r = row(6);
-    r->add(std::make_unique<LiveLabel>([label] { return label; }, 10, theme::secondary, juce::Justification::centredLeft, true))->setSize(12, 20);
-    const auto rel = m.s().s(key);
-    const IRFile* f = m.irLib.file(rel);
-    auto pick = [&m, key](const juce::String& mic, bool ts, const juce::String& pos, int pres) {
-        if (auto* x = m.irLib.find(mic, ts, pos, pres)) m.set(key, x->rel);
-    };
-    const auto mics = m.irLib.mics();
-    auto micPick = std::make_unique<Picker>((int) (82 * theme::W), [&m, key, mics] {
-        const auto* cur = m.irLib.file(m.s().s(key)); return cur ? mics.indexOf(cur->mic) + 2 : 1;
-    }, [&m, key, mics, pick, f](int i) {
-        if (i == 1) { m.set(key, juce::String()); return; }
-        pick(mics[i - 2], f ? f->ts : false, f ? f->position : juce::String("1 inch edge"), f ? f->pres : 3);
-    });
-    if (optional || f == nullptr) micPick->addItem("Off", 1);
-    for (int i = 0; i < mics.size(); ++i) micPick->addItem(mics[i], i + 2);
-    r->add(std::move(micPick));
-    if (f) {
-        const auto positions = m.irLib.positions(f->mic, f->ts);
-        const IRFile cur = *f;
-        auto pos = std::make_unique<Picker>((int) (150 * theme::W), [positions, cur] { return positions.indexOf(cur.position) + 1; },
-                                            [positions, cur, pick](int i) { pick(cur.mic, cur.ts, positions[i - 1], cur.pres); });
-        for (int i = 0; i < positions.size(); ++i) pos->addItem(positions[i], i + 1);
-        r->add(std::move(pos));
-        const bool tsOK = m.irLib.tsAvailable(cur.mic);
-        auto opt = textButton("P" + juce::String(cur.pres) + (cur.ts ? juce::String::fromUTF8(" \xc2\xb7 TS") : juce::String()), {});
-        auto* op = opt.get();
-        opt->onClick = [op, cur, pick, tsOK] {
-            juce::PopupMenu menu;
-            for (int i = 1; i <= 5; ++i) menu.addItem("Presence " + juce::String(i), true, cur.pres == i, [cur, pick, i] { pick(cur.mic, cur.ts, cur.position, i); });
-            menu.addSeparator();
-            menu.addItem("Tube Screamer in front", tsOK, cur.ts, [cur, pick] { pick(cur.mic, !cur.ts, cur.position, cur.pres); });
-            menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(op));
-        };
-        opt->setTooltip("Amp presence when captured, and a Tube Screamer mid bump baked into the IR");
-        r->add(std::move(opt));
-        r->add(std::make_unique<IconButton>(IconButton::chevronLeft, [&m, key, cur] { m.set(key, m.irLib.step(cur.rel, -1)); }, 12));
-        r->add(std::make_unique<IconButton>(IconButton::chevronRight, [&m, key, cur] { m.set(key, m.irLib.step(cur.rel, 1)); }, 12));
-    }
-    return r;
-}
 
 // MARK: - pedals
 

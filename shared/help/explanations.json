@@ -85,7 +85,7 @@
   "top:meters": "Input level (your guitar, after Input gain) and output level. Keep the input out of the red on your interface.",
   "top:latency": "Estimated round trip from your strings to your ears. Under 10 ms feels instant; above 15 ms is orange. Hover for the breakdown.",
   "top:rec": "Records your dry guitar and the processed sound side by side, with the rig settings, so you can re-amp later (Cmd/Ctrl+R).",
-  "top:metro": "Metronome on or off. The beat lights show the bar; volume and beats per bar are under the tempo.",
+  "top:metro": "Metronome and tempo. Click for everything in one place: metronome on or off, tempo (type it, step it or tap it), beats per bar, click volume and following MIDI clock. The beat lights show the bar while it plays.",
   "top:tempo": "Tempo in BPM, for the metronome and synced delay. Click to type a tempo or change the metronome; follows MIDI clock.",
   "top:tap": "Tap along with the beat to set the tempo.",
   "top:tuner": "Shows the tuner (T). Mutes the output while tuning unless you turn that off.",

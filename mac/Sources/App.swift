@@ -720,7 +720,7 @@ final class Model: ObservableObject {
     }
 
     func playAs(_ semis: Int) {
-        s.pitchSemis = Double(semis); s.pitchCents = 0; s.pitchOn = semis != 0
+        s.pitchSemis = Double(semis); s.pitchCents = 0; s.pitchOn = s.pitchOn || semis != 0   // on when needed; stepping back to your tuning leaves it as it is
     }
     /// inputUID "none": no input (play recordings, metronome) - the rig gets silence.
     static let noInput = "none"
@@ -2008,27 +2008,7 @@ struct ContentView: View {
         let lib = m.s.cabModel == CAB_LIB
         return UnitBox(title: "CABINET", on: $m.s.cabOn, onKey: "cabOn", color: ch) {
             VStack(alignment: .center, spacing: 8) {
-              VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 6) {
-                    Picker("", selection: $m.s.cabModel) {
-                        if !m.cabIRs.isEmpty { Section("Your IRs") { Text("IR library (\(m.cabIRs.files.count))").tag(CAB_IRLIB) } }
-                        if !m.irLib.isEmpty { Section("Multi-mic") { Text("God's Cab · Mesa 4x12").tag(CAB_LIB) } }
-                        Section("Built-in") { ForEach(CABS.indices, id: \.self) { Text(CABS[$0].name).tag($0) } }
-                        if let n = m.userIRName { Section("File") { Text(n).tag(CAB_USER) } }
-                    }.labelsHidden().frame(width: 200 * W)
-                    Menu {
-                        Button("Add IRs to the library (files or a folder)…") { m.importCabIRs() }
-                        Button("Load a single IR file…") { m.loadIR() }
-                        Button("Open IR library folder") { NSWorkspace.shared.open(CabIRLibrary.root) }
-                    } label: { Image(systemName: "ellipsis.circle") }
-                        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Add cabinet IRs")
-                }
-                if m.s.cabModel == CAB_IRLIB { IRLibraryRow() }
-                if lib {
-                    irRow("A", $m.s.irA, optional: false)
-                    irRow("B", $m.s.irB, optional: true)
-                }
-              }
+                CabPicker()
                 HStack(spacing: 2) {
                     if lib {
                         Knob(label: "A ↔ B", value: $m.s.irBlend, key: "irBlend", range: 0...1, def: 0.35, fmt: pct, color: ch)
@@ -2044,37 +2024,6 @@ struct ContentView: View {
         }
     }
 
-    /// Mic / position / presence / TS pickers for one God's Cab slot, plus prev/next for quick auditioning.
-    @ViewBuilder func irRow(_ label: String, _ rel: Binding<String>, optional: Bool) -> some View {
-        let lib = m.irLib, f = lib.file(rel.wrappedValue)
-        let pick = { (mic: String, ts: Bool, pos: String, pres: Int) in
-            rel.wrappedValue = lib.find(mic: mic, ts: ts, position: pos, pres: pres)?.rel ?? rel.wrappedValue
-        }
-        HStack(spacing: 6) {
-            Text(label).font(.inter(size: T(10) * UI, weight: .bold)).foregroundStyle(.secondary).frame(width: 12)
-            Picker("", selection: Binding(get: { f?.mic ?? "" }, set: { mic in
-                if mic.isEmpty { rel.wrappedValue = "" } else { pick(mic, f?.ts ?? false, f?.position ?? "1 inch edge", f?.pres ?? 3) }
-            })) {
-                if optional || f == nil { Text("Off").tag("") }
-                ForEach(lib.mics, id: \.self) { Text($0).tag($0) }
-            }.labelsHidden().frame(width: 90 * W)
-            if let f {
-                Picker("", selection: Binding(get: { f.position }, set: { pick(f.mic, f.ts, $0, f.pres) })) {
-                    ForEach(lib.positions(mic: f.mic, ts: f.ts), id: \.self) { Text($0).tag($0) }
-                }.labelsHidden().frame(width: 140 * W)
-                Menu {
-                    Picker("Presence", selection: Binding(get: { f.pres }, set: { pick(f.mic, f.ts, f.position, $0) })) {
-                        ForEach(1...5, id: \.self) { Text("Presence \($0)").tag($0) }
-                    }
-                    Toggle("Tube Screamer in front", isOn: Binding(get: { f.ts }, set: { pick(f.mic, $0, f.position, f.pres) }))
-                        .disabled(!lib.tsAvailable(mic: f.mic))
-                } label: { Text("P\(f.pres)" + (f.ts ? " · TS" : "")).monospacedDigit() }
-                    .fixedSize().help("Amp presence when captured, and a Tube Screamer mid bump baked into the IR")
-                Button { rel.wrappedValue = lib.step(f.rel, by: -1) ?? f.rel } label: { Image(systemName: "chevron.left") }.buttonStyle(.borderless)
-                Button { rel.wrappedValue = lib.step(f.rel, by: 1) ?? f.rel } label: { Image(systemName: "chevron.right") }.buttonStyle(.borderless)
-            }
-        }
-    }
 
     /// A second amp (any NAM capture) fed by the same pedals; Spread puts amp A left and amp B right.
     var ampB: some View {

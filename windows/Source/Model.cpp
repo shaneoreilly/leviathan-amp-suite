@@ -781,7 +781,7 @@ std::vector<std::pair<juce::String, int>> Model::playAsOptions() const {
 
 void Model::playAs(int semis) {
     Settings n = settings;
-    n.set("pitchSemis", (double) semis); n.set("pitchCents", 0.0); n.set("pitchOn", semis != 0);
+    n.set("pitchSemis", (double) semis); n.set("pitchCents", 0.0); n.set("pitchOn", settings.b("pitchOn") || semis != 0);   // on when needed; stepping back to your tuning leaves it as it is
     setSettings(n);
 }
 
