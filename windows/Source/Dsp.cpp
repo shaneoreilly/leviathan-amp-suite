@@ -724,7 +724,7 @@ void DSP::process(const float* input, float* outL, float* outR, int frames) {
 // MARK: - Pitch shifter
 
 PitchShifter::PitchShifter(double sr) {
-    L = (int) (sr * 0.010); back = L / 2; ahead = L - back; fadeLen = (int) (sr * 0.006); jMin = (int) (sr * 0.0025); jMinChord = (int) (sr * 0.004);
+    L = (int) (sr * 0.010); back = L * 4 / 5; ahead = L - back; fadeLen = (int) (sr * 0.006); jMin = (int) (sr * 0.0025); jMinChord = (int) (sr * 0.004);
     jMax = (int) (sr * 0.030); margin = (int) (sr * 0.0008); estEvery = (int) (sr * 0.006);
     period = (int) (sr * 0.008);
     fade = fadeLen;
@@ -784,7 +784,7 @@ float PitchShifter::process(float x) {
 int PitchShifter::bestJump(int base, bool up, int maxJ, int minJ, bool preferShort) {
     const int lo = std::min(std::max(preferShort ? jMin : jMinChord, minJ), jMax);
     if (maxJ < lo) return std::max(maxJ, 1);
-    // the L-sample match window is centred on the splice point: back samples before it, ahead after
+    // the L-sample match window around the splice point: back samples before it (most of it), ahead after
     const float* ref = buf.data() + ((base - back) & mask);
     float re = 0;
     for (int k = 0; k < L; ++k) re += ref[k] * ref[k];

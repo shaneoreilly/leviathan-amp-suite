@@ -976,8 +976,8 @@ final class FDNReverb {
 // Delay-line shifter with a single moving read tap. When the tap drifts too close to (shifting up) or too far
 // from (shifting down) the write head it jumps by one or more "periods", choosing the jump that best matches the
 // waveform it's leaving (WSOLA-style), then crossfades. Matching splices keep chords from warbling, and the
-// tap tracks the input's period, so it sits only about one period (plus half the 10 ms match window, which is centred
-// on the splice point) behind: ~15-25 ms.
+// tap tracks the input's period, so it sits only about one period (plus the 2 ms of the 10 ms match window that lies
+// after the splice point; the other 8 ms are before it) behind: measured 4.5 ms (E4), 9 ms (E2), 15 ms (E2 power chord).
 // The match window and the 30 ms search must both exceed a low power chord's common period (root and fifth realign
 // every two root cycles: 24 ms on E2, 26 ms on Eb2); shorter ones spliced at false matches and smeared those chords.
 
@@ -998,7 +998,7 @@ final class PitchShifter {
     private let scratch: UnsafeMutablePointer<Float>
 
     init(sr: Double) {
-        L = Int(sr * 0.010); back = L / 2; ahead = L - back; fadeLen = Int(sr * 0.006); jMin = Int(sr * 0.0025); jMinChord = Int(sr * 0.004); jMax = Int(sr * 0.030)
+        L = Int(sr * 0.010); back = L * 4 / 5; ahead = L - back; fadeLen = Int(sr * 0.006); jMin = Int(sr * 0.0025); jMinChord = Int(sr * 0.004); jMax = Int(sr * 0.030)
         margin = Int(sr * 0.0008); estEvery = Int(sr * 0.006)
         period = Int(sr * 0.008)
         fade = fadeLen
@@ -1066,7 +1066,7 @@ final class PitchShifter {
     private func bestJump(_ base: Int, up: Bool, maxJ: Int, minJ: Int = 0, preferShort: Bool = true) -> Int {
         let jMin = min(max(preferShort ? self.jMin : jMinChord, minJ), jMax)
         guard maxJ >= jMin else { return max(maxJ, 1) }
-        // the L-sample match window is centred on the splice point: back samples before it, ahead after
+        // the L-sample match window around the splice point: back samples before it (most of it), ahead after
         let ref = buf + ((base - back) & mask)
         var re: Float = 0
         vDSP_svesq(ref, 1, &re, vDSP_Length(L))
