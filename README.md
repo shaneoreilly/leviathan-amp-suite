@@ -13,15 +13,34 @@ Plug in your guitar, pick a sound, play. Real amp tones, pedals, cabinets, a tun
 
 ---
 
-## What you need
+## Contents
+
+- [1. What you need](#1-what-you-need)
+- [2. Install](#2-install)
+  - [2.1 Mac](#21-mac)
+  - [2.2 Windows](#22-windows)
+  - [2.3 Android](#23-android)
+  - [2.4 Updates](#24-updates)
+- [3. Getting started](#3-getting-started)
+- [4. What's inside](#4-whats-inside)
+- [5. Getting more sounds](#5-getting-more-sounds)
+- [6. Sounding your best](#6-sounding-your-best)
+- [7. Keyboard shortcuts](#7-keyboard-shortcuts)
+- [8. Where your files are](#8-where-your-files-are)
+- [9. Help and feedback](#9-help-and-feedback)
+- [10. Credits and license](#10-credits-and-license)
+
+---
+
+## 1. What you need
 
 - **A Mac** (macOS 13 Ventura or later), **a Windows PC** (Windows 10 or 11, 64-bit) **or an Android phone** (Android 9 or later, 64-bit).
-- **An audio interface:** the small box you plug your guitar into, such as an iRig, Focusrite Scarlett or Boss Katana over USB. On a phone, plug it into the USB-C port, through a USB-C adapter or hub if its cable doesn't fit (see [Android](#android)).
+- **An audio interface:** the small box you plug your guitar into, such as an iRig, Focusrite Scarlett or Boss Katana over USB. On a phone, plug it into the USB-C port, through a USB-C adapter or hub if its cable doesn't fit (see [Android](#23-android)).
 - **Headphones or speakers.** Plugging headphones into the interface itself sounds best and has the least delay.
 
-## Install
+## 2. Install
 
-### Mac
+### 2.1 Mac
 
 1. Download the latest **`Leviathan-x.y.z.dmg`** from the [Releases page](../../releases).
 2. Open it and drag **Leviathan** into your **Applications** folder.
@@ -32,13 +51,13 @@ Plug in your guitar, pick a sound, play. Real amp tones, pedals, cabinets, a tun
 
 5. When asked, **allow microphone access**. This is how Leviathan hears your guitar through the interface. macOS remembers your answer, including after updates.
 
-### Windows
+### 2.2 Windows
 
 1. Download the latest **`Leviathan-Setup-x.y.z.exe`** from the [Releases page](../../releases).
 2. Run it. If Windows says *"Windows protected your PC"*, click **More info → Run anyway**.
 3. Leviathan appears in your Start menu.
 
-### Android
+### 2.3 Android
 
 1. On your phone, download the latest **`Leviathan-x.y.z.apk`** from the [Releases page](../../releases).
 2. Open it. The first time, Android asks you to allow installing apps from your browser (or Files app): tap **Settings**, turn on **Allow from this source**, go back and tap **Install**.
@@ -51,11 +70,11 @@ Plug in your guitar, pick a sound, play. Real amp tones, pedals, cabinets, a tun
 
 Leviathan opens with the sound off: tap **Start** at the top when you're ready to play. It runs full screen in landscape and keeps the screen on while it's open. The back gesture returns to the rig rather than closing the app, so a stray swipe mid-song won't cut your sound. When you switch to another app, Leviathan stops playing so it doesn't get in the way of other apps' sound. Recording carries on if you were recording.
 
-### Updates
+### 2.4 Updates
 
 Leviathan checks for new versions itself. When one is out, a banner appears at the top of the window: click **Update** and it installs and restarts. You never need to download it again. On Android, tap **Update**, then **Update** again when Android asks you to confirm. The first time, Android also asks you to allow installs from Leviathan.
 
-## Getting started
+## 3. Getting started
 
 1. **Plug your guitar into your audio interface** and connect the interface to your computer.
 2. Open Leviathan. In the **Input** panel (top left), **pick your interface** and the input your guitar is plugged into.
@@ -67,7 +86,7 @@ Leviathan checks for new versions itself. When one is out, a banner appears at t
 
 **Turning knobs:** drag up or down, or scroll over the knob. Hold **Shift** for fine steps. The **↺** under each knob puts it back to its starting point.
 
-## What's inside
+## 4. What's inside
 
 **Amps**
 - **Real amps.** Leviathan plays *NAM captures*: recordings of real amplifiers turned into models, similar to Kemper profiles. It comes with 34 of them:
@@ -75,7 +94,7 @@ Leviathan checks for new versions itself. When one is out, a banner appears at t
   - **Rock:** Marshall JVM; Orange Rockerverb; Victory V4 Countess; Ceriatone King Kong; Friedman Dirty Shirley; Soldano-style drive; Jet City; Laney crunch.
   - **Clean, blues and indie:** Fender Twin; Marshall JVM clean; Vox AC15 Top Boost; Magnatone Super 59.
 
-  You can add thousands more for free (see [Getting more sounds](#getting-more-sounds)).
+  You can add thousands more for free (see [Getting more sounds](#5-getting-more-sounds)).
 - **Leviathan's own amp** with three channels: Clean, Rust and Hot.
 
 **Effects**
@@ -117,7 +136,7 @@ Leviathan checks for new versions itself. When one is out, a banner appears at t
 **When something needs fixing**
 - If Leviathan shows a problem in the yellow bar at the top (no audio device, crackles, a missing amp capture and so on), click **Click to resolve** (**Tap to resolve** on a phone) to go straight to the setting that fixes it.
 
-## Getting more sounds
+## 5. Getting more sounds
 
 Leviathan uses two kinds of sound file:
 
@@ -134,11 +153,11 @@ Leviathan uses two kinds of sound file:
 **Where to get cabinets (`.wav` files)**
 - [TONE3000](https://www.tone3000.com): free cabinets and band-tone packs (choose **IR**).
 - [OwnHammer](https://www.ownhammer.com) and [ML Sound Lab](https://ml-sound-lab.com): free and paid cabinet packs.
-- *God's Cab*: a free, popular Mesa 4x12 pack with many microphones, which Leviathan has its own browser for. Search for "God's Cab IR" to find a copy, and put it in the God's Cab folder listed under [Where your files are](#where-your-files-are). On Android, use **Settings → Library → God's Cab → Add…** and pick the pack's folder.
+- *God's Cab*: a free, popular Mesa 4x12 pack with many microphones, which Leviathan has its own browser for. Search for "God's Cab IR" to find a copy, and put it in the God's Cab folder listed under [Where your files are](#8-where-your-files-are). On Android, use **Settings → Library → God's Cab → Add…** and pick the pack's folder.
 
 **Tip:** some amp captures are "full rig" captures that already include a cabinet. For those, switch Leviathan's **Cabinet** off.
 
-## Sounding your best
+## 6. Sounding your best
 
 - **Stop your interface from distorting.** Turn the gain knob *on your interface* down until your hardest playing never lights it red. A distorting interface makes every sound harsh and fizzy. Leviathan warns you when this happens; use **Input Gain** in Leviathan if you need more level.
 - **Listen through your interface.** Headphones or speakers plugged into the interface have the least delay and the fewest crackles.
@@ -146,7 +165,7 @@ Leviathan uses two kinds of sound file:
 - **Crackles?** Go to **Settings → Audio** and choose a larger buffer. On Windows, choose your interface's **ASIO** driver if it has one. On Android, Leviathan starts on the smallest buffer your phone offers (the least delay) and keeps whichever size you pick; a heavy amp capture may need a step or two up.
 - **On a phone:** listen through the interface or wired headphones. The phone's own speaker adds about 20 ms of delay, and Bluetooth headphones far more.
 
-## Keyboard shortcuts
+## 7. Keyboard shortcuts
 
 On a computer:
 
@@ -161,7 +180,7 @@ On a computer:
 | Return | Enter | Play / pause (Recordings) |
 | Delete | Delete | Delete the selected recording |
 
-## Where your files are
+## 8. Where your files are
 
 | What | Mac | Windows |
 | --- | --- | --- |
@@ -182,13 +201,13 @@ On a computer:
 
 To keep recordings in a folder of your own on the phone (for example `Music/Leviathan`), use **Settings → Library → Recordings folder → Change folder…**. Android asks you once to turn on **All files access** for Leviathan. Takes in your own folder show up in file managers and sync apps, and stay when you uninstall Leviathan. Google Drive folders can't be recorded into directly on a phone: use **Share**, or a sync app on your folder.
 
-## Help and feedback
+## 9. Help and feedback
 
 Found a problem or have an idea? In Leviathan, go to **Settings → About** and click **Report a bug** or **Request a feature**. It opens a form with your setup already filled in.
 
 **Crackles, dropouts or something odd?** Turn on **Settings → About → Debug log → Record a diagnostic log**, play until the problem happens, then use **Share log…** (Mac and Android) or **Copy log** (Mac and Windows) and attach or paste it into your bug report. The log records your computer or phone, the audio device and how hard Leviathan is working (including how much the amp capture takes), never your playing. It's off until you turn it on. You can also [open an issue on GitHub](https://github.com/shaneoreilly/leviathan-amp-suite/issues/new/choose).
 
-## Credits and license
+## 10. Credits and license
 
 - The included amp captures were made by members of the Neural Amp Modeler community; see [CREDITS.md](shared/nam/captures/CREDITS.md).
 - The logo is based on a classic public-domain *Moby-Dick* illustration.
