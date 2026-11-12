@@ -303,7 +303,7 @@ std::unique_ptr<UnitBox> RigView::makePanel(const juce::String& id) {
         c->add(std::move(r1));
         auto r2 = row(4);
         r2->add(std::make_unique<IconButton>(IconButton::minus, [&m] { m.playAs(std::max((int) std::round(m.s().d("pitchSemis")) - 1, -12)); }, 12))->setTooltip("Down a semitone");
-        auto playAs = std::make_unique<Picker>((int) (155 * theme::W), [&m] { return 13 - (int) std::round(m.s().d("pitchSemis")); }, [&m](int i) { m.playAs(13 - i); });
+        auto playAs = std::make_unique<Picker>((int) (155 * theme::W), [&m] { return 13 - (m.s().b("pitchOn") ? (int) std::round(m.s().d("pitchSemis")) : 0); /* ticked: what you sound like now */ }, [&m](int i) { m.playAs(13 - i); });
         for (auto& [name, semis] : m.playAsOptions()) {
             auto st = m.tuning().strings; for (auto& n : st) n += semis;
             const auto label = name + juce::String::fromUTF8(" \xc2\xb7 ") + tuningNotes(st, m.tuning().flats);

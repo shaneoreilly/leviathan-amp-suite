@@ -1866,17 +1866,25 @@ struct ContentView: View {
             VStack(alignment: .center, spacing: 8) {
                 // the button shows just the tuning's name, the menu shows the notes too (keeps the panel narrow)
                 Menu("Guitar: \(m.tuning.name)") {
-                    ForEach(TUNINGS.indices, id: \.self) { i in Button(TUNINGS[i].label) { m.tuningIndex = i } }
+                    // a picker inside the menu: the current tuning gets the menu's checkmark
+                    Picker("", selection: Binding(get: { m.tuningIndex }, set: { m.tuningIndex = $0 })) {
+                        ForEach(TUNINGS.indices, id: \.self) { i in Text(TUNINGS[i].label).tag(i) }
+                    }
+                    .pickerStyle(.inline).labelsHidden()
                 }
                 .frame(width: 135 * W)
                 HStack(spacing: 4) {
                     Button { m.playAs(max(Int(m.s.pitchSemis.rounded()) - 1, -12)) } label: { Image(systemName: "minus") }
                         .help("Down a semitone")
                     Menu("Play as: \(m.soundsLike)") {
-                        ForEach(m.playAsOptions, id: \.semis) { o in
-                            let notes = tuningNotes(m.tuning.strings.map { $0 + o.semis }, flats: m.tuning.flats)
-                            Button(o.semis == 0 ? "\(o.name) \u{00B7} \(notes) (no shift)" : String(format: "%@ \u{00B7} %@  (%+d)", o.name, notes, o.semis)) { m.playAs(o.semis) }
+                        // the checkmark is on what you sound like now: the shift while the shifter is on, else no shift
+                        Picker("", selection: Binding(get: { m.s.pitchOn ? Int(m.s.pitchSemis.rounded()) : 0 }, set: { m.playAs($0) })) {
+                            ForEach(m.playAsOptions, id: \.semis) { o in
+                                let notes = tuningNotes(m.tuning.strings.map { $0 + o.semis }, flats: m.tuning.flats)
+                                Text(o.semis == 0 ? "\(o.name) \u{00B7} \(notes) (no shift)" : String(format: "%@ \u{00B7} %@  (%+d)", o.name, notes, o.semis)).tag(o.semis)
+                            }
                         }
+                        .pickerStyle(.inline).labelsHidden()
                     }
                     .frame(width: 135 * W)
                     Button { m.playAs(min(Int(m.s.pitchSemis.rounded()) + 1, 12)) } label: { Image(systemName: "plus") }
