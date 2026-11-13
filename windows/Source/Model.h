@@ -20,7 +20,7 @@ struct OfflineRig {
 };
 
 
-class Model : public juce::ChangeBroadcaster, private juce::AudioIODeviceCallback, private juce::Timer {
+class Model : public juce::ChangeBroadcaster, private juce::AudioIODeviceCallback, private juce::Timer, private juce::ChangeListener {
 public:
     Model();
     ~Model() override;
@@ -80,6 +80,8 @@ public:
     std::atomic<int> callbackCount { 0 }, callbackPriority { -1000 };
     std::atomic<float> callbackGapMax { 0 };
     juce::int64 callbackLast = 0;   // audio thread only (reset in start(), before the callback is added)
+    /// Every callback since start, for the stall check (callbackCount is reset by the perf log).
+    std::atomic<int> callbackTotal { 0 };
     juce::String loggedDevice, loggedStatus, loggedMessage, loggedPower;
     int perfTick = 0, perfXRuns = 0; double perfAt = 0, perfNam = 0;
     void setDebugLog(bool on);
@@ -330,6 +332,19 @@ private:
     void syncMute() { params.muted.store(tunerOn && tunerMute); }
     void saveState();
     void timerCallback() override;
+    void changeListenerCallback(juce::ChangeBroadcaster*) override;   // the device list (devices)
+    /// An interface that stops responding (a USB interface after sleep or a power blip): the stall check restarts
+    /// audio once, then asks for a replug; plugging the chosen device back in starts audio again by itself
+    /// (Mac: Model.checkStall / replugged). awaitingReplug: the device name to wait for.
+    void checkStall();
+    juce::String awaitingReplug;
+    bool chosenMissing = false;
+    int stallLast = 0; double stalledSince = 0, lastStallRestart = -1e9;
+    int replugPoll = 0;
+    /// The input and output device names you chose: JUCE falls back to another device when one is unplugged, and
+    /// these are what plugging it back in returns to.
+    juce::String chosenIn, chosenOut;
+    bool deviceListed(const juce::String& name, bool input) const;
     void runTuner();
     void checkInputClipping();
     int lastClips = 0; std::vector<double> clipTimes; bool clipWarned = false;

@@ -761,6 +761,8 @@ final class Model: ObservableObject {
 
     func refreshDevices() {
         let all = listDevices()
+        let appeared = Set(all.map(\.uid)).subtracting(knownUIDs)
+        knownUIDs = Set(all.map(\.uid))
         inputs = all.filter { $0.ins > 0 }
         outputs = all.filter { $0.outs > 0 }
         // Prefer an external interface for input. For output, the interface itself when it has one (one clock, no
@@ -773,6 +775,62 @@ final class Model: ObservableObject {
             if let i = input, i.outs > 0, !i.isVirtual, let d = outputs.first(where: { $0.uid == i.uid }) { outputUID = d.uid }
             else if let d = good.first ?? outputs.first(where: { !$0.isVirtual }) ?? outputs.first { outputUID = d.uid }
         }
+        replugged(appeared)
+    }
+
+    // MARK: interfaces that stop responding
+
+    /// The device (uid) that stopped responding or refused to start; when it's plugged back in, audio starts again
+    /// by itself (the app stays open: it's what pressing Start does).
+    private var awaitingReplug: String?
+    private var knownUIDs = Set<String>()
+    /// Running without the chosen input because it wasn't plugged in: plugging it in switches to it.
+    private var startedWithoutInput = false
+    private var stallLast = (cycles: 0, fails: 0), stalledSince: Date?, lastStallRestart = Date.distantPast
+
+    private func replugged(_ appeared: Set<String>) {
+        if let want = awaitingReplug, appeared.contains(want), !running {
+            DebugLog.write("audio", "device back: starting again")
+            // a USB interface needs a moment after it appears before it will start
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                guard let self, !self.running, self.awaitingReplug == want else { return }
+                self.start()
+            }
+        } else if live, startedWithoutInput, input != nil, appeared.contains(inputUID) {
+            DebugLog.write("audio", "input plugged in: switching to it")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                guard let self, self.live, self.startedWithoutInput, self.input != nil else { return }
+                self.stop(); self.start()
+            }
+        }
+    }
+
+    /// Called twice a second while running. No render cycles for 2 s, or none that could read the input, means the
+    /// interface has hung (a USB interface after sleep or a power blip): restart once, and if that doesn't hold, say
+    /// to replug it rather than sit there silent.
+    private func checkStall() {
+        let c = engine.cycles, f = engine.inputFails
+        let fresh = c - stallLast.cycles, failed = f - stallLast.fails
+        stallLast = (c, f)
+        let now = Date()
+        guard fresh == 0 || (failed > 0 && failed >= fresh), now.timeIntervalSince(startedAt) > 3 else { stalledSince = nil; return }
+        guard let since = stalledSince else { stalledSince = now; return }
+        guard now.timeIntervalSince(since) >= 2 else { return }
+        stalledSince = nil
+        let inputHung = fresh > 0   // cycles still run, only the input fails
+        DebugLog.write("audio", "stalled: \(fresh == 0 ? "no audio cycles" : "input reads failing") for 2 s")
+        let withInput = !playbackOnly, i = input, o = output
+        engine.stop(); running = false; info = nil; playbackOnly = false
+        if now.timeIntervalSince(lastStallRestart) > 30 {
+            lastStallRestart = now
+            start(withInput: withInput)
+            if running { status = "Audio stopped for a moment, so Leviathan restarted it."; return }
+            if awaitingReplug != nil { return }   // start() said which device to replug
+        }
+        let bad = inputHung ? (i ?? o) : (withInput ? (i ?? o) : o)
+        guard let bad else { return }
+        awaitingReplug = bad.uid
+        status = "\(bad.name) stopped responding. Unplug it and plug it back in; Leviathan starts again by itself."
     }
 
     func toggle() { live ? stop() : start() }
@@ -793,7 +851,8 @@ final class Model: ObservableObject {
             guard let o = output else { status = "Pick an output device in Settings → Audio."; fixIn("Audio"); return }
             do {
                 info = try engine.start(input: nil, output: o, buffer: bufferSize)
-                running = true; playbackOnly = true
+                running = true; playbackOnly = true; awaitingReplug = nil; stalledSince = nil; stallLast = (0, 0)
+                startedWithoutInput = false
                 DebugLog.write("audio", "started for playback (input off)")
                 perfDropouts = 0; perfAt = Date(); perfNam = params.namSeconds; perfPeak = 0
                 adviseOverloads = true; recentOverloads = []; startedAt = Date()
@@ -815,7 +874,8 @@ final class Model: ObservableObject {
         let i = input
         do {
             info = try engine.start(input: i, output: o, buffer: bufferSize)
-            running = true
+            running = true; awaitingReplug = nil; stalledSince = nil; stallLast = (0, 0)
+            startedWithoutInput = i == nil && inputUID != Model.noInput
             DebugLog.write("audio", "started")
             perfDropouts = 0; perfAt = Date(); perfNam = params.namSeconds; perfPeak = 0   // the engine's count restarts with it
             adviseOverloads = true; recentOverloads = []; startedAt = Date()
@@ -829,15 +889,17 @@ final class Model: ObservableObject {
     }
 
     /// Says which device refused to start: if the output alone starts, the input is the problem. A USB interface
-    /// that stops responding (CoreAudio's 'what' / 'nope') usually comes back after unplugging it.
+    /// that stops responding (CoreAudio's 'what' / 'nope') usually comes back after unplugging it, and audio then
+    /// starts again by itself (awaitingReplug). The CoreAudio error goes to the debug log, not the message.
     private func startFailure(_ error: Error, input i: AudioDevice?, output o: AudioDevice) -> String {
-        let detail = " (\(error.localizedDescription))"
-        guard let i else { return "Leviathan couldn\u{2019}t start \(o.name). Pick another output, or unplug it and plug it back in." + detail }
-        let outputWorks = (try? engine.start(input: nil, output: o, buffer: bufferSize)) != nil
+        DebugLog.write("audio", "start failed: \(error.localizedDescription)")
+        let outputWorks = i != nil && (try? engine.start(input: nil, output: o, buffer: bufferSize)) != nil
         engine.stop()
+        let bad = outputWorks ? i! : o
+        awaitingReplug = bad.uid
         return outputWorks
-            ? "\(i.name) isn\u{2019}t responding. Unplug it, plug it back in, then press Start." + detail
-            : "Leviathan couldn\u{2019}t start \(o.name). Pick another output, or unplug it and plug it back in." + detail
+            ? "\(bad.name) isn\u{2019}t responding. Unplug it and plug it back in; Leviathan starts again by itself."
+            : "Leviathan couldn\u{2019}t start \(bad.name). Unplug it and plug it back in (Leviathan starts again by itself), or pick another output."
     }
 
     func stop() { engine.stop(); running = false; playbackOnly = false; info = nil; DebugLog.write("audio", "stopped") }
@@ -1352,7 +1414,7 @@ final class Model: ObservableObject {
         checkInputClipping()
         if meters.beat != params.metroBeat { meters.beat = params.metroBeat }
         tunerTick += 1
-        if tunerTick % 15 == 0 { meters.load = engine.loadPeak; engine.loadPeak = 0; perfPeak = max(perfPeak, meters.load) }
+        if tunerTick % 15 == 0 { meters.load = engine.loadPeak; engine.loadPeak = 0; perfPeak = max(perfPeak, meters.load); checkStall() }
         if sessions.message != loggedMessage { loggedMessage = sessions.message; if !loggedMessage.isEmpty { DebugLog.write("message", loggedMessage) } }
         perfTick += 1
         if perfTick % 60 == 0, DebugLog.enabled {   // every 2 s at 30 Hz

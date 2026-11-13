@@ -133,11 +133,14 @@ Model::Model() {
     // the device setup is kept and reopened by start(). Desktop starts playing straight away.
     if (onAndroid) devices.closeAudioDevice();
     else start();
+    chosenIn = devices.getAudioDeviceSetup().inputDeviceName; chosenOut = devices.getAudioDeviceSetup().outputDeviceName;
+    devices.addChangeListener(this);
     startTimerHz(30);
 }
 
 Model::~Model() {
     alive->store(false);
+    devices.removeChangeListener(this);
     stopTimer();
     stop();
     devices.closeAudioDevice();   // the engine is gone after this, so the model can't be in use
@@ -297,6 +300,7 @@ void Model::start(bool withInput) {
     perfXRuns = lastXRuns;   // the driver's count restarts with the device; the next perf line counts from here
     perfAt = startedAt; perfNam = params.namSeconds.load(); callbackPeak.store(0);
     callbackCount.store(0); callbackGapMax.store(0); callbackPriority.store(sysinfo::unknownPriority);
+    callbackTotal.store(0); stallLast = 0; stalledSince = 0; awaitingReplug = {};
     refreshInfo();
     changed();
 }
@@ -451,6 +455,7 @@ void Model::audioDeviceIOCallbackWithContext(const float* const* in, int numIn, 
         if (gap > callbackGapMax.load(std::memory_order_relaxed)) callbackGapMax.store(gap, std::memory_order_relaxed);
     }
     callbackLast = t0;
+    callbackTotal.fetch_add(1, std::memory_order_relaxed);
     if (callbackCount.fetch_add(1, std::memory_order_relaxed) == 0 && callbackPriority.load(std::memory_order_relaxed) == sysinfo::unknownPriority)
         callbackPriority.store(sysinfo::currentThreadPriority(), std::memory_order_relaxed);
     DSP* d = dsp.get();
@@ -520,6 +525,11 @@ void Model::timerCallback() {
     if (onTick) onTick();
     if (status != loggedStatus) { loggedStatus = status; if (status.isNotEmpty()) debuglog::write("message", status); }
     if (sessions->message != loggedMessage) { loggedMessage = sessions->message; if (loggedMessage.isNotEmpty()) debuglog::write("message", loggedMessage); }
+    // waiting for a replug: Android (Oboe) and some drivers don't announce new devices, so look every 2 s
+    if (awaitingReplug.isNotEmpty() && !running && ++replugPoll % 60 == 0 && devices.getCurrentAudioDeviceType() != "ASIO") {
+        if (auto* t = devices.getCurrentDeviceTypeObject()) t->scanForDevices();
+        changeListenerCallback(nullptr);
+    }
     if (!running) return;
     if (++perfTick % 60 == 0 && debuglog::enabled()) {   // every 2 s at 30 Hz
         const double now = juce::Time::getMillisecondCounterHiRes() / 1000.0, nam = params.namSeconds.load();
@@ -559,6 +569,70 @@ void Model::timerCallback() {
     if (++tunerTick % 15 == 0) cpu = (float) devices.getCpuUsage();
     if (tunerOn && tunerTick % 2 == 0) runTuner();
     checkInputClipping();
+    if (tunerTick % 15 == 0) checkStall();   // last: it may stop audio
+}
+
+bool Model::deviceListed(const juce::String& name, bool input) const {
+    if (name.isEmpty()) return true;
+    auto* t = devices.getCurrentDeviceTypeObject();
+    return t != nullptr && t->getDeviceNames(input).contains(name);
+}
+
+/// The device list changed (or the replug poll): note when a chosen device goes missing, and when it's back, return
+/// to it and start audio again if it was playing or waiting for it. Otherwise a new setup is the one you chose.
+void Model::changeListenerCallback(juce::ChangeBroadcaster*) {
+    const auto setup = devices.getAudioDeviceSetup();
+    if (!deviceListed(chosenIn, true) || !deviceListed(chosenOut, false)) {
+        if (!chosenMissing) debuglog::write("audio", "chosen device unplugged");
+        chosenMissing = true;
+        return;
+    }
+    if (!chosenMissing) { chosenIn = setup.inputDeviceName; chosenOut = setup.outputDeviceName; return; }
+    chosenMissing = false;
+    if (awaitingReplug.isEmpty() && !running) return;
+    debuglog::write("audio", "device back: starting again");
+    // a USB interface needs a moment after it appears before it will start
+    juce::Timer::callAfterDelay(1500, [this, a = alive] {
+        if (!a->load() || chosenMissing) return;
+        const bool withInput = !running || !playbackOnly;
+        stop();
+        auto s = devices.getAudioDeviceSetup();
+        if (s.inputDeviceName != chosenIn || s.outputDeviceName != chosenOut || devices.getCurrentAudioDevice() == nullptr) {
+            s.inputDeviceName = chosenIn; s.outputDeviceName = chosenOut;
+            devices.setAudioDeviceSetup(s, true);
+            ensureInputs();
+        }
+        start(withInput);
+    });
+}
+
+/// Twice a second while running. No callbacks for 2 s means the interface has hung (a USB interface after sleep or
+/// a power blip): restart once, and if that doesn't hold, say to replug it rather than sit there silent.
+void Model::checkStall() {
+    const int c = callbackTotal.load(), fresh = c - stallLast;
+    stallLast = c;
+    const double now = juce::Time::getMillisecondCounterHiRes() / 1000.0;
+    if (fresh > 0 || now - startedAt < 3) { stalledSince = 0; return; }
+    if (stalledSince == 0) { stalledSince = now; return; }
+    if (now - stalledSince < 2) return;
+    stalledSince = 0;
+    debuglog::write("audio", "stalled: no audio callbacks for 2 s");
+    const bool withInput = !playbackOnly;
+    const juce::String name = withInput && info.inName.isNotEmpty() ? info.inName : info.outName;
+    stop();
+    devices.closeAudioDevice();
+    if (now - lastStallRestart > 30) {
+        lastStallRestart = now;
+        devices.restartLastAudioDevice();
+        if (devices.getCurrentAudioDevice() != nullptr) {
+            start(withInput);
+            if (running) { status = "Audio stopped for a moment, so Leviathan restarted it."; changed(); return; }
+        }
+    }
+    awaitingReplug = name.isNotEmpty() ? name : juce::String("audio device");
+    status = awaitingReplug + juce::String::fromUTF8(" stopped responding. Unplug it and plug it back in")
+             + (devices.getCurrentAudioDeviceType() == "ASIO" ? juce::String(", then press Start.") : juce::String("; Leviathan starts again by itself."));
+    changed();
 }
 
 /// The interface's converter clipping (before Leviathan's input gain) makes every sound harsh and fizzy;

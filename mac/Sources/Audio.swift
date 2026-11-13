@@ -159,6 +159,9 @@ final class HALEngine {
     private(set) var cycleUsage: Float32 = 1
     /// Dropouts reported by the HAL since start.
     private(set) var overloads = 0
+    /// Render cycles, and those whose input read failed, since start (written by the audio thread, read by the UI's
+    /// stall check). An interface that hangs (USB firmware, 'what') stops one or the other moving.
+    private(set) var cycles = 0, inputFails = 0
     /// Called on the main queue when the engine must be rebuilt (device rate changed under us) or a dropout happened.
     var onRestartNeeded: (() -> Void)?
     var onOverload: (() -> Void)?
@@ -220,7 +223,7 @@ final class HALEngine {
         self.device = device
         mach_timebase_info(&timebase)
         tickPerFrame = 1e9 / sr * Double(timebase.denom) / Double(timebase.numer)
-        overloads = 0; loadPeak = 0
+        overloads = 0; loadPeak = 0; cycles = 0; inputFails = 0
         // render late in the cycle: our DSP needs a few % of it, so most of the cycle is wasted waiting
         setCycleUsage(actualFrames <= 32 ? 0.7 : 0.5)
 
@@ -330,10 +333,12 @@ final class HALEngine {
             if load > loadPeak { loadPeak = load }
         }
         let n = Int(frames)
+        cycles &+= 1
         let input: UnsafePointer<Float>
         if inCount > 0 {
             for i in 0..<inCount { list[i].mDataByteSize = frames * 4 }
             let st = AudioUnitRender(u, flags, ts, 1, frames, list.unsafeMutablePointer)
+            if st != noErr { inputFails &+= 1 }
             let ch = min(max(params.inputChannel, 0), inCount - 1)
             input = st == noErr ? UnsafePointer(inBufs[ch]) : UnsafePointer(silence)
         } else {
