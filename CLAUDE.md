@@ -19,6 +19,7 @@ Android-only behaviour is behind `JUCE_ANDROID` (or `onAndroid` from `Library.h`
 Shared by both apps:
 - `shared/nam/`: the Neural Amp Modeler C bridge, with NeuralAmpModelerCore v0.6.0 pinned. The bundled `.nam` captures are GPLv3, credited in `CREDITS.md`.
 - `shared/help/explanations.json`: the hover-help text for every control.
+- `shared/pitch/bands.json`: artists and their tunings for Pitch's search. Built by `make_bands.py` from a tab-site scrape plus the hand-written `popular.txt` (which wins); edit `popular.txt` and rerun it.
 
 The README is for **non-technical players**. Keep it free of build and code detail, which belongs in DEVELOPMENT.md.
 

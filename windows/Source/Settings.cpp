@@ -482,7 +482,39 @@ const std::vector<Tuning> TUNINGS = {
     { "C Standard", { 36, 41, 46, 51, 55, 60 }, true },
     { "Drop B", { 35, 42, 47, 52, 56, 61 }, false },
     { "Drop A", { 33, 40, 45, 50, 54, 59 }, false },
+    // added later: new tunings go at the end (the saved choice is a position in this list); tuningOrder() sorts them
+    { "Db Standard", { 37, 42, 47, 52, 56, 61 }, true },
+    { "B Standard", { 35, 40, 45, 50, 54, 59 }, false },
+    { "A Standard", { 33, 38, 43, 48, 52, 57 }, false },
+    { "Open G", { 38, 43, 50, 55, 59, 62 }, false },
+    { "Open D", { 38, 45, 50, 54, 57, 62 }, false },
+    { "Open E", { 40, 47, 52, 56, 59, 64 }, false },
+    { "Open C", { 36, 43, 48, 55, 60, 64 }, false },
+    { "DADGAD", { 38, 45, 50, 55, 57, 62 }, false },
 };
+
+const std::vector<int>& tuningOrder() {
+    static const std::vector<int> order = [] {
+        auto kind = [](const Tuning& t) {
+            std::array<int, 5> iv {}; for (size_t k = 0; k < 5; ++k) iv[k] = t.strings[k + 1] - t.strings[k];
+            return iv == std::array<int, 5> { 5, 5, 5, 4, 5 } ? 0 : iv == std::array<int, 5> { 7, 5, 5, 4, 5 } ? 1 : 2;
+        };
+        std::vector<int> v; for (int i = 0; i < (int) TUNINGS.size(); ++i) v.push_back(i);
+        std::stable_sort(v.begin(), v.end(), [&](int a, int b) {
+            const auto& x = TUNINGS[(size_t) a]; const auto& y = TUNINGS[(size_t) b];
+            if (kind(x) != kind(y)) return kind(x) < kind(y);
+            return x.strings[0] > y.strings[0];
+        });
+        return v;
+    }();
+    return order;
+}
+
+int stepTuning(int i, int d) {
+    const auto& o = tuningOrder();
+    int at = 0; for (size_t k = 0; k < o.size(); ++k) if (o[k] == i) at = (int) k;
+    return o[(size_t) ((at + d + (int) o.size()) % (int) o.size())];
+}
 
 juce::String tuningName(const std::array<int, 6>& s) {
     static const char* names[] = { "C", "Db", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B" };
@@ -491,6 +523,9 @@ juce::String tuningName(const std::array<int, 6>& s) {
     for (int k = 0; k < 5; ++k) iv[(size_t) k] = s[(size_t) k + 1] - s[(size_t) k];
     if (iv == std::array<int, 5> { 5, 5, 5, 4, 5 }) return n(s[0]) + " Standard";
     if (iv == std::array<int, 5> { 7, 5, 5, 4, 5 }) return "Drop " + n(s[0]);
+    if (iv == std::array<int, 5> { 7, 5, 4, 3, 5 } || iv == std::array<int, 5> { 7, 5, 7, 5, 4 }) return "Open " + n(s[0]);   // open D / E, open C shapes
+    if (iv == std::array<int, 5> { 5, 7, 5, 4, 3 }) return "Open " + n(s[1]);   // open G shape (root on the 5th string)
+    if (iv == std::array<int, 5> { 7, 5, 5, 2, 5 } && n(s[0]) == "D") return "DADGAD";
     juce::StringArray parts; for (int m : s) parts.add(n(m));
     return parts.joinIntoString(" ");
 }

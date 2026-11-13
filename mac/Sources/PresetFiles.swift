@@ -105,6 +105,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor static weak var model: Model?
     @MainActor static var pending: [URL] = []
 
+    /// The model is made before NSApp exists: set the window and menu appearance once it does.
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        MainActor.assumeIsolated { AppDelegate.model?.applyAppearance() }
+    }
+
     func application(_ application: NSApplication, open urls: [URL]) {
         MainActor.assumeIsolated {
             let presets = urls.filter { $0.pathExtension.lowercased() == Model.presetExt }

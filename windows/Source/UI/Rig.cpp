@@ -1,6 +1,7 @@
 #include "Rig.h"
 #include "CabBrowser.h"
 #include "AmpBrowser.h"
+#include "PlayAs.h"
 
 namespace lev {
 
@@ -225,12 +226,21 @@ void RigView::rebuild() {
                 menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&add));
             };
         }
-        void resized() override { chevron.setBounds(0, 4, 14, 18); add.setBounds(230, 0, 130, 26); }
+        void resized() override { chevron.setBounds(0, 4, 14, 18); add.setBounds(230, -2, 130, 30); }
         void paint(juce::Graphics& g) override {
             g.setColour(theme::secondary); g.setFont(theme::font(10, true, 2));
             g.drawText(juce::String::fromUTF8("PEDALS  \xe2\x86\x92  AMP"), 20, 0, 200, 26, juce::Justification::centredLeft);
         }
-        Model& model; IconButton chevron; juce::TextButton add;
+        /// Add pedal looks like every other dropdown (theme::drawDropdownBox).
+        struct AddButton : juce::Button {
+            explicit AddButton(const juce::String& t) : juce::Button(t) {}
+            void paintButton(juce::Graphics& g, bool, bool) override {
+                const auto in = theme::drawDropdownBox(g, getLocalBounds(), isEnabled());
+                g.setColour(theme::text.withMultipliedAlpha(isEnabled() ? 1.f : 0.5f)); g.setFont(theme::font(10.5f));
+                g.drawText(getButtonText(), in, juce::Justification::centredLeft, true);
+            }
+        };
+        Model& model; IconButton chevron; AddButton add;
     };
     pedalHeader = std::make_unique<Header>(model);
     canvas.addAndMakeVisible(*pedalHeader);
@@ -295,23 +305,16 @@ std::unique_ptr<UnitBox> RigView::makePanel(const juce::String& id) {
         auto dotC = std::make_unique<GateDot>(m); liveReg(dotC.get()); box->addTrailing(std::move(dotC));
     } else if (id == "pitch") {
         auto c = col(8);
-        auto r1 = row(8);
-        r1->add(std::make_unique<LiveLabel>([] { return juce::String("Guitar"); }, 12, theme::secondary));
-        auto tune = std::make_unique<Picker>((int) (140 * theme::W), [&m] { return m.tuningIndex + 1; }, [&m](int i) { m.setTuningIndex(i - 1); });
-        for (size_t i = 0; i < TUNINGS.size(); ++i) tune->addItem(tuningLabel(TUNINGS[i]), (int) i + 1);
-        r1->add(std::move(tune));
+        auto r1 = row(4);   // your guitar's tuning: ‹ › step through them (PlayAs.cpp)
+        r1->add(std::make_unique<IconButton>(IconButton::chevronLeft, [&m] { m.setTuningIndex(stepTuning(m.tuningIndex, -1)); }, 12))->setTooltip("Previous tuning");
+        r1->add(playas::makeGuitarButton(m));
+        r1->add(std::make_unique<IconButton>(IconButton::chevronRight, [&m] { m.setTuningIndex(stepTuning(m.tuningIndex, 1)); }, 12))->setTooltip("Next tuning");
         c->add(std::move(r1));
         auto r2 = row(4);
-        r2->add(std::make_unique<IconButton>(IconButton::minus, [&m] { m.playAs(std::max((int) std::round(m.s().d("pitchSemis")) - 1, -12)); }, 12))->setTooltip("Down a semitone");
-        auto playAs = std::make_unique<Picker>((int) (155 * theme::W), [&m] { return 13 - (m.s().b("pitchOn") ? (int) std::round(m.s().d("pitchSemis")) : 0); /* ticked: what you sound like now */ }, [&m](int i) { m.playAs(13 - i); });
-        for (auto& [name, semis] : m.playAsOptions()) {
-            auto st = m.tuning().strings; for (auto& n : st) n += semis;
-            const auto label = name + juce::String::fromUTF8(" \xc2\xb7 ") + tuningNotes(st, m.tuning().flats);
-            playAs->addItem(semis == 0 ? label + " (no shift)" : label + juce::String::formatted("  (%+d)", semis), 13 - semis);
-        }
-        playAs->setTextWhenNothingSelected("Play as");
-        r2->add(std::move(playAs));
-        r2->add(std::make_unique<IconButton>(IconButton::plus, [&m] { m.playAs(std::min((int) std::round(m.s().d("pitchSemis")) + 1, 12)); }, 12))->setTooltip("Up a semitone");
+        // what you sound like: ‹ › a semitone, the button searches tunings and bands (PlayAs.cpp)
+        r2->add(std::make_unique<IconButton>(IconButton::chevronLeft, [&m] { m.playAs(std::max((int) std::round(m.s().d("pitchSemis")) - 1, -12)); }, 12))->setTooltip("Down a semitone");
+        r2->add(playas::makeButton(m));
+        r2->add(std::make_unique<IconButton>(IconButton::chevronRight, [&m] { m.playAs(std::min((int) std::round(m.s().d("pitchSemis")) + 1, 12)); }, 12))->setTooltip("Up a semitone");
         c->add(std::move(r2));
         auto r3 = row();
         r3->add(knob("Semis", "pitchSemis", -12, 12, 0, [](double v) { return juce::String::formatted("%+d", (int) std::round(v)); }, "PITCH"));
@@ -451,12 +454,15 @@ std::unique_ptr<UnitBox> RigView::makePanel(const juce::String& id) {
         }, 10);
         setPref(*info, 130, 20); r1->add(std::move(info));
         c->add(std::make_unique<RowHeight>(std::move(r1), pickerRowH));
+        // two rows of two (the echoes, then their sound) keep the panel narrow (as the Mac app)
         auto r = row();
         if (s.i("delaySync") == 0) r->add(knob("Time", "delayTime", 40, 1500, 420, intUnit("ms"), "DELAY"));
         r->add(knob("Feedback", "delayFeedback", 0, 0.92, 0.28, pct, "DELAY"));
-        r->add(knob("Tone", "delayTone", 0, 1, 0.45, {}, "DELAY"));
-        r->add(knob("Mix", "delayMix", 0, 1, 0.2, pct, "DELAY"));
         c->add(std::move(r));
+        auto r2 = row();
+        r2->add(knob("Tone", "delayTone", 0, 1, 0.45, {}, "DELAY"));
+        r2->add(knob("Mix", "delayMix", 0, 1, 0.2, pct, "DELAY"));
+        c->add(std::move(r2));
         box = std::make_unique<UnitBox>(m, "DELAY", std::move(c), "delayOn", "panel:delay");
         box->alignTop = true;
     } else if (id == "ampb") {
@@ -607,7 +613,7 @@ std::unique_ptr<UnitBox> RigView::makePedal(PedalKind k) {
 std::unique_ptr<juce::Component> RigView::makeTuner() {
     struct Tuner : juce::Component {
         explicit Tuner(Model& m) : model(m) {
-            tuning.addItemList([] { juce::StringArray a; for (auto& t : TUNINGS) a.add(tuningLabel(t)); return a; }(), 1);
+            for (int i : tuningOrder()) tuning.addItem(tuningLabel(TUNINGS[(size_t) i]), i + 1);   // id: position in TUNINGS + 1
             tuning.setSelectedId(m.tuningIndex + 1, juce::dontSendNotification);
             tuning.onChange = [this] { model.setTuningIndex(tuning.getSelectedId() - 1); };
             addAndMakeVisible(tuning);

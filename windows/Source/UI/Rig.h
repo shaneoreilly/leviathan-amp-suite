@@ -19,7 +19,7 @@ public:
 class Picker : public juce::ComboBox {
 public:
     Picker(int width, std::function<int()> get, std::function<void(int)> set) : getter(std::move(get)), setter(std::move(set)) {
-        setPref(*this, width, 26);
+        setPref(*this, width, 30);   // as tall as the Pitch rows
         onChange = [this] { if (!syncing && getSelectedId() != 0) setter(getSelectedId()); };
     }
     void sync() { syncing = true; setSelectedId(getter(), juce::dontSendNotification); syncing = false; }

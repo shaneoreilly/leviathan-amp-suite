@@ -37,6 +37,7 @@ Model::Model() {
     favorites = juce::StringArray::fromLines(p.getValue("favorites")); favorites.removeEmptyStrings();
     hiddenMessages = juce::StringArray::fromLines(p.getValue("hiddenMessages")); hiddenMessages.removeEmptyStrings();
     themeName = p.getValue("theme", "dark"); bgDark = p.getValue("bgDark"); bgLight = p.getValue("bgLight");
+    textDark = p.getValue("textDark"); textLight = p.getValue("textLight");
     if (auto v = juce::JSON::parse(p.getValue("presetMeta")); auto* obj = v.getDynamicObject())
         for (const auto& kv : obj->getProperties())
         {

@@ -42,6 +42,10 @@ extern const std::vector<Factory> FACTORY;
 
 struct Tuning { const char* name; std::array<int, 6> strings; bool flats; };
 extern const std::vector<Tuning> TUNINGS;
+/// TUNINGS as shown in the lists: standards high to low, then drop tunings, then open ones (Mac: TUNING_ORDER).
+const std::vector<int>& tuningOrder();
+/// The next tuning in that order (‹ › on the Pitch panel).
+int stepTuning(int i, int d);
 juce::String tuningName(const std::array<int, 6>& strings);
 juce::String noteName(int midi, bool flats);
 /// The open-string notes, low to high: "D A D G B E".

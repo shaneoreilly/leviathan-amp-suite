@@ -38,15 +38,36 @@ void boxBackground(juce::Graphics& g, juce::Rectangle<float> r, float radius = 1
 
 // MARK: - sidebar
 
-struct Sidebar : juce::Component {
+/// Icons with their names underneath, brighter under the pointer; the current screen's in the accent colour with a
+/// short accent bar against the left edge (Mac: SidebarItem).
+#if JUCE_MAC
+constexpr const char* cmdKeyName = "Cmd ";
+#else
+constexpr const char* cmdKeyName = "Ctrl+";
+#endif
+struct Sidebar : juce::Component, juce::TooltipClient {
+    static constexpr int width = 96;
     explicit Sidebar(Model& m) : model(m), minus(IconButton::minus, [&m] { m.zoomStep(-1); }, onAndroid ? 18 : 12), plus(IconButton::plus, [&m] { m.zoomStep(1); }, onAndroid ? 18 : 12) {
         addAndMakeVisible(minus); addAndMakeVisible(plus);
         minus.setTooltip(juce::String::fromUTF8("Zoom out (Ctrl \xe2\x88\x92)")); plus.setTooltip("Zoom in (Ctrl +)");
     }
     struct Item { Screen s; const char* label; };
     const Item items[3] = { { Screen::rig, "Rig" }, { Screen::presets, "Presets" }, { Screen::recordings, "Recordings" } };
-    juce::Rectangle<int> itemRect(int i) const { return { 6, 10 + i * 74, getWidth() - 12, 70 }; }
-    juce::Rectangle<int> settingsRect() const { return { 6, getHeight() - 80, getWidth() - 12, 70 }; }
+    juce::Rectangle<int> itemRect(int i) const { return { 0, 8 + i * 64, getWidth(), 62 }; }
+    juce::Rectangle<int> settingsRect() const { return { 0, getHeight() - 72, getWidth(), 62 }; }
+    /// The screen under a point, or -1 (0-2 the items, 3 Settings).
+    int itemAt(juce::Point<int> p) const {
+        for (int i = 0; i < 3; ++i) if (itemRect(i).contains(p)) return i;
+        return settingsRect().contains(p) ? 3 : -1;
+    }
+    juce::String getTooltip() override {
+        static const char* names[] = { "Rig", "Presets", "Recordings", "Settings" };
+        const int i = itemAt(getMouseXYRelative());
+        return i < 0 ? juce::String() : juce::String(names[i]) + " (" + juce::String(cmdKeyName) + juce::String(i + 1) + ")";
+    }
+    int hovered = -1;
+    void mouseMove(const juce::MouseEvent& e) override { if (const int h = itemAt(e.getPosition()); h != hovered) { hovered = h; repaint(); } }
+    void mouseExit(const juce::MouseEvent&) override { if (hovered != -1) { hovered = -1; repaint(); } }
     // Zoom: side by side on a computer; on a phone a column of finger-sized buttons (+ on top, then the %, then -)
     juce::Rectangle<int> zoomLabelRect() const {
         return onAndroid ? juce::Rectangle<int>(0, getHeight() - 88 - 48 - 24, getWidth(), 24) : juce::Rectangle<int>(0, getHeight() - 110, getWidth(), 18);
@@ -60,11 +81,11 @@ struct Sidebar : juce::Component {
             minus.setBounds(getWidth() / 2 - 32, getHeight() - 140, 30, 26); plus.setBounds(getWidth() / 2 + 2, getHeight() - 140, 30, 26);
         }
     }
-    void drawItem(juce::Graphics& g, juce::Rectangle<int> r, Screen s, const juce::String& label, bool badge) {
+    void drawItem(juce::Graphics& g, juce::Rectangle<int> r, Screen s, const juce::String& label, bool hover, bool badge) {
         const bool on = model.screen == s;
-        if (on) { g.setColour(theme::tint.withAlpha(0.07f)); g.fillRoundedRectangle(r.toFloat(), 10); }
-        const auto c = on ? model.accent() : theme::secondary;
-        auto icon = r.toFloat().removeFromTop(44).withSizeKeepingCentre(22, 22).translated(0, 6);
+        const auto c = on ? model.accent() : hover ? theme::text : theme::secondary;
+        if (on) { g.setColour(c); g.fillRoundedRectangle(3, (float) r.getCentreY() - 25, 3, 50, 1.5f); }
+        auto icon = r.toFloat().withSizeKeepingCentre(22, 22).translated(0, -9);
         g.setColour(c);
         juce::Path p;
         if (s == Screen::rig) for (int i = 0; i < 3; ++i) { const float x = icon.getX() + 4 + (float) i * 7; p.startNewSubPath(x, icon.getY()); p.lineTo(x, icon.getBottom()); p.addEllipse(x - 2.5f, icon.getY() + (float) (i == 1 ? 13 : 5), 5, 5); }
@@ -74,13 +95,13 @@ struct Sidebar : juce::Component {
         g.strokePath(p, juce::PathStrokeType(1.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
         if (badge) { g.setColour(juce::Colours::red); g.fillEllipse(icon.getRight() - 2, icon.getY() - 3, 9, 9); }
         g.setColour(c); g.setFont(theme::font(9, true));
-        g.drawText(label, r.withTrimmedTop(46).withHeight(20), juce::Justification::centred);
+        g.drawFittedText(label, juce::Rectangle<int>(r.getX() + 2, (int) icon.getBottom() + 4, r.getWidth() - 4, 18), juce::Justification::centred, 1, 0.8f);
     }
     void paint(juce::Graphics& g) override {
         g.fillAll(theme::bar);
         g.setColour(theme::line); g.fillRect(getWidth() - 1, 0, 1, getHeight());
-        for (int i = 0; i < 3; ++i) drawItem(g, itemRect(i), items[i].s, items[i].label, items[i].s == Screen::recordings && model.sessions->recording);
-        drawItem(g, settingsRect(), Screen::settings, "Settings", model.updater->phase == Updater::Phase::available);
+        for (int i = 0; i < 3; ++i) drawItem(g, itemRect(i), items[i].s, items[i].label, hovered == i, items[i].s == Screen::recordings && model.sessions->recording);
+        drawItem(g, settingsRect(), Screen::settings, "Settings", hovered == 3, model.updater->phase == Updater::Phase::available);
         if (onAndroid) {   // finger-sized buttons need to look like buttons
             g.setColour(theme::panel2);
             for (auto* b : { &plus, &minus }) g.fillRoundedRectangle(b->getBounds().toFloat().reduced(2), 10);
@@ -210,11 +231,11 @@ struct TopBar : juce::Component {
         if (heightFor(getWidth()) != getHeight()) { if (auto* p = getParentComponent()) p->resized(); }
         resized(); repaint();
     }
-    static constexpr int rowH = 64, compactRowH = 50;
+    static constexpr int rowH = 64, compactRowH = 50, powerW = 112, powerH = 40;   // power: bigger than the other buttons
     int presetW() const { return juce::jlimit(140, 300, juce::GlyphArrangement::getStringWidthInt(theme::font(10), presetMenu.getButtonText()) + 40); }
     /// One row when everything fits, else two (a phone, a narrow window): see resized().
     bool twoRows(int width) const {
-        const int left = 64 + 196 + 80 + 10 + 170 + 10 + 100;   // logo and title, power, meters, latency
+        const int left = 64 + 196 + powerW + 10 + 170 + 10 + 100;   // logo and title, power, meters, latency
         const int right = 80 + 60 + 34 + 26 + presetW() + 26 + 60 + 66 + 50 + 54 + 34 + 84 + 12 * 10 + 14;
         return width < left + right;
     }
@@ -231,7 +252,7 @@ struct TopBar : juce::Component {
         auto placeR = [&](juce::Component& c, int w, int h = 28) { r -= w; c.setBounds(r, (h1 - h) / 2, w, h); r -= 10; };
         if (!compact) {
             x = 64 + 196;
-            place(power, 80); place(meters, 170, 36); x += 100;   // latency text
+            place(power, powerW, powerH); place(meters, 170, 36); x += 100;   // latency text
             wave.setBounds(x, (h1 - 34) / 2, 200, 34);
             placeR(saveAs, 80);
             placeR(save, 60);
@@ -248,7 +269,7 @@ struct TopBar : juce::Component {
         // Two rows. 1: logo, power, meters, latency | undo, save, save as. 2: preset picker, then the performance
         // buttons (record, metronome, tempo, tuner, MIDI learn), with the recording's waveform after them.
         x = 64;
-        place(power, 80); place(meters, 170, 36); latencyX = x; x += 100;
+        place(power, powerW, powerH); place(meters, 170, 36); latencyX = x; x += 100;
         placeR(saveAs, 80); placeR(save, 60); placeR(undoB, 34);
         x = 14;
         const int top = compactRowH;
@@ -274,7 +295,7 @@ struct TopBar : juce::Component {
         if (model.running && model.info.sampleRate > 0) {
             const double total = model.info.latencyMs() + model.params.pitchLatencyMs.load();
             g.setColour(total > 15 ? juce::Colours::orange : theme::secondary); g.setFont(theme::font(10));
-            g.drawText(juce::String::fromUTF8("~") + juce::String(total, 1) + " ms", latencyX, 0, 96, h1, juce::Justification::centredLeft);
+            g.drawText(juce::String::fromUTF8("~") + juce::String(juce::roundToInt(total)) + " ms", latencyX, 0, 96, h1, juce::Justification::centredLeft);
         }
     }
     void showPresetMenu() {
@@ -994,6 +1015,8 @@ struct SettingsScreen : Screen_ {
         themeLightB.onClick = [this] { if (model.themeName != "light") model.setTheme("light"); };
         bgResetB.onClick = [this] { model.setBackground({}); };
         look.addAndMakeVisible(bgSwatch); look.addAndMakeVisible(bgResetB);
+        textAutoB.onClick = [this] { model.setText({}); };
+        look.addAndMakeVisible(textSwatch); look.addAndMakeVisible(textAutoB);
         look.addAndMakeVisible(showHiddenB);
         lowLagT.onClick = [this] { model.set("pitchLowLag", lowLagT.getToggleState()); };
         audio.addAndMakeVisible(lowLagT);
@@ -1011,7 +1034,7 @@ struct SettingsScreen : Screen_ {
         }
         a4.setSliderStyle(juce::Slider::IncDecButtons); a4.setRange(430, 450, 1); a4.setTextValueSuffix(" Hz");
         a4.onValueChange = [this] { model.setA4(a4.getValue()); };
-        for (size_t i = 0; i < TUNINGS.size(); ++i) tuning.addItem(tuningLabel(TUNINGS[i]), (int) i + 1);
+        for (int i : tuningOrder()) tuning.addItem(tuningLabel(TUNINGS[(size_t) i]), i + 1);
         tuning.onChange = [this] { model.setTuningIndex(tuning.getSelectedId() - 1); };
         audio.addAndMakeVisible(a4); audio.addAndMakeVisible(tuning);
         namCalT.setButtonText("Match each capture's input level");
@@ -1298,6 +1321,8 @@ struct SettingsScreen : Screen_ {
             const int by = lay.row("Background", "settings:background");
             Group::place(by, { { &bgSwatch, 52 }, { &bgResetB, 80 } });
             bgResetB.setEnabled((model.themeName == "light" ? model.bgLight : model.bgDark).isNotEmpty());
+            Group::place(lay.row("Text", "settings:textColour"), { { &textSwatch, 52 }, { &textAutoB, 100 } });
+            textAutoB.setEnabled(model.themeText().has_value());
             const int ay = lay.row("Accent colour", "settings:accent");
             { int sx = ctrlX; for (auto& s : swatchButtons) { s->setBounds(sx, ay + 3, 24, 24); sx += 30; } Group::place(ay, { { &followAmp, 170 } }, sx + 6); }
             lay.heading("Display");
@@ -1577,32 +1602,37 @@ struct SettingsScreen : Screen_ {
     juce::Slider a4; juce::ComboBox tuning;
     juce::ToggleButton outEqT; std::array<juce::Slider, 4> outEqS;
     juce::TextButton showHiddenB { "Show all again" };
-    juce::TextButton themeDarkB { "Dark" }, themeLightB { "Light" }, bgResetB { "Reset" };
-    /// The background colour for the theme in use; opens a colour picker that stays open and applies as you pick.
+    juce::TextButton themeDarkB { "Dark" }, themeLightB { "Light" }, bgResetB { "Reset" }, textAutoB { "Automatic" };
+    /// The background (or text) colour for the theme in use; opens a colour picker that stays open and applies as you pick.
     struct BgSwatch : juce::Component {
-        explicit BgSwatch(Model& m) : model(m) { setMouseCursor(juce::MouseCursor::PointingHandCursor); }
+        BgSwatch(Model& m, bool text) : model(m), forText(text) { setMouseCursor(juce::MouseCursor::PointingHandCursor); }
         void paint(juce::Graphics& g) override {
             const auto r = getLocalBounds().toFloat().reduced(1);
             g.setColour(model.themeBackground()); g.fillRoundedRectangle(r, 5);
+            if (forText) { g.setColour(theme::text); g.setFont(theme::font(12, true)); g.drawText("Aa", r, juce::Justification::centred); }
             g.setColour(theme::line); g.drawRoundedRectangle(r, 5, 1);
         }
         struct Picker : juce::Component, juce::ChangeListener, juce::Timer {
-            explicit Picker(Model& m) : model(m), sel(juce::ColourSelector::showColourspace | juce::ColourSelector::showSliders) {
-                sel.setCurrentColour(m.themeBackground(), juce::dontSendNotification);
+            Picker(Model& m, bool text) : model(m), forText(text), sel(juce::ColourSelector::showColourspace | juce::ColourSelector::showSliders) {
+                sel.setCurrentColour(text ? theme::text : m.themeBackground(), juce::dontSendNotification);
                 sel.setColour(juce::ColourSelector::backgroundColourId, juce::Colours::transparentBlack);
                 sel.addChangeListener(this); addAndMakeVisible(sel); setSize(300, 300);
             }
             void resized() override { sel.setBounds(getLocalBounds()); }
             void changeListenerCallback(juce::ChangeBroadcaster*) override { startTimer(150); }   // apply once it stops moving
-            void timerCallback() override { stopTimer(); model.setBackground(sel.getCurrentColour().toDisplayString(false)); }
-            Model& model; juce::ColourSelector sel;
+            void timerCallback() override {
+                stopTimer();
+                const auto hex = sel.getCurrentColour().toDisplayString(false);
+                if (forText) model.setText(hex); else model.setBackground(hex);
+            }
+            Model& model; bool forText; juce::ColourSelector sel;
         };
         void mouseUp(const juce::MouseEvent& e) override {
             if (getLocalBounds().contains(e.getPosition()))
-                juce::CallOutBox::launchAsynchronously(std::make_unique<Picker>(model), getScreenBounds(), nullptr);
+                juce::CallOutBox::launchAsynchronously(std::make_unique<Picker>(model, forText), getScreenBounds(), nullptr);
         }
-        Model& model;
-    } bgSwatch { model };
+        Model& model; bool forText;
+    } bgSwatch { model, false }, textSwatch { model, true };
     juce::ToggleButton lowLagT { "Less delay on low chords (they may shimmer slightly)" };
     juce::ToggleButton namCalT; juce::Slider ifaceLvl;
     /// "Amp: +3.0 dB (captured at 9.0 dBu)": what input calibration is doing to a loaded capture.
@@ -1750,7 +1780,7 @@ Root::~Root() { model.removeChangeListener(this); setLookAndFeel(nullptr); }
 void Root::buildScreens() {
     auto& m = model;
     themeShown = m.themeStamp;
-    theme::apply(m.themeBackground());
+    theme::apply(m.themeBackground(), m.themeText());
     lnf.refreshTheme(); lnf.setAccent(m.accent());
     whatsNew.reset(); banners.clear(); bannerSig = {};
     sidebar = std::make_unique<Sidebar>(m); addAndMakeVisible(*sidebar);
@@ -1852,14 +1882,18 @@ void Root::resized() {
     // keep clear of the camera cutout and rounded corners (the system bars are hidden)
     if (auto* d = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay()) r = d->safeAreaInsets.subtractedFrom(r);
    #endif
-    sidebar->setBounds(r.removeFromLeft(92));
-    const int topH = static_cast<TopBar*>(topbar.get())->heightFor(r.getWidth()), headH = topH + 40 * banners.size();
+    // Desktop: the top bar runs across the whole window, the sidebar below it (as the Mac app). Phones: the sidebar
+    // runs full height and the bar sits beside it, scrolling away with the rig.
+    const bool fullBar = !onAndroid;
+    if (fullBar) topbar->setBounds(r.removeFromTop(static_cast<TopBar*>(topbar.get())->heightFor(r.getWidth())));
+    sidebar->setBounds(r.removeFromLeft(Sidebar::width));
+    const int topH = fullBar ? 0 : static_cast<TopBar*>(topbar.get())->heightFor(r.getWidth()), headH = topH + 40 * banners.size();
     // Phones: on the rig the bar (and any banners) sit over the top of the scrolling rig and scroll away with it,
     // leaving the whole screen to the rig; scrolling back to the top brings them back. Elsewhere they stay put.
     const bool scrollAway = onAndroid && model.screen == Screen::rig;
     const int off = scrollAway ? std::min(rig->scrollY(), headH) : 0;
     auto head = r.withHeight(headH).translated(0, -off);
-    topbar->setBounds(head.removeFromTop(topH));
+    if (!fullBar) topbar->setBounds(head.removeFromTop(topH));
     for (auto* b : banners) b->setBounds(head.removeFromTop(40));
     if (scrollAway) {
         rig->setTopInset(headH);
@@ -1877,6 +1911,11 @@ void Root::resized() {
 bool Root::keyPressed(const juce::KeyPress& k) {
     const bool cmd = k.getModifiers().isCommandDown();
     if (k == juce::KeyPress::spaceKey && !cmd) { model.toggle(); return true; }
+    // Ctrl+1-4 (Cmd on a Mac, as the Mac app): Rig, Presets, Recordings, Settings
+    if (cmd && k.getKeyCode() >= '1' && k.getKeyCode() <= '4') {
+        const Screen to[] = { Screen::rig, Screen::presets, Screen::recordings, Screen::settings };
+        model.setScreen(to[k.getKeyCode() - '1']); return true;
+    }
     if (cmd && k.getKeyCode() == 'R') { model.sessions->toggleRecord(); return true; }
     if (cmd && k.getKeyCode() == 'S' && k.getModifiers().isShiftDown()) {
         askText("Save preset as", model.presetName.isEmpty() ? juce::String() : model.presetName + " copy", "Save", [this](juce::String n) { model.savePreset(n); });

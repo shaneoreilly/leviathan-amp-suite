@@ -432,7 +432,36 @@ let TUNINGS: [Tuning] = [
     Tuning(name: "C Standard", strings: [36, 41, 46, 51, 55, 60], flats: true),
     Tuning(name: "Drop B", strings: [35, 42, 47, 52, 56, 61], flats: false),
     Tuning(name: "Drop A", strings: [33, 40, 45, 50, 54, 59], flats: false),
+    // added later: new tunings go at the end (the saved choice is a position in this list); TUNING_ORDER sorts them
+    Tuning(name: "Db Standard", strings: [37, 42, 47, 52, 56, 61], flats: true),
+    Tuning(name: "B Standard", strings: [35, 40, 45, 50, 54, 59], flats: false),
+    Tuning(name: "A Standard", strings: [33, 38, 43, 48, 52, 57], flats: false),
+    Tuning(name: "Open G", strings: [38, 43, 50, 55, 59, 62], flats: false),
+    Tuning(name: "Open D", strings: [38, 45, 50, 54, 57, 62], flats: false),
+    Tuning(name: "Open E", strings: [40, 47, 52, 56, 59, 64], flats: false),
+    Tuning(name: "Open C", strings: [36, 43, 48, 55, 60, 64], flats: false),
+    Tuning(name: "DADGAD", strings: [38, 45, 50, 55, 57, 62], flats: false),
 ]
+
+/// TUNINGS as shown in the lists: standards high to low, then drop tunings, then open ones (Windows: tuningOrder()).
+let TUNING_ORDER: [Int] = {
+    func kind(_ t: Tuning) -> Int {
+        let iv = zip(t.strings.dropFirst(), t.strings).map { $0 - $1 }
+        return iv == [5, 5, 5, 4, 5] ? 0 : iv == [7, 5, 5, 4, 5] ? 1 : 2
+    }
+    return TUNINGS.indices.sorted { a, b in
+        let (x, y) = (TUNINGS[a], TUNINGS[b])
+        if kind(x) != kind(y) { return kind(x) < kind(y) }
+        if x.strings[0] != y.strings[0] { return x.strings[0] > y.strings[0] }
+        return a < b
+    }
+}()
+
+/// The next tuning in the shown order (‹ › on the Pitch panel).
+func stepTuning(_ i: Int, _ d: Int) -> Int {
+    let at = TUNING_ORDER.firstIndex(of: i) ?? 0
+    return TUNING_ORDER[(at + d + TUNING_ORDER.count) % TUNING_ORDER.count]
+}
 
 /// Name any six-string tuning: "E Standard", "Drop C", or the notes if it's neither.
 func tuningName(_ strings: [Int]) -> String {
@@ -441,6 +470,9 @@ func tuningName(_ strings: [Int]) -> String {
     let iv = zip(strings.dropFirst(), strings).map { $0 - $1 }
     if iv == [5, 5, 5, 4, 5] { return "\(n(strings[0])) Standard" }
     if iv == [7, 5, 5, 4, 5] { return "Drop \(n(strings[0]))" }
+    if iv == [7, 5, 4, 3, 5] || iv == [7, 5, 7, 5, 4] { return "Open \(n(strings[0]))" }   // open D / E, open C shapes
+    if iv == [5, 7, 5, 4, 3] { return "Open \(n(strings[1]))" }                          // open G shape (root on the 5th string)
+    if iv == [7, 5, 5, 2, 5] && n(strings[0]) == "D" { return "DADGAD" }
     return strings.map(n).joined(separator: " ")
 }
 
@@ -657,14 +689,27 @@ final class Model: ObservableObject {
         }
     }()
     /// Accent colour: a picked colour, or (when none is set) the colour of the active amp channel.
-    /// Theme (Settings > Appearance): "dark" or "light", and your own background colour for each (hex; empty = default).
+    /// Theme (Settings > Appearance): "dark" or "light", and your own background and text colour for each (hex;
+    /// empty = default, text worked out from the background).
     /// Not in presets. Changing any of them rebuilds the window with the new palette (Theme.swift).
     @Published var theme = UserDefaults.standard.string(forKey: "theme") ?? "dark" { didSet { UserDefaults.standard.set(theme, forKey: "theme"); applyTheme() } }
     @Published var bgDark = UserDefaults.standard.string(forKey: "bgDark") ?? "" { didSet { UserDefaults.standard.set(bgDark, forKey: "bgDark"); applyTheme() } }
     @Published var bgLight = UserDefaults.standard.string(forKey: "bgLight") ?? "" { didSet { UserDefaults.standard.set(bgLight, forKey: "bgLight"); applyTheme() } }
+    @Published var textDark = UserDefaults.standard.string(forKey: "textDark") ?? "" { didSet { UserDefaults.standard.set(textDark, forKey: "textDark"); applyTheme() } }
+    @Published var textLight = UserDefaults.standard.string(forKey: "textLight") ?? "" { didSet { UserDefaults.standard.set(textLight, forKey: "textLight"); applyTheme() } }
     @Published private(set) var themeStamp = 0
     var themeBackground: RGB { theme == "light" ? (RGB(hex: bgLight) ?? Palette.defaultLight) : (RGB(hex: bgDark) ?? Palette.defaultDark) }
-    func applyTheme() { PAL = Palette.make(themeBackground); themeStamp += 1 }
+    /// Your text colour for the theme in use (nil: worked out from the background).
+    var themeText: RGB? { RGB(hex: theme == "light" ? textLight : textDark) }
+    /// The text colour as shown, picked or worked out.
+    var themeTextShown: RGB { RGB(PAL.text) }
+    /// The window frame, title bar and menus follow the theme you chose, never the background's brightness.
+    func applyTheme() {
+        PAL = Palette.make(themeBackground, text: themeText); themeStamp += 1
+        applyAppearance()
+    }
+    func applyAppearance() { NSApp?.appearance = NSAppearance(named: theme == "light" ? .aqua : .darkAqua) }
+    func setText(_ hex: String) { if theme == "light" { textLight = hex } else { textDark = hex } }
     /// The background colour for the theme in use (empty string = back to the default).
     func setBackground(_ hex: String) { if theme == "light" { bgLight = hex } else { bgDark = hex } }
 
@@ -1850,7 +1895,7 @@ struct ContentView: View {
         let t = m.tuning, inTune = abs(m.tunerCents) < 3
         return VStack(spacing: 10) {
             HStack {
-                Picker("Tuning", selection: $m.tuningIndex) { ForEach(TUNINGS.indices, id: \.self) { Text(TUNINGS[$0].label).tag($0) } }.frame(width: 300 * W)
+                Picker("Tuning", selection: $m.tuningIndex) { ForEach(TUNING_ORDER, id: \.self) { Text(TUNINGS[$0].label).tag($0) } }.frame(width: 300 * W)
                 Stepper(value: $m.a4, in: 430...450, step: 1) { Text("A4 = \(Int(m.a4)) Hz").monospacedDigit() }
                 Spacer()
                 Toggle("Mute while tuning", isOn: $m.tunerMute)
@@ -1889,20 +1934,14 @@ struct ContentView: View {
     var inputUnit: some View {
         UnitBox(title: "INPUT") {
             VStack(spacing: 8) {
-                Picker("", selection: $m.inputUID) {
-                    Text("No input (playback only)").tag(Model.noInput)
-                    ForEach(m.inputs) { Text($0.name).tag($0.uid) }
-                    if m.input == nil && m.inputUID != Model.noInput { Text("Not connected").tag(m.inputUID) }
-                }
-                    .labelsHidden().frame(width: 120 * W)
+                Dropdown(selection: $m.inputUID, options: [(Model.noInput, "No input (playback only)", "")]
+                         + m.inputs.map { ($0.uid, $0.name, "") }
+                         + (m.input == nil && m.inputUID != Model.noInput ? [(m.inputUID, "Not connected", "")] : []))
                     .onHover { inside in
                         if inside { HoverHelp.shared.show(id: "inputDevice", title: "Input · Interface", text: EXPLAIN["inputDevice"]) } else { HoverHelp.shared.clear(id: "inputDevice") }
                     }
                 if (m.input?.ins ?? 1) > 1 {
-                    Picker("", selection: $m.s.inputChannel) {
-                        ForEach(0..<min(m.input?.ins ?? 1, 8), id: \.self) { Text("Channel \($0 + 1)").tag($0) }
-                    }
-                    .labelsHidden().frame(width: 120 * W)
+                    Dropdown(selection: $m.s.inputChannel, options: (0..<min(m.input?.ins ?? 1, 8)).map { ($0, "Channel \($0 + 1)", "") })
                     .onHover { inside in
                         if inside { HoverHelp.shared.show(id: "inputChannel", title: "Input · Channel", text: EXPLAIN["inputChannel"]) } else { HoverHelp.shared.clear(id: "inputChannel") }
                     }
@@ -1926,32 +1965,8 @@ struct ContentView: View {
     var pitch: some View {
         UnitBox(title: "PITCH", on: $m.s.pitchOn, onKey: "pitchOn", color: ch, trailing: AnyView(PitchLatency(mt: m.meters))) {
             VStack(alignment: .center, spacing: 8) {
-                // the button shows just the tuning's name, the menu shows the notes too (keeps the panel narrow)
-                Menu("Guitar: \(m.tuning.name)") {
-                    // a picker inside the menu: the current tuning gets the menu's checkmark
-                    Picker("", selection: Binding(get: { m.tuningIndex }, set: { m.tuningIndex = $0 })) {
-                        ForEach(TUNINGS.indices, id: \.self) { i in Text(TUNINGS[i].label).tag(i) }
-                    }
-                    .pickerStyle(.inline).labelsHidden()
-                }
-                .frame(width: 135 * W)
-                HStack(spacing: 4) {
-                    Button { m.playAs(max(Int(m.s.pitchSemis.rounded()) - 1, -12)) } label: { Image(systemName: "minus") }
-                        .help("Down a semitone")
-                    Menu("Play as: \(m.soundsLike)") {
-                        // the checkmark is on what you sound like now: the shift while the shifter is on, else no shift
-                        Picker("", selection: Binding(get: { m.s.pitchOn ? Int(m.s.pitchSemis.rounded()) : 0 }, set: { m.playAs($0) })) {
-                            ForEach(m.playAsOptions, id: \.semis) { o in
-                                let notes = tuningNotes(m.tuning.strings.map { $0 + o.semis }, flats: m.tuning.flats)
-                                Text(o.semis == 0 ? "\(o.name) \u{00B7} \(notes) (no shift)" : String(format: "%@ \u{00B7} %@  (%+d)", o.name, notes, o.semis)).tag(o.semis)
-                            }
-                        }
-                        .pickerStyle(.inline).labelsHidden()
-                    }
-                    .frame(width: 135 * W)
-                    Button { m.playAs(min(Int(m.s.pitchSemis.rounded()) + 1, 12)) } label: { Image(systemName: "plus") }
-                        .help("Up a semitone")
-                }
+                GuitarPicker()   // your guitar's tuning (PlayAs.swift)
+                PlayAsPicker()   // 🔈 what you sound like: ‹ › a semitone, the button searches tunings and bands (PlayAs.swift)
                 HStack(spacing: 2) {
                     Knob(label: "Semis", value: $m.s.pitchSemis, key: "pitchSemis", range: -12...12, def: 0, fmt: { String(format: "%+d", Int($0.rounded())) }, color: ch)
                     Knob(label: "Fine", value: $m.s.pitchCents, key: "pitchCents", range: -50...50, def: 0, fmt: { String(format: "%+d¢", Int($0.rounded())) }, color: ch)
@@ -1967,11 +1982,10 @@ struct ContentView: View {
             HStack {
                 CollapseChevron(key: "PEDALS")
                 Text("PEDALS  →  AMP").font(.inter(size: T(10) * UI, weight: .bold)).tracking(2).foregroundStyle(.secondary)
-                Menu("+ Add pedal") {
-                    ForEach(PedalKind.allCases.filter { !m.s.chain.contains($0.rawValue) }.sorted { $0.title < $1.title }) { k in
-                        Button(k.title.capitalized) { m.addPedal(k) }
-                    }
-                }.frame(width: 130 * W).disabled(m.s.chain.count >= Params.maxChain || m.s.chain.count == PedalKind.allCases.count)
+                ActionDropdown(title: "+ Add pedal",
+                               items: PedalKind.allCases.filter { !m.s.chain.contains($0.rawValue) }.sorted { $0.title < $1.title }
+                                   .map { k in (k.title.capitalized, { m.addPedal(k) }) },
+                               disabled: m.s.chain.count >= Params.maxChain || m.s.chain.count == PedalKind.allCases.count)
             }
             if m.collapsed.contains("PEDALS") {
                 EmptyView()
@@ -2204,19 +2218,21 @@ struct ContentView: View {
         UnitBox(title: "DELAY", on: $m.s.delayOn, onKey: "delayOn", color: ch, alignTop: true) {
           VStack(alignment: .center, spacing: 8) {
             HStack(spacing: 6) {
-                Picker("", selection: $m.s.delaySync) {
-                    ForEach(DELAY_DIVS.indices, id: \.self) { Text(DELAY_DIVS[$0].name).tag($0) }
-                }.labelsHidden().frame(width: 110 * W).help("Free time, or a note length at the tempo")
+                Dropdown(selection: $m.s.delaySync, options: DELAY_DIVS.indices.map { ($0, DELAY_DIVS[$0].name, "") }, width: 110 * W)
+                    .help("Free time, or a note length at the tempo")
                 TapButton()
                 Text(m.syncedDelayMs.map { String(format: "%.0f BPM · %.0f ms", m.bpm, $0) } ?? String(format: "%.0f BPM", m.bpm))
                     .font(.inter(size: T(10) * UI).monospacedDigit()).foregroundStyle(.secondary)
             }
             .frame(height: PICKER_ROW_H)   // as tall as the picker rows beside it, so the knobs line up
+            // two rows of two (the echoes, then their sound) keep the panel narrow
             HStack(spacing: 2) {
                 if m.s.delaySync == 0 {
                     Knob(label: "Time", value: $m.s.delayTime, key: "delayTime", range: 40...1500, def: 420, fmt: { "\(Int($0)) ms" }, color: ch)
                 }
                 Knob(label: "Feedback", value: $m.s.delayFeedback, key: "delayFeedback", range: 0...0.92, def: 0.28, fmt: pct, color: ch)
+            }
+            HStack(spacing: 2) {
                 Knob(label: "Tone", value: $m.s.delayTone, key: "delayTone", range: 0...1, def: 0.45, color: ch)
                 Knob(label: "Mix", value: $m.s.delayMix, key: "delayMix", range: 0...1, def: 0.2, fmt: pct, color: ch)
             }
@@ -2239,14 +2255,11 @@ struct ContentView: View {
     var master: some View {
         UnitBox(title: "MASTER") {
             VStack(spacing: 8) {
-                Picker("", selection: $m.outputUID) {
-                    ForEach(m.outputs) { d in Text(d.outputWarning != nil ? "\(d.name) ⚠︎" : d.name).tag(d.uid) }
-                }
-                .labelsHidden().frame(width: 120 * W)
+                Dropdown(selection: $m.outputUID, options: m.outputs.map { d in (d.uid, d.outputWarning != nil ? "\(d.name) ⚠︎" : d.name, d.outputWarning ?? "") })
                 .explain("outputDevice", "Master · Output device")
                 if (m.input?.ins ?? 1) > 1 {
                     // stands in for INPUT's channel picker, so the two device pickers sit level
-                    Picker("", selection: .constant(0)) { Text("").tag(0) }.labelsHidden().frame(width: 120 * W).hidden()
+                    DropdownBox(text: "", width: 120 * W).hidden()
                 }
                 Knob(label: "Output", value: $m.s.masterVol, key: "masterVol", range: -40...12, def: 0, mid: 0, fmt: { String(format: "%+.1f dB", $0) }, color: ch)
             }

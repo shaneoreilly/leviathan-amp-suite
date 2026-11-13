@@ -89,7 +89,7 @@ public:
     void restartAudio();
     /// Theme (Settings > Appearance): "dark" or "light", and your own background colour for each ("" = default). Not in
     /// presets. Root applies it (theme::apply) and rebuilds the window when themeStamp changes (Mac: Model.theme).
-    juce::String themeName = "dark", bgDark, bgLight;
+    juce::String themeName = "dark", bgDark, bgLight, textDark, textLight;
     int themeStamp = 0;
     juce::Colour themeBackground() const {
         const auto hex = themeName == "light" ? bgLight : bgDark;
@@ -101,6 +101,17 @@ public:
     void setBackground(const juce::String& hex) {
         (themeName == "light" ? bgLight : bgDark) = hex;
         props().setValue(themeName == "light" ? "bgLight" : "bgDark", hex); themeStamp++; changed();
+    }
+    /// Your text colour for the theme in use (nullopt: worked out from the background). Mac: Model.themeText.
+    std::optional<juce::Colour> themeText() const {
+        const auto hex = themeName == "light" ? textLight : textDark;
+        if (hex.length() == 6) return juce::Colour((juce::uint32) (0xff000000u | (juce::uint32) hex.getHexValue32()));
+        return std::nullopt;
+    }
+    /// The text colour for the theme in use, as RRGGBB ("" = automatic).
+    void setText(const juce::String& hex) {
+        (themeName == "light" ? textLight : textDark) = hex;
+        props().setValue(themeName == "light" ? "textLight" : "textDark", hex); themeStamp++; changed();
     }
     /// Messages hidden with "Don't show again" (Settings > Appearance > Messages shows them again). A message's key is
     /// its wording without numbers, quoted names or brackets, as the Mac app's Model.messageKey.

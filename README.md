@@ -29,6 +29,7 @@ Plug in your guitar, pick a sound, play. Real amp tones, pedals, cabinets, a tun
 - [8. Where your files are](#8-where-your-files-are)
 - [9. Help and feedback](#9-help-and-feedback)
 - [10. Credits and license](#10-credits-and-license)
+- [11. Release history](#11-release-history)
 
 ---
 
@@ -100,7 +101,7 @@ Leviathan checks for new versions itself. When one is out, a banner appears at t
 **Effects**
 - **Pedals:** compressor, wah (with a pedal or automatic), fuzz, overdrive, chorus, flanger, phaser and tremolo, plus **Blade**: a high-gain distortion inspired by the EAE Longsword, with a 3-band EQ, a mid boost and three clipping modes. Drag pedals into any order.
 - **Noise gate** to silence hiss between notes.
-- **Pitch / Play as:** play songs in other tunings without retuning, up or down by up to an octave. Every tuning shows its notes, for example "Drop C · C G C F A D".
+- **Pitch:** play songs in other tunings without retuning, up or down by up to an octave. Set your guitar's tuning (standard, drop and open tunings, DADGAD) on the guitar row, then pick what you want to sound like on the speaker row: a tuning, or search for an artist (about 1,000 of them, rock, blues, metal, punk, pop and country) to hear their tuning. Artists in a tuning your guitar can't get to by shifting, such as open G from standard, show greyed out.
 - **Cabinet:** the speaker and microphone sound. Use the built-in cabinets, or add your own speaker files (IRs) and search through them by band or song.
 - **Graphic EQ, delay and reverb.**
 - **Master output** that never distorts, however loud you turn it.
@@ -176,6 +177,7 @@ On a computer:
 | ⌘S | Ctrl+S | Save the current preset |
 | ⇧⌘S | Ctrl+Shift+S | Save as a new preset |
 | T | T | Show / hide the tuner |
+| ⌘1 ⌘2 ⌘3 ⌘4 | Ctrl+1 Ctrl+2 Ctrl+3 Ctrl+4 | Rig / Presets / Recordings / Settings |
 | ⌘= ⌘− ⌘0 | Ctrl+= Ctrl+− Ctrl+0 | Zoom in / out / normal size |
 | Return | Enter | Play / pause (Recordings) |
 | Delete | Delete | Delete the selected recording |
@@ -216,3 +218,32 @@ Found a problem or have an idea? In Leviathan, go to **Settings → About** and 
 Leviathan is free, open-source software by Shane O'Reilly, under the [GNU AGPLv3](LICENSE) license with the extra terms in [NOTICE.md](NOTICE.md). You can use it, share it and change it. Anything made from it must also be open source and keep the credit "Leviathan by Shane O'Reilly".
 
 Building Leviathan yourself, or want to contribute? See [DEVELOPMENT.md](DEVELOPMENT.md).
+
+## 11. Release history
+
+The main changes in each release. Full notes are on the [releases page](https://github.com/shaneoreilly/leviathan-amp-suite/releases).
+
+| Version | Date | Highlights |
+| --- | --- | --- |
+| 0.8.0 | 2026-11-13 | Search about 1,000 artists in Pitch to hear their tuning; open tunings and DADGAD; matching dropdowns; text colour; full-width top bar; ⌘1–4 shortcuts |
+| 0.7.2 | 2026-11-13 | Recovers by itself when a USB interface stops responding |
+| 0.7.1 | 2026-11-11 | Light theme and your own background colour; Wet / Dry playback; less pitch-shifter lag |
+| 0.7.0 | 2026-11-11 | New look; cabinet browser with Size, Length and Tone; preset tags and search; output EQ |
+| 0.6.2 | 2026-11-11 | Cheaper amp captures on Windows; Android fixes |
+| 0.6.1 | 2026-11-10 | Keep recordings anywhere, Google Drive included; diagnostic log |
+| 0.6.0 | 2026-11-09 | Android; one-click fixes; sharing takes |
+| 0.5.1 | 2026-11-08 | New icon; easier trimming; endless gate release |
+| 0.5.0 | 2026-11-07 | Second amp, doubler, new reverb, smoother gate; Undo |
+| 0.4.8 | 2026-11-07 | What's new shown before you update |
+| 0.4.7 | 2026-11-06 | Cleaner low chords in the pitch shifter; longer gate release |
+| 0.4.6 | 2026-11-06 | Saved presets load after updating; 34 amp captures; preset sorting |
+| 0.4.5 | 2026-11-06 | Missing recordings back; Blade distortion pedal |
+| 0.4.4 | 2026-11-06 | No more repeated microphone prompts; trim recordings |
+| 0.4.3 | 2026-11-05 | Cabinet IR library; explanations on hover; Save as; live waveform |
+| 0.4.2 | 2026-11-05 | Updates hard to miss; one copy running at a time |
+| 0.4.1 | 2026-11-05 | Tidier Settings; safer recordings; notes shown for every tuning |
+| 0.4.0 | 2026-11-05 | Real amps through Neural Amp Modeler captures; 21 new presets |
+| 0.3.0 | 2026-11-05 | Windows; open source (GNU AGPLv3); bug reports from the app |
+| 0.2.1 | 2026-11-05 | MIDI control; metronome and tempo-synced delay; preset files; in-app updates |
+| 0.1.2 | 2026-11-05 | No more freezes when switching audio devices |
+| 0.1.1 | 2026-11-05 | First release, for Mac |

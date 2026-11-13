@@ -28,6 +28,8 @@ Source code: https://github.com/shaneoreilly/leviathan-amp-suite
   **nlohmann/json** (MIT, © Niels Lohmann). Fetched at build time, not stored in this repository.
 - **Bundled NAM captures** (`.nam`, both apps) are third-party content under GPLv3, credited per file in
   `shared/nam/captures/CREDITS.md`. Captures you add yourself keep their creators' licenses.
+- **Artist tunings** (all apps, `shared/pitch/bands.json`) are partly from metaltabs_scraper, MIT License,
+  © 2017 Vincent Russo; see `shared/pitch/LICENSE-metaltabs_scraper.txt`.
 - **Inter** typeface (all apps, `shared/fonts/`), SIL Open Font License 1.1, © The Inter Project Authors.
   https://github.com/rsms/inter (license in `shared/fonts/OFL.txt`).
 - **JUCE** (Windows app, `windows/`), used under the GNU AGPLv3. © Raw Material Software Limited.

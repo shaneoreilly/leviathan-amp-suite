@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-// MARK: - Root: sidebar + top bar + screen
+// MARK: - Root: top bar across the window, then the sidebar and the screen
 
 struct RootView: View {
     @EnvironmentObject var m: Model
@@ -12,11 +12,12 @@ struct RootView: View {
     var ch: Color { m.accent }
 
     var body: some View {
-        HStack(spacing: 0) {
+        VStack(spacing: 0) {
+            TopBar()
+            HStack(spacing: 0) {
             Sidebar()
             Rectangle().fill(line).frame(width: 1)
             VStack(spacing: 0) {
-                TopBar()
                 if updater.showBanner, let r = updater.available { UpdateBanner(release: r) } else { UpdateProgressBanner() }
                 ForEach([m.status, rec.message].filter { !$0.isEmpty && !m.isHidden($0) }, id: \.self) { msg in
                     let clear = { if msg == rec.message { rec.message = "" } else { m.status = "" } }
@@ -42,9 +43,10 @@ struct RootView: View {
                 case .settings: SettingsView()
                 }
             }
+            }
         }
         .id("\(m.zoom)·\(m.themeStamp)")   // rebuild everything at the new size, or in the new theme
-        .preferredColorScheme(PAL.isLight ? .light : .dark)
+        .environment(\.colorScheme, PAL.isLight ? .light : .dark)   // controls follow the text; the window frame follows the theme (applyTheme)
         .font(.inter(size: T(13) * UI))
         .controlSize(.large)
         .background(PAL.bg)
@@ -66,21 +68,22 @@ struct RootView: View {
 }
 
 struct Sidebar: View {
+    static var width: CGFloat { 96 * Z }
     @EnvironmentObject var m: Model
     @EnvironmentObject var rec: Sessions
     @EnvironmentObject var updater: Updater
 
     var body: some View {
-        VStack(spacing: 4) {
-            item(.rig, "slider.vertical.3", "Rig")
-            item(.presets, "list.bullet", "Presets")
-            item(.recordings, "waveform", "Recordings", badge: rec.recording)
+        VStack(spacing: 2) {
+            item(.rig, "slider.vertical.3", "Rig", key: "1")
+            item(.presets, "list.bullet", "Presets", key: "2")
+            item(.recordings, "waveform", "Recordings", key: "3", badge: rec.recording)
             Spacer()
             zoomControl
-            item(.settings, "gearshape", "Settings", badge: updater.available != nil)
+            item(.settings, "gearshape", "Settings", key: "4", badge: updater.available != nil)
         }
-        .padding(.vertical, 10)
-        .frame(width: 92 * Z)
+        .padding(.vertical, 8)
+        .frame(width: Sidebar.width)
         .background(PAL.bar)
     }
 
@@ -106,21 +109,35 @@ struct Sidebar: View {
         .padding(.bottom, 6)
     }
 
-    func item(_ s: Screen, _ icon: String, _ label: String, badge: Bool = false) -> some View {
-        let on = m.screen == s
-        return Button { m.screen = s } label: {
-            VStack(spacing: 4) {
-                Image(systemName: icon).font(.inter(size: T(20) * UI * 0.8))
+    func item(_ s: Screen, _ icon: String, _ label: String, key: Character, badge: Bool = false) -> some View {
+        SidebarItem(on: m.screen == s, icon: icon, label: label, key: key, badge: badge, accent: m.accent) { m.screen = s }
+    }
+}
+
+/// A sidebar button: the icon with its name underneath, brighter under the pointer; the current screen's is
+/// in the accent colour with a short accent bar against the left edge.
+struct SidebarItem: View {
+    let on: Bool, icon: String, label: String, key: Character, badge: Bool, accent: Color
+    let action: () -> Void
+    @StateObject private var hover = HoverFlag()
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 4 * Z) {
+                Image(systemName: icon).font(.inter(size: T(20) * UI * 0.85))
                     .overlay(alignment: .topTrailing) { if badge { Circle().fill(.red).frame(width: 9, height: 9).offset(x: 6, y: -4) } }
-                Text(label).font(.inter(size: T(9) * UI, weight: .semibold))
+                Text(label).font(.inter(size: T(9) * UI, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.8)
             }
-            .frame(width: 80 * Z, height: 70 * Z)
-            .foregroundStyle(on ? Color.accentColor : .secondary)
-            .background(RoundedRectangle(cornerRadius: 10).fill(on ? PAL.tint.opacity(0.07) : .clear))
-            .contentShape(Rectangle())
+                .frame(width: Sidebar.width, height: 62 * Z)
+                .foregroundStyle(on ? accent : hover.on ? PAL.text : PAL.secondary)
+                .overlay(alignment: .leading) {
+                    if on { Capsule().fill(accent).frame(width: 3 * Z, height: 50 * Z).padding(.leading, 3 * Z) }
+                }
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(label)
+        .onHover { hover.on = $0 }
+        .keyboardShortcut(KeyEquivalent(key), modifiers: .command)
+        .help("\(label) (\u{2318}\(key))")
     }
 }
 
@@ -138,7 +155,7 @@ struct TopBar: View {
             }
             .fixedSize()
             Button(m.live ? "⏻ On" : "⏻ Start") { m.toggle() }
-                .buttonStyle(.borderedProminent).tint(m.live ? .green : ch)
+                .buttonStyle(PowerButtonStyle(color: m.live ? .green : ch))
                 .keyboardShortcut(m.screen == .recordings ? nil : KeyboardShortcut(.space, modifiers: []))
                 .explain("top:power", "Audio on/off")
             LevelMeters(mt: m.meters).explain("top:meters", "Levels")
@@ -184,6 +201,20 @@ struct TopBar: View {
         .padding(.horizontal, 14).padding(.vertical, 10)
         .background(PAL.bar)
         .overlay(alignment: .bottom) { Rectangle().fill(line).frame(height: 1) }
+    }
+}
+
+/// The audio on/off button: bigger than the other top-bar buttons, filled with the accent (green while on).
+struct PowerButtonStyle: ButtonStyle {
+    let color: Color
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.inter(size: T(12) * UI, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(minWidth: 112 * Z, minHeight: 40 * Z)
+            .padding(.horizontal, 6 * Z)
+            .background(RoundedRectangle(cornerRadius: 8 * Z).fill(color.opacity(configuration.isPressed ? 0.75 : 1)))
+            .contentShape(RoundedRectangle(cornerRadius: 8 * Z))
     }
 }
 
@@ -787,7 +818,7 @@ struct SettingsView: View {
                         if item.name == "About" && updater.available != nil { Circle().fill(.red).frame(width: 8, height: 8) }
                     }
                     .font(.inter(size: T(10.5) * UI))
-                    .foregroundStyle(on ? Color.accentColor : .primary)
+                    .foregroundStyle(on ? m.accent : .primary)   // the app's accent (Color.accentColor is the system's)
                     .padding(.horizontal, 10).padding(.vertical, 7)
                     .background(RoundedRectangle(cornerRadius: 7).fill(on ? PAL.tint.opacity(0.08) : .clear))
                     .contentShape(Rectangle())
@@ -900,7 +931,7 @@ struct SettingsView: View {
             Stepper(value: $m.a4, in: 430...450, step: 1) { Text("A4 = \(Int(m.a4)) Hz").monospacedDigit() }
         }
         SettingsRow("Guitar tuning", explain: "settings:tuning") {
-            Picker("", selection: $m.tuningIndex) { ForEach(TUNINGS.indices, id: \.self) { Text(TUNINGS[$0].label).tag($0) } }
+            Picker("", selection: $m.tuningIndex) { ForEach(TUNING_ORDER, id: \.self) { Text(TUNINGS[$0].label).tag($0) } }
                 .labelsHidden().frame(width: SettingsLayout.wide, alignment: .leading)
         }
     }
@@ -1008,6 +1039,16 @@ struct SettingsView: View {
             .buttonStyle(.plain).help("Choose a background colour")
             Button("Reset") { m.setBackground("") }.disabled((m.theme == "light" ? m.bgLight : m.bgDark).isEmpty)
             SettingsCount(m.theme == "light" ? "for the light theme" : "for the dark theme")
+        }
+        SettingsRow("Text", explain: "settings:textColour") {
+            Button { BackgroundColourPanel.shared.open(m, text: true) } label: {
+                RoundedRectangle(cornerRadius: 5).fill(m.themeBackground.color).frame(width: 44 * Z, height: 22 * Z)
+                    .overlay(Text("Aa").font(.inter(size: T(12) * Z, weight: .semibold)).foregroundStyle(PAL.text))
+                    .overlay(RoundedRectangle(cornerRadius: 5).stroke(PAL.line))
+            }
+            .buttonStyle(.plain).help("Choose a text colour")
+            Button("Automatic") { m.setText("") }.disabled((m.theme == "light" ? m.textLight : m.textDark).isEmpty)
+            SettingsCount((m.theme == "light" ? m.textLight : m.textDark).isEmpty ? "worked out from the background" : "your colour")
         }
         SettingsRow("Accent colour", explain: "settings:accent") {
             ColorPicker("", selection: m.accentBinding, supportsOpacity: false).labelsHidden()
@@ -1264,7 +1305,7 @@ struct LatencyLabel: View {
     @ObservedObject var mt: Meters
     var body: some View {
         let total = info.latencyMs + Double(mt.pitchLatency)
-        Text(String(format: "~%.1f ms", total)).font(.inter(size: T(10) * UI).monospacedDigit())
+        Text(String(format: "~%.0f ms", total)).font(.inter(size: T(10) * UI).monospacedDigit())
             .foregroundStyle(total > 15 ? Color.orange : Color.secondary)
             .help(info.breakdown + (mt.pitchLatency > 0 ? String(format: " + pitch %.0f ms", mt.pitchLatency) : ""))
     }
@@ -1285,6 +1326,8 @@ let accentSwatches: [[Double]] = [[1, 0.3, 0.3], [0.91, 0.57, 0.23], [0.95, 0.8,
 /// view hierarchy's type name, so it changes with every code change (and every update); this one is fixed.
 struct WindowFrameSaver: NSViewRepresentable {
     static let key = "windowFrame"
+    /// The first window, before you've sized one: shows every rig panel at 100% (Windows: Main.cpp, the same size).
+    static let firstSize = NSSize(width: 2000, height: 1170)
 
     final class Coordinator {
         var observers: [NSObjectProtocol] = []
@@ -1296,12 +1339,15 @@ struct WindowFrameSaver: NSViewRepresentable {
         let v = NSView()
         DispatchQueue.main.async {
             guard let w = v.window, context.coordinator.observers.isEmpty else { return }
-            if let str = UserDefaults.standard.string(forKey: WindowFrameSaver.key) {
-                let f = NSRectFromString(str)
-                // only if it still lands on a connected screen
-                if f.width >= 900, f.height >= 600, NSScreen.screens.contains(where: { $0.visibleFrame.intersects(f) }) {
-                    w.setFrame(f, display: true)
-                }
+            let saved = UserDefaults.standard.string(forKey: WindowFrameSaver.key).map(NSRectFromString)
+            // only if it still lands on a connected screen
+            if let f = saved, f.width >= 900, f.height >= 600, NSScreen.screens.contains(where: { $0.visibleFrame.intersects(f) }) {
+                w.setFrame(f, display: true)
+            } else if let screen = w.screen ?? NSScreen.main {
+                // first open: big enough for the whole rig at 100% without scrolling, never bigger than the screen
+                let area = screen.visibleFrame
+                let size = NSSize(width: min(WindowFrameSaver.firstSize.width, area.width), height: min(WindowFrameSaver.firstSize.height, area.height))
+                w.setFrame(NSRect(x: area.midX - size.width / 2, y: area.midY - size.height / 2, width: size.width, height: size.height), display: true)
             }
             let save = { (_: Notification) in UserDefaults.standard.set(NSStringFromRect(w.frame), forKey: WindowFrameSaver.key) }
             for n in [NSWindow.didEndLiveResizeNotification, NSWindow.didMoveNotification, NSWindow.didResizeNotification, NSWindow.willCloseNotification] {

@@ -11,6 +11,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp Info.plist "$APP/Contents/Info.plist"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 cp ../shared/help/explanations.json "$APP/Contents/Resources/explanations.json"
+cp ../shared/pitch/bands.json "$APP/Contents/Resources/bands.json"   # Pitch > Play as: bands and their tunings
 mkdir -p "$APP/Contents/Resources/Fonts" && cp ../shared/fonts/*.ttf ../shared/fonts/OFL.txt "$APP/Contents/Resources/Fonts/"   # Inter (Info.plist ATSApplicationFontsPath)
 # bundled NAM captures (GPLv3, credits in shared/nam/captures/CREDITS.md)
 mkdir -p "$APP/Contents/Resources/NAM" && cp ../shared/nam/captures/*.nam ../shared/nam/captures/CREDITS.md ../shared/nam/captures/COPYING "$APP/Contents/Resources/NAM/"

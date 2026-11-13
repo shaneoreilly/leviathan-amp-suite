@@ -20,7 +20,12 @@ public:
         setResizeLimits(900, 600, 10000, 10000);
         // the window reopens where and how big you left it
         const auto saved = m.props().getValue("windowFrame");
-        if (saved.isEmpty() || !restoreWindowStateFromString(saved)) centreWithSize(1600, 1000);
+        // first open: big enough for the whole rig at 100% without scrolling (as the Mac app), never bigger than the screen
+        if (saved.isEmpty() || !restoreWindowStateFromString(saved)) {
+            auto area = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay() != nullptr
+                      ? juce::Desktop::getInstance().getDisplays().getPrimaryDisplay()->userArea : juce::Rectangle<int>(0, 0, 1600, 1000);
+            centreWithSize(std::min(2000, area.getWidth()), std::min(1140, area.getHeight() - 40));   // 40: the title bar
+        }
        #endif
         setVisible(true);
     }

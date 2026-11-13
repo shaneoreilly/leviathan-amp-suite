@@ -133,6 +133,7 @@
   "settings:godsCab": "The God's Cab impulse-response pack, if you have it, for the Cabinet panel's multi-mic option.",
   "settings:theme": "Dark or light. Each keeps its own background colour, so switching back brings yours with it.",
   "settings:background": "Your own background colour for the theme in use. Panels, lines, knobs and text are all worked out from it, so whatever you pick stays readable. Reset goes back to the default.",
+  "settings:textColour": "Your own text colour for the theme in use. Automatic picks dark or light text to suit the background.",
   "settings:accent": "The colour of knobs, switches and highlights. Follow amp channel changes it with the amp's channel.",
   "settings:zoom": "Makes everything in the window bigger or smaller.",
   "settings:explain": "Shows what the control under the pointer does, in a strip at the bottom of the window (like this one).",

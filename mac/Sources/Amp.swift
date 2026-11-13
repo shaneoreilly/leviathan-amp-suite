@@ -22,6 +22,10 @@ func namDisplayTitle(_ file: String) -> String {
 /// first row of knobs lines up across the rig row (Windows: pickerRowH).
 var PICKER_ROW_H: CGFloat { 44 * Z }
 
+/// Text in every dropdown button (Amp, Cabinet, Pitch): the size of the system pop-up buttons beside them (Input,
+/// Output, Delay timing, Add pedal, preset), so all dropdowns read the same.
+var DROPDOWN_FONT: Font { .inter(size: T(9) * UI) }
+
 /// ‹ [badge · name / detail ▾] › — the row shared by the cabinet and amp pickers.
 struct SourceButtonRow<Popover: View, MenuItems: View>: View {
     let badge: String, name: String, detail: String, help: String
@@ -29,19 +33,20 @@ struct SourceButtonRow<Popover: View, MenuItems: View>: View {
     var showMenu = true
     @Binding var open: Bool
     let prev: () -> Void, next: () -> Void
+    var prevHelp = "Previous", nextHelp = "Next"
     @ViewBuilder let popover: () -> Popover
     @ViewBuilder let menu: () -> MenuItems
 
     var body: some View {
         HStack(spacing: 4) {
             Button(action: prev) { Image(systemName: "chevron.left").frame(width: 18 * Z, height: 30 * Z).contentShape(Rectangle()) }
-                .buttonStyle(.borderless).help("Previous")
+                .buttonStyle(.borderless).help(prevHelp)
             Button { open.toggle() } label: {
                 HStack(spacing: 8) {
                     Text(badge).font(.inter(size: T(9) * UI, weight: .bold)).foregroundStyle(.secondary)
                         .padding(.horizontal, 5).padding(.vertical, 2).background(RoundedRectangle(cornerRadius: 4).fill(PAL.tint.opacity(0.08)))
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(name).font(.inter(size: T(10.5) * UI, weight: .semibold)).lineLimit(1)
+                        Text(name).font(.inter(size: T(9) * UI, weight: .semibold)).lineLimit(1)
                         Text(detail).font(.inter(size: T(9) * UI)).foregroundStyle(.secondary).lineLimit(1)
                     }
                     Spacer(minLength: 4)
@@ -57,7 +62,7 @@ struct SourceButtonRow<Popover: View, MenuItems: View>: View {
             .popover(isPresented: $open, arrowEdge: .bottom, content: popover)
             .help(help)
             Button(action: next) { Image(systemName: "chevron.right").frame(width: 18 * Z, height: 30 * Z).contentShape(Rectangle()) }
-                .buttonStyle(.borderless).help("Next")
+                .buttonStyle(.borderless).help(nextHelp)
             if showMenu {
                 Menu(content: menu) { Image(systemName: "ellipsis.circle") }
                     .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()

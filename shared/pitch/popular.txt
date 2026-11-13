@@ -1,0 +1,230 @@
+# Popular artists and the tunings they mostly play in, most used first: "Artist | Tuning; Tuning".
+# Hand-written from general knowledge (not exhaustive: many artists tune per song). make_bands.py merges these into
+# bands.json; an artist here replaces the tab-site entry with the same name.
+# Tunings: "<note> Standard" (E, Eb, D, C#, C, B, F#), "Drop <note>" (D, C#, C, B, A), Open G, Open D, Open E, Open C, DADGAD.
+
+# classic rock
+The Rolling Stones | E Standard; Open G
+The Beatles | E Standard
+Led Zeppelin | E Standard; DADGAD; Open G
+The Who | E Standard
+Pink Floyd | E Standard
+Queen | E Standard
+Deep Purple | E Standard
+Black Sabbath | Eb Standard; C# Standard; E Standard
+AC/DC | E Standard
+Aerosmith | E Standard; Eb Standard
+Kiss | Eb Standard
+Van Halen | Eb Standard; E Standard
+Guns N' Roses | Eb Standard
+Def Leppard | E Standard
+Bon Jovi | E Standard
+Journey | E Standard
+Boston | E Standard
+Eagles | E Standard
+Fleetwood Mac | E Standard
+Lynyrd Skynyrd | E Standard
+ZZ Top | E Standard
+The Doors | E Standard
+Cream | E Standard
+Creedence Clearwater Revival | D Standard; E Standard
+Bruce Springsteen | E Standard
+Tom Petty and the Heartbreakers | E Standard
+Bob Dylan | E Standard
+Neil Young | E Standard; Drop D
+Dire Straits | E Standard
+Santana | E Standard
+Rush | E Standard
+Yes | E Standard
+Genesis | E Standard
+Thin Lizzy | E Standard
+UFO | E Standard
+Scorpions | E Standard; Eb Standard
+The Kinks | E Standard
+The Beach Boys | E Standard
+The Byrds | E Standard
+Simon & Garfunkel | E Standard
+Steely Dan | E Standard
+Chicago | E Standard
+Toto | E Standard
+Foreigner | E Standard
+REO Speedwagon | E Standard
+Styx | E Standard
+Kansas | E Standard
+Bad Company | E Standard
+Free | E Standard
+Humble Pie | E Standard
+Faces | E Standard
+Status Quo | E Standard
+Peter Frampton | E Standard
+Steve Miller Band | E Standard
+Bachman-Turner Overdrive | E Standard
+Grand Funk Railroad | E Standard
+Steppenwolf | E Standard
+Mountain | E Standard
+Blue Öyster Cult | E Standard
+Cheap Trick | E Standard
+Jethro Tull | E Standard
+The Band | E Standard
+Grateful Dead | E Standard
+Allman Brothers Band | E Standard; Open E
+Little Feat | E Standard
+David Bowie | E Standard
+T. Rex | E Standard
+Roxy Music | E Standard
+Alice Cooper | E Standard
+The Stooges | E Standard
+MC5 | E Standard
+Heart | E Standard
+Pat Benatar | E Standard
+Joan Jett | E Standard
+Billy Idol | E Standard
+Bryan Adams | E Standard
+Prince | E Standard
+Lenny Kravitz | E Standard
+Living Colour | E Standard
+
+# blues and roots
+Jimi Hendrix | Eb Standard
+Eric Clapton | E Standard
+Stevie Ray Vaughan | Eb Standard
+B.B. King | E Standard
+Freddie King | E Standard
+Buddy Guy | E Standard
+Muddy Waters | E Standard; Open G
+Chuck Berry | E Standard
+Buddy Holly | E Standard
+Elvis Presley | E Standard
+Rory Gallagher | E Standard
+Gary Moore | E Standard
+Jeff Beck | E Standard
+Kenny Wayne Shepherd | Eb Standard
+Joe Bonamassa | E Standard; Eb Standard
+John Mayer | E Standard; Eb Standard
+Gary Clark Jr. | E Standard
+Derek Trucks | Open E
+George Thorogood | Open G
+The Black Keys | E Standard
+The White Stripes | E Standard
+The Raconteurs | E Standard
+The Black Crowes | Open G; E Standard
+Greta Van Fleet | E Standard
+Wolfmother | E Standard
+Bob Marley | E Standard
+
+# hard rock and metal
+Metallica | E Standard; Eb Standard; D Standard; Drop C
+Megadeth | E Standard; Eb Standard
+Slayer | Eb Standard; D Standard
+Anthrax | E Standard
+Iron Maiden | E Standard
+Judas Priest | E Standard; Eb Standard
+Motörhead | E Standard
+Ozzy Osbourne | Eb Standard; E Standard; D Standard
+Dio | Eb Standard
+Whitesnake | E Standard; Eb Standard
+Mötley Crüe | Eb Standard; D Standard
+Poison | Eb Standard
+Skid Row | Eb Standard
+Cinderella | Eb Standard
+Extreme | Eb Standard
+Mr. Big | E Standard
+Steve Vai | E Standard
+Joe Satriani | E Standard
+Yngwie Malmsteen | Eb Standard
+Dream Theater | E Standard
+Black Label Society | D Standard
+The Darkness | E Standard
+Airbourne | E Standard
+Alter Bridge | Drop D
+Avenged Sevenfold | Eb Standard; Drop C#
+Bullet for My Valentine | Drop C
+System of a Down | Drop C
+Slipknot | Drop B
+Disturbed | Drop C#
+Godsmack | Drop D
+Breaking Benjamin | Drop C#; Drop B
+Linkin Park | Drop C#
+Tool | Drop D
+A Perfect Circle | Drop D
+Queens of the Stone Age | C Standard; D Standard
+Kyuss | C Standard
+
+# grunge and alternative
+Nirvana | Eb Standard; E Standard; Drop D; D Standard
+Pearl Jam | E Standard; Eb Standard
+Soundgarden | Drop D; Eb Standard; E Standard
+Alice in Chains | Eb Standard; Drop C#
+Stone Temple Pilots | E Standard; Drop D
+Smashing Pumpkins | Eb Standard
+Silverchair | Drop D
+Bush | Drop D; E Standard
+Audioslave | Drop D; E Standard
+Rage Against the Machine | Drop D; E Standard
+Foo Fighters | E Standard; Drop D; Eb Standard
+Red Hot Chili Peppers | E Standard
+Collective Soul | E Standard
+Live | E Standard
+Matchbox Twenty | E Standard
+Third Eye Blind | E Standard
+Counting Crows | E Standard
+Weezer | Eb Standard
+Pixies | E Standard
+R.E.M. | E Standard
+Radiohead | E Standard
+Muse | E Standard; Drop D
+Jimmy Eat World | E Standard; Drop D
+
+# punk and pop punk
+Ramones | E Standard
+The Clash | E Standard
+Sex Pistols | E Standard
+Bad Religion | E Standard
+NOFX | E Standard
+Rancid | E Standard
+Social Distortion | E Standard
+The Offspring | E Standard
+Green Day | Eb Standard
+Blink-182 | E Standard
+Sum 41 | Eb Standard; Drop C#
+Fall Out Boy | Eb Standard
+Paramore | Eb Standard
+My Chemical Romance | Eb Standard; D Standard
+
+# indie and britpop
+Oasis | Eb Standard
+Blur | E Standard
+The Smiths | F# Standard; E Standard
+The Cure | E Standard
+Joy Division | E Standard
+The Police | E Standard
+Talking Heads | E Standard
+U2 | E Standard
+Coldplay | E Standard
+The Strokes | E Standard
+The Killers | E Standard
+Kings of Leon | E Standard
+Arctic Monkeys | E Standard; Drop D
+Franz Ferdinand | E Standard
+Bloc Party | E Standard
+Interpol | E Standard
+Yeah Yeah Yeahs | E Standard
+The Hives | E Standard
+Panic! at the Disco | E Standard
+Tame Impala | E Standard
+Television | E Standard
+Blondie | E Standard
+The Pretenders | E Standard
+Elvis Costello | E Standard
+
+# pop, folk and country
+Dave Matthews Band | E Standard
+Jack Johnson | E Standard
+Ed Sheeran | E Standard
+Taylor Swift | E Standard
+Phish | E Standard
+Johnny Cash | E Standard
+Willie Nelson | E Standard
+Chris Stapleton | E Standard
+Keith Urban | E Standard
+Brad Paisley | E Standard

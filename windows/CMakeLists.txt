@@ -120,6 +120,8 @@ endif()
 
 # control explanations, shared with the Mac app
 juce_add_binary_data(LeviathanData SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/../shared/help/explanations.json"
+  # Pitch > Play as: bands and their tunings
+  "${CMAKE_CURRENT_SOURCE_DIR}/../shared/pitch/bands.json"
   # Inter, the app's typeface (OFL; shared with the Mac app)
   "${CMAKE_CURRENT_SOURCE_DIR}/../shared/fonts/Inter-Regular.ttf"
   "${CMAKE_CURRENT_SOURCE_DIR}/../shared/fonts/Inter-SemiBold.ttf"

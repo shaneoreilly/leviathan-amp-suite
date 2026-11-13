@@ -81,23 +81,24 @@ void SourceButton::mouseUp(const juce::MouseEvent& e) {   // a tap, not the end 
 
 // MARK: - look and feel
 
-void theme::apply(juce::Colour b) {
-    isLight = b.getPerceivedBrightness() > 0.45f;
-    const juce::Colour fg = isLight ? juce::Colour(0xff141414) : juce::Colour(0xffeeeeee), white = juce::Colours::white;
+void theme::apply(juce::Colour b, std::optional<juce::Colour> textColour) {
+    const bool light = b.getPerceivedBrightness() > 0.45f;   // the mixes follow the background
+    const juce::Colour fg = textColour.value_or(light ? juce::Colour(0xff141414) : juce::Colour(0xffeeeeee)), white = juce::Colours::white;
+    isLight = fg.getPerceivedBrightness() < 0.5f;             // the controls follow the text
     auto m = [&](float t) { return b.interpolatedWith(fg, t); };
     bg = b;
-    bar = m(isLight ? 0.03f : 0.025f);
-    panel = isLight ? b.interpolatedWith(white, 0.7f) : m(0.04f);       // light: cards lift towards white
-    panel2 = m(isLight ? 0.06f : 0.08f);
-    line = m(isLight ? 0.16f : 0.17f);
-    knobFace = isLight ? b.interpolatedWith(white, 0.95f) : m(0.11f);
-    knobTrack = m(isLight ? 0.16f : 0.19f);
-    off = m(isLight ? 0.18f : 0.15f);
-    dim = m(isLight ? 0.38f : 0.3f);
+    bar = m(light ? 0.03f : 0.025f);
+    panel = light ? b.interpolatedWith(white, 0.7f) : m(0.04f);       // light: cards lift towards white
+    panel2 = m(light ? 0.06f : 0.08f);
+    line = m(light ? 0.16f : 0.17f);
+    knobFace = light ? b.interpolatedWith(white, 0.95f) : m(0.11f);
+    knobTrack = m(light ? 0.16f : 0.19f);
+    off = m(light ? 0.18f : 0.15f);
+    dim = m(light ? 0.38f : 0.3f);
     text = fg; secondary = fg.interpolatedWith(b, 0.42f);
-    tint = isLight ? juce::Colours::black : juce::Colours::white;
-    warnBg = isLight ? juce::Colour(0xfffff0d4) : juce::Colour(0xff291f0f);
-    warnFg = isLight ? juce::Colour(0xff6a4600) : juce::Colour(0xffffd999);
+    tint = light ? juce::Colours::black : juce::Colours::white;
+    warnBg = light ? juce::Colour(0xfffff0d4) : juce::Colour(0xff291f0f);
+    warnFg = light ? juce::Colour(0xff6a4600) : juce::Colour(0xffffd999);
 }
 
 LookAndFeel::LookAndFeel() {
@@ -152,15 +153,27 @@ void LookAndFeel::drawButtonBackground(juce::Graphics& g, juce::Button& b, const
     g.fillRoundedRectangle(r, std::min(7.f, r.getHeight() / 2));
 }
 
+juce::Rectangle<int> theme::drawDropdownBox(juce::Graphics& g, juce::Rectangle<int> b, bool enabled) {
+    const auto r = b.toFloat().reduced(0.5f);
+    const float a = enabled ? 1.f : 0.5f;
+    g.setColour(tint.withAlpha(0.06f * a)); g.fillRoundedRectangle(r, 7);
+    g.setColour(tint.withAlpha(0.1f * a)); g.drawRoundedRectangle(r, 7, 1);
+    auto in = b.reduced(8, 0);
+    const auto chev = in.removeFromRight(14);
+    g.setColour(secondary.withMultipliedAlpha(a));
+    g.strokePath(IconButton::pathFor(IconButton::chevronDown, chev.toFloat().withSizeKeepingCentre(10, 10)), juce::PathStrokeType(1.5f));
+    return in.withTrimmedRight(4);
+}
+
 void LookAndFeel::drawComboBox(juce::Graphics& g, int w, int h, bool, int, int, int, int, juce::ComboBox& box) {
-    auto r = juce::Rectangle<float>(0, 0, (float) w, (float) h).reduced(0.5f);
-    g.setColour(theme::panel2.withMultipliedAlpha(box.isEnabled() ? 1.f : 0.5f));
-    g.fillRoundedRectangle(r, 7);
-    juce::Path p;
-    const float cx = (float) w - 14, cy = (float) h / 2;
-    p.startNewSubPath(cx - 3.5f, cy - 2); p.lineTo(cx, cy + 2); p.lineTo(cx + 3.5f, cy - 2);
-    g.setColour(box.findColour(juce::ComboBox::arrowColourId).withMultipliedAlpha(box.isEnabled() ? 1.f : 0.4f));
-    g.strokePath(p, juce::PathStrokeType(1.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    theme::drawDropdownBox(g, { 0, 0, w, h }, box.isEnabled());
+}
+
+void LookAndFeel::positionComboBoxText(juce::ComboBox& box, juce::Label& label) {
+    label.setBounds(8, 0, box.getWidth() - 8 - 26, box.getHeight());   // as the Pitch rows: text from the left edge, ▾ on the right
+    label.setFont(getComboBoxFont(box));
+    label.setBorderSize({});
+    label.setMinimumHorizontalScale(1.0f);
 }
 
 // MARK: - layout helpers

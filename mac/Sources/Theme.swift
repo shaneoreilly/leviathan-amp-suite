@@ -2,7 +2,9 @@ import SwiftUI
 
 // Light and dark themes, with your own background colour for each (Settings > Appearance). Every colour in the app
 // comes from the background: panels, lines, knob faces and text are mixes of it, so any background you pick stays
-// readable. Whether text is dark or light follows how bright the background actually is.
+// readable. Text is dark or light by how bright the background is, unless you pick a text colour too. The window
+// frame and menus follow the theme you chose (Dark / Light), whatever the background; the controls inside follow
+// the text (light text: dark-style controls).
 // Windows / Android: theme::apply in UI/Widgets.cpp, the same formula.
 
 struct RGB: Equatable {
@@ -25,17 +27,18 @@ struct RGB: Equatable {
 }
 
 struct Palette {
+    /// Dark text, so the controls inside the window use the light style.
     let isLight: Bool
     let bg, bar, panel, panel2, line, knobFace, knobTrack, off, dim, text, secondary, tint, warnBg, warnFg: Color
 
     static let defaultDark = RGB(hex: "0D0D0D")!, defaultLight = RGB(hex: "ECECEE")!
 
-    static func make(_ bg: RGB) -> Palette {
+    static func make(_ bg: RGB, text: RGB? = nil) -> Palette {
         let light = bg.luma > 0.45
-        let fg = light ? RGB(hex: "141414")! : RGB(hex: "EEEEEE")!, white = RGB(1, 1, 1)
+        let fg = text ?? (light ? RGB(hex: "141414")! : RGB(hex: "EEEEEE")!), white = RGB(1, 1, 1)
         func m(_ t: Double) -> Color { bg.mix(fg, t).color }
         return Palette(
-            isLight: light, bg: bg.color,
+            isLight: fg.luma < 0.5, bg: bg.color,
             bar: m(light ? 0.03 : 0.025),
             panel: light ? bg.mix(white, 0.7).color : m(0.04),        // light: cards lift towards white
             panel2: m(light ? 0.06 : 0.08),
@@ -54,30 +57,32 @@ struct Palette {
 /// The palette in use. Model sets it (theme and background colours); RootView rebuilds the window when it changes.
 var PAL = Palette.make(Palette.defaultDark)
 
-/// The background colour picker. The system colour panel talks to this long-lived object, not to a view: picking a
-/// colour rebuilds the window (every view reads PAL), which would cut a view's picker off after the first pick. So
-/// the panel keeps working until you close it; changes apply once the colour stops moving for a moment.
+/// The background and text colour picker. The system colour panel talks to this long-lived object, not to a view:
+/// picking a colour rebuilds the window (every view reads PAL), which would cut a view's picker off after the first
+/// pick. So the panel keeps working until you close it; changes apply once the colour stops moving for a moment.
 @MainActor final class BackgroundColourPanel: NSObject {
     static let shared = BackgroundColourPanel()
     private weak var model: Model?
     private var pending: DispatchWorkItem?
+    private var forText = false
 
-    func open(_ m: Model) {
-        model = m
+    /// text: the text colour instead of the background.
+    func open(_ m: Model, text: Bool = false) {
+        model = m; forText = text
         let p = NSColorPanel.shared
         p.showsAlpha = false
         p.isContinuous = true
         p.setTarget(nil); p.setAction(nil)   // don't let setting the colour below call back
-        p.color = NSColor(m.themeBackground.color)
+        p.color = NSColor(text ? m.themeTextShown.color : m.themeBackground.color)
         p.setTarget(self); p.setAction(#selector(changed(_:)))
-        p.title = m.theme == "light" ? "Background (light theme)" : "Background (dark theme)"
+        p.title = (text ? "Text" : "Background") + (m.theme == "light" ? " (light theme)" : " (dark theme)")
         p.orderFront(nil)
     }
 
     @objc private func changed(_ p: NSColorPanel) {
-        let hex = RGB(Color(nsColor: p.color)).hex
+        let hex = RGB(Color(nsColor: p.color)).hex, text = forText
         pending?.cancel()
-        let w = DispatchWorkItem { [weak self] in self?.model?.setBackground(hex) }
+        let w = DispatchWorkItem { [weak self] in if text { self?.model?.setText(hex) } else { self?.model?.setBackground(hex) } }
         pending = w
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: w)
     }

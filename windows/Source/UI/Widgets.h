@@ -9,13 +9,17 @@ namespace lev {
 
 namespace theme {
 /// The palette in use, worked out from the background colour by apply() (the Mac app's Theme.swift, the same
-/// formula): dark or light text follows how bright the background is, panels and lines are mixes of the two.
+/// formula): dark or light text follows how bright the background is unless you pick a text colour, panels and
+/// lines are mixes of the two. isLight: the text is dark, so controls use the light scheme.
 inline juce::Colour bg { 0xff0d0d0d }, bar { 0xff121212 }, panel { 0xff161616 }, panel2 { 0xff1f1f1f }, line { 0xff333333 },
                     knobFace { 0xff262626 }, knobTrack { 0xff383838 }, text { 0xffeeeeee }, secondary { 0xff9a9a9a },
                     off { 0xff2f2f2f }, dim { 0xff4d4d4d }, tint { 0xffffffff }, warnBg { 0xff291f0f }, warnFg { 0xffffd999 };
 inline bool isLight = false;
 const juce::Colour defaultDark { 0xff0d0d0d }, defaultLight { 0xffececee };
-void apply(juce::Colour background);
+void apply(juce::Colour background, std::optional<juce::Colour> text = std::nullopt);
+/// Every dropdown's closed box (combo boxes, Add pedal, the Pitch rows): light fill, thin edge, grey ▾ on the right
+/// (Mac: DropdownBox). Returns the area left for the text.
+juce::Rectangle<int> drawDropdownBox(juce::Graphics& g, juce::Rectangle<int> r, bool enabled = true);
 /// SwiftUI point size -> JUCE font (SwiftUI's 1.5x text scale, JUCE heights include line spacing).
 juce::Font font(float pt, bool bold = false, float tracking = 0);
 /// A design size snapped to the type scale (9, 10.5, 12, 13, 16, 22; larger sizes unchanged).
@@ -31,10 +35,7 @@ public:
     void refreshTheme();
     juce::Font getComboBoxFont(juce::ComboBox&) override { return theme::font(10.5f); }
     /// Never squeeze a combo box's text narrower (JUCE's default): too long ends in "..." instead.
-    void positionComboBoxText(juce::ComboBox& box, juce::Label& label) override {
-        juce::LookAndFeel_V4::positionComboBoxText(box, label);
-        label.setMinimumHorizontalScale(1.0f);
-    }
+    void positionComboBoxText(juce::ComboBox& box, juce::Label& label) override;
     juce::Font getPopupMenuFont() override { return theme::font(10.5f); }
     juce::Font getTextButtonFont(juce::TextButton&, int) override { return theme::font(10); }
     juce::Font getLabelFont(juce::Label&) override { return theme::font(10); }
