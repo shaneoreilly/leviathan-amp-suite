@@ -223,27 +223,27 @@ Building Leviathan yourself, or want to contribute? See [DEVELOPMENT.md](DEVELOP
 
 The main changes in each release. Full notes are on the [releases page](https://github.com/shaneoreilly/leviathan-amp-suite/releases).
 
-| Version | Date | Highlights |
-| --- | --- | --- |
-| 0.8.0 | 2026-11-13 | Search about 1,000 artists in Pitch to hear their tuning; open tunings and DADGAD; matching dropdowns; text colour; full-width top bar; ⌘1–4 shortcuts |
-| 0.7.2 | 2026-11-13 | Recovers by itself when a USB interface stops responding |
-| 0.7.1 | 2026-11-11 | Light theme and your own background colour; Wet / Dry playback; less pitch-shifter lag |
-| 0.7.0 | 2026-11-11 | New look; cabinet browser with Size, Length and Tone; preset tags and search; output EQ |
-| 0.6.2 | 2026-11-11 | Cheaper amp captures on Windows; Android fixes |
-| 0.6.1 | 2026-11-10 | Keep recordings anywhere, Google Drive included; diagnostic log |
-| 0.6.0 | 2026-11-09 | Android; one-click fixes; sharing takes |
-| 0.5.1 | 2026-11-08 | New icon; easier trimming; endless gate release |
-| 0.5.0 | 2026-11-07 | Second amp, doubler, new reverb, smoother gate; Undo |
-| 0.4.8 | 2026-11-07 | What's new shown before you update |
-| 0.4.7 | 2026-11-06 | Cleaner low chords in the pitch shifter; longer gate release |
-| 0.4.6 | 2026-11-06 | Saved presets load after updating; 34 amp captures; preset sorting |
-| 0.4.5 | 2026-11-06 | Missing recordings back; Blade distortion pedal |
-| 0.4.4 | 2026-11-06 | No more repeated microphone prompts; trim recordings |
-| 0.4.3 | 2026-11-05 | Cabinet IR library; explanations on hover; Save as; live waveform |
-| 0.4.2 | 2026-11-05 | Updates hard to miss; one copy running at a time |
-| 0.4.1 | 2026-11-05 | Tidier Settings; safer recordings; notes shown for every tuning |
-| 0.4.0 | 2026-11-05 | Real amps through Neural Amp Modeler captures; 21 new presets |
-| 0.3.0 | 2026-11-05 | Windows; open source (GNU AGPLv3); bug reports from the app |
-| 0.2.1 | 2026-11-05 | MIDI control; metronome and tempo-synced delay; preset files; in-app updates |
-| 0.1.2 | 2026-11-05 | No more freezes when switching audio devices |
-| 0.1.1 | 2026-11-05 | First release, for Mac |
+| Version | Highlights |
+| --- | --- |
+| 0.8.0 | Search about 1,000 artists in Pitch to hear their tuning; open tunings and DADGAD; matching dropdowns; text colour; full-width top bar; ⌘1–4 shortcuts |
+| 0.7.2 | Recovers by itself when a USB interface stops responding |
+| 0.7.1 | Light theme and your own background colour; Wet / Dry playback; less pitch-shifter lag |
+| 0.7.0 | New look; cabinet browser with Size, Length and Tone; preset tags and search; output EQ |
+| 0.6.2 | Cheaper amp captures on Windows; Android fixes |
+| 0.6.1 | Keep recordings anywhere, Google Drive included; diagnostic log |
+| 0.6.0 | Android; one-click fixes; sharing takes |
+| 0.5.1 | New icon; easier trimming; endless gate release |
+| 0.5.0 | Second amp, doubler, new reverb, smoother gate; Undo |
+| 0.4.8 | What's new shown before you update |
+| 0.4.7 | Cleaner low chords in the pitch shifter; longer gate release |
+| 0.4.6 | Saved presets load after updating; 34 amp captures; preset sorting |
+| 0.4.5 | Missing recordings back; Blade distortion pedal |
+| 0.4.4 | No more repeated microphone prompts; trim recordings |
+| 0.4.3 | Cabinet IR library; explanations on hover; Save as; live waveform |
+| 0.4.2 | Updates hard to miss; one copy running at a time |
+| 0.4.1 | Tidier Settings; safer recordings; notes shown for every tuning |
+| 0.4.0 | Real amps through Neural Amp Modeler captures; 21 new presets |
+| 0.3.0 | Windows; open source (GNU AGPLv3); bug reports from the app |
+| 0.2.1 | MIDI control; metronome and tempo-synced delay; preset files; in-app updates |
+| 0.1.2 | No more freezes when switching audio devices |
+| 0.1.1 | First release, for Mac |
