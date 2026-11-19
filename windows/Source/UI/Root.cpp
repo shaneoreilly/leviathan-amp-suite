@@ -213,8 +213,9 @@ struct TopBar : juce::Component {
         auto& m = model;
         // the power symbol (U+23FB) isn't in Android's fonts: it shows as an empty box there
         const juce::String sym = onAndroid ? juce::String() : juce::String::fromUTF8("\xe2\x8f\xbb ");
-        power.setButtonText(sym + (m.live() ? "On" : "Start"));
-        power.setColour(juce::TextButton::buttonOnColourId, m.live() ? juce::Colour(0xff34c759) : m.accent());
+        power.setButtonText(sym + (m.live() ? "On" : "Off"));   // the state, like every panel's ON / OFF switch; green on, grey off
+        power.setColour(juce::TextButton::buttonOnColourId, m.live() ? juce::Colour(0xff34c759) : theme::panel2);
+        power.setColour(juce::TextButton::textColourOnId, m.live() ? juce::Colours::white : theme::text);
         power.setToggleState(true, juce::dontSendNotification);
         rec.setButtonText(m.sessions->recording ? juce::String::fromUTF8("\xe2\x97\x8f ") + mmss(m.sessions->recSeconds) : juce::String::fromUTF8("\xe2\x97\x8f Rec"));
         rec.setColour(juce::TextButton::textColourOffId, m.sessions->recording ? juce::Colours::red : theme::text);
@@ -253,7 +254,6 @@ struct TopBar : juce::Component {
         if (!compact) {
             x = 64 + 196;
             place(power, powerW, powerH); place(meters, 170, 36); x += 100;   // latency text
-            wave.setBounds(x, (h1 - 34) / 2, 200, 34);
             placeR(saveAs, 80);
             placeR(save, 60);
             placeR(undoB, 34);
@@ -263,6 +263,8 @@ struct TopBar : juce::Component {
             placeR(midi, 60); placeR(tuner, 66); tunerLearn.setBounds(tuner.getBounds());
             placeR(bpm, 54); r += 6; placeR(metro, 34); metroLearn.setBounds(metro.getBounds());   // touching: one control
             placeR(rec, 84);
+            // the recording's waveform takes the room left before Rec (up to 200), never overlapping it (as the Mac app)
+            wave.setBounds(x, (h1 - 34) / 2, juce::jlimit(0, 200, rec.getX() - 10 - x), 34);
             latencyX = x - 100;
             return;
         }

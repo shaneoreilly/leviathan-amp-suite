@@ -86,7 +86,7 @@
   "eq5": "2.5 kHz: pick attack and bite. Too much sounds harsh.",
   "eq6": "5 kHz: edge and fizz from the distortion. Cut to smooth out a harsh tone.",
   "eq7": "10 kHz: air and sparkle. Mostly hiss in high-gain tones; cut it to darken.",
-  "top:power": "Starts and stops audio (Space).",
+  "top:power": "Turns the sound on and off (Space). Green and On while Leviathan is playing, grey and Off while it's silent.",
   "top:meters": "Input level (your guitar, after Input gain) and output level. Keep the input out of the red on your interface.",
   "top:latency": "Estimated round trip from your strings to your ears. Under 10 ms feels instant; above 15 ms is orange. Hover for the breakdown.",
   "top:rec": "Records your dry guitar and the processed sound side by side, with the rig settings, so you can re-amp later (Cmd/Ctrl+R).",

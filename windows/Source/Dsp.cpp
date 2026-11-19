@@ -909,7 +909,7 @@ std::optional<double> detectPitch(const std::vector<float>& x, double sr) {
     float ms = 0;
     for (float v : x) ms += v * v;
     ms /= (float) std::max(n, 1);
-    if (std::sqrt(ms) < 0.003f) return std::nullopt;
+    if (std::sqrt(ms) < 0.0015f) return std::nullopt;   // -56 dBFS: keeps reading a fading string while you turn the peg
     const int minT = (int) (sr / 1100), maxT = std::min((int) (sr / 50), n / 2);
     std::vector<float> sq((size_t) n + 1, 0.0f), nsdf((size_t) maxT + 2, 0.0f);
     for (int i = 0; i < n; ++i) sq[(size_t) i + 1] = sq[(size_t) i] + x[(size_t) i] * x[(size_t) i];

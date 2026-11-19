@@ -146,7 +146,9 @@ void LookAndFeel::setAccent(juce::Colour c) {
 
 void LookAndFeel::drawButtonBackground(juce::Graphics& g, juce::Button& b, const juce::Colour&, bool over, bool down) {
     auto r = b.getLocalBounds().toFloat().reduced(0.5f);
-    auto c = b.getToggleState() ? accent : theme::panel2;
+    // on: the accent, unless the button sets its own (the power button: green on, grey off)
+    auto c = b.getToggleState() ? (b.isColourSpecified(juce::TextButton::buttonOnColourId) ? b.findColour(juce::TextButton::buttonOnColourId) : accent)
+                                : theme::panel2;
     if (over) c = c.brighter(0.08f);
     if (down) c = c.darker(0.1f);
     g.setColour(c.withMultipliedAlpha(b.isEnabled() ? 1.f : 0.5f));

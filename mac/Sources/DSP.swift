@@ -1191,7 +1191,7 @@ func detectPitch(_ x: [Float], sr: Double) -> Double? {
     let n = x.count
     var ms: Float = 0
     vDSP_measqv(x, 1, &ms, vDSP_Length(n))
-    if sqrtf(ms) < 0.003 { return nil }
+    if sqrtf(ms) < 0.0015 { return nil }   // -56 dBFS: keeps reading a fading string while you turn the peg
     let minT = Int(sr / 1100), maxT = min(Int(sr / 50), n / 2)
     var sq = [Float](repeating: 0, count: n + 1)
     for i in 0..<n { sq[i + 1] = sq[i] + x[i] * x[i] }

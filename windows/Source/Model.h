@@ -67,7 +67,10 @@ public:
     void stop();
     bool playbackOnly = false;
     std::atomic<bool> inputOff { false };   // read by the audio callback
-    bool live() const { return running && !playbackOnly; }
+    bool live() const { return running && !playbackOnly && !tunerOnly; }
+    /// The sound is off but the tuner is open: audio runs for the input alone, the output silent, and the power button
+    /// still reads Off. Opening the tuner with the sound off starts this; closing it stops audio (Mac: Model.tunerOnly).
+    bool tunerOnly = false;
     /// Android: leaving the app releases the audio device entirely (its exclusive low-latency streams and CPU hint
     /// otherwise starve other apps' playback); coming back reopens it. Not while recording or live re-amping.
     void enterBackground();
@@ -85,7 +88,8 @@ public:
     juce::String loggedDevice, loggedStatus, loggedMessage, loggedPower;
     int perfTick = 0, perfXRuns = 0; double perfAt = 0, perfNam = 0;
     void setDebugLog(bool on);
-    void toggle() { live() ? stop() : start(); }
+    /// The power button. Off while the tuner is open keeps it listening (tunerOnly) instead of stopping audio.
+    void toggle();
     void restartAudio();
     /// Theme (Settings > Appearance): "dark" or "light", and your own background colour for each ("" = default). Not in
     /// presets. Root applies it (theme::apply) and rebuilds the window when themeStamp changes (Mac: Model.theme).
@@ -216,9 +220,9 @@ public:
     /// Input calibration gain (dB) for a capture made at `capture` dBu, with your interface at `interface` dBu (nullopt = off).
     static double calibrationTrim(std::optional<double> capture, std::optional<double> interface);
     juce::String tunerNote = juce::String::fromUTF8("\xe2\x80\x93");
-    double tunerCents = 0, tunerFreq = 0;
+    double tunerCents = 0, tunerFreq = 0, tunerHeard = 0;   // tunerHeard: when it last heard a note (s)
     int tunerString = -1;
-    void setTuner(bool on) { tunerOn = on; syncMute(); changed(); }
+    void setTuner(bool on);
     void setTunerMute(bool m) { tunerMute = m; syncMute(); changed(); }
     void setTuningIndex(int i);
     void setA4(double v);
@@ -340,7 +344,7 @@ private:
     std::vector<std::pair<Settings, juce::String>> undoStack;
     juce::int64 lastEditMs = 0; bool undoing = false;
     void applyPreset(const Settings& p, const juce::String& name);
-    void syncMute() { params.muted.store(tunerOn && tunerMute); }
+    void syncMute() { params.muted.store(tunerOn && (tunerMute || tunerOnly)); }
     void saveState();
     void timerCallback() override;
     void changeListenerCallback(juce::ChangeBroadcaster*) override;   // the device list (devices)

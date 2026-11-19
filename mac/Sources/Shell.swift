@@ -154,14 +154,14 @@ struct TopBar: View {
                 Text("OPEN GUITAR RIG").font(.inter(size: T(9) * UI)).tracking(1.5).foregroundStyle(.secondary)
             }
             .fixedSize()
-            Button(m.live ? "⏻ On" : "⏻ Start") { m.toggle() }
-                .buttonStyle(PowerButtonStyle(color: m.live ? .green : ch))
+            Button(m.live ? "⏻ On" : "⏻ Off") { m.toggle() }   // the state, like every panel's ON / OFF switch
+                .buttonStyle(PowerButtonStyle(on: m.live))
                 .keyboardShortcut(m.screen == .recordings ? nil : KeyboardShortcut(.space, modifiers: []))
                 .explain("top:power", "Audio on/off")
             LevelMeters(mt: m.meters).explain("top:meters", "Levels")
             if let i = m.info { LatencyLabel(info: i, mt: m.meters).explain("top:latency", "Latency") }
             if rec.recording {
-                LiveWaveView(wave: rec.liveWave, color: .red).frame(width: 240 * W, height: 34 * Z).explain("top:recWave", "Recording")
+                LiveWaveView(wave: rec.liveWave, color: .red).frame(minWidth: 60 * Z, maxWidth: 240 * W).frame(height: 34 * Z)   // takes the room that's left.explain("top:recWave", "Recording")
             }
             Spacer(minLength: 8)
             Button { rec.toggleRecord() } label: {
@@ -204,13 +204,14 @@ struct TopBar: View {
     }
 }
 
-/// The audio on/off button: bigger than the other top-bar buttons, filled with the accent (green while on).
+/// The audio on/off button: bigger than the other top-bar buttons; green while on, grey while off.
 struct PowerButtonStyle: ButtonStyle {
-    let color: Color
+    let on: Bool
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
+        let color = on ? Color.green : PAL.tint.opacity(0.1)
+        return configuration.label
             .font(.inter(size: T(12) * UI, weight: .semibold))
-            .foregroundStyle(.white)
+            .foregroundStyle(on ? .white : PAL.text)
             .frame(minWidth: 112 * Z, minHeight: 40 * Z)
             .padding(.horizontal, 6 * Z)
             .background(RoundedRectangle(cornerRadius: 8 * Z).fill(color.opacity(configuration.isPressed ? 0.75 : 1)))
@@ -1305,7 +1306,7 @@ struct LatencyLabel: View {
     @ObservedObject var mt: Meters
     var body: some View {
         let total = info.latencyMs + Double(mt.pitchLatency)
-        Text(String(format: "~%.0f ms", total)).font(.inter(size: T(10) * UI).monospacedDigit())
+        Text(String(format: "~%.0f ms", total)).font(.inter(size: T(10) * UI).monospacedDigit()).fixedSize()
             .foregroundStyle(total > 15 ? Color.orange : Color.secondary)
             .help(info.breakdown + (mt.pitchLatency > 0 ? String(format: " + pitch %.0f ms", mt.pitchLatency) : ""))
     }

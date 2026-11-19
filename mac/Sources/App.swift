@@ -562,7 +562,10 @@ final class Model: ObservableObject {
     @Published var savingPreset = false
     @Published var newPresetName = ""
 
-    @Published var tunerOn = false { didSet { syncMute() } }
+    @Published var tunerOn = false { didSet { tunerChanged() } }
+    /// The sound is off but the tuner is open: audio runs for the input alone, the output silent, and the power button
+    /// still reads Off. Opening the tuner with the sound off starts this; closing it stops audio again.
+    @Published private(set) var tunerOnly = false
     @Published var tunerMute = true { didSet { syncMute() } }
     @Published var tuningIndex = UserDefaults.standard.object(forKey: "tuning") as? Int ?? 1 {
         didSet { UserDefaults.standard.set(tuningIndex, forKey: "tuning") }
@@ -580,6 +583,8 @@ final class Model: ObservableObject {
     @Published var tunerCents = 0.0
     @Published var tunerFreq = 0.0
     @Published var tunerString: Int? = nil
+    /// The last time the tuner heard a note: after 0.4 s without one it clears, rather than holding an old reading.
+    private var tunerHeard = Date.distantPast
 
     @Published var userPresets: [String: Settings] = [:]
     private var unreadablePresets: [String: Any] = [:]
@@ -806,7 +811,7 @@ final class Model: ObservableObject {
 
     func refreshDevices() {
         let all = listDevices()
-        let appeared = Set(all.map(\.uid)).subtracting(knownUIDs)
+        let appeared = Set(all.map(\.uid)).subtracting(knownUIDs), gone = knownUIDs.subtracting(all.map(\.uid))
         knownUIDs = Set(all.map(\.uid))
         inputs = all.filter { $0.ins > 0 }
         outputs = all.filter { $0.outs > 0 }
@@ -820,6 +825,7 @@ final class Model: ObservableObject {
             if let i = input, i.outs > 0, !i.isVirtual, let d = outputs.first(where: { $0.uid == i.uid }) { outputUID = d.uid }
             else if let d = good.first ?? outputs.first(where: { !$0.isVirtual }) ?? outputs.first { outputUID = d.uid }
         }
+        unplugged(gone)
         replugged(appeared)
     }
 
@@ -829,6 +835,20 @@ final class Model: ObservableObject {
     /// by itself (the app stays open: it's what pressing Start does).
     private var awaitingReplug: String?
     private var knownUIDs = Set<String>()
+    /// The devices audio is running on (the input nil when there's none), to tell which one went away.
+    private var runningOn: (input: AudioDevice?, output: AudioDevice)?
+
+    /// A device audio is running on was unplugged: stop cleanly and say which, rather than wait for the stall check
+    /// (which can only see what's left and once blamed the built-in speakers).
+    private func unplugged(_ gone: Set<String>) {
+        guard running, let on = runningOn else { return }
+        let lost = [on.input, on.output].compactMap { $0 }.first { gone.contains($0.uid) }
+        guard let lost else { return }
+        DebugLog.write("audio", "\(lost.name) disconnected")
+        stop()
+        awaitingReplug = lost.uid
+        status = "\(lost.name) was disconnected. Plug it back in; Leviathan starts again by itself."
+    }
     /// Running without the chosen input because it wasn't plugged in: plugging it in switches to it.
     private var startedWithoutInput = false
     private var stallLast = (cycles: 0, fails: 0), stalledSince: Date?, lastStallRestart = Date.distantPast
@@ -874,21 +894,46 @@ final class Model: ObservableObject {
         }
         let bad = inputHung ? (i ?? o) : (withInput ? (i ?? o) : o)
         guard let bad else { return }
+        if bad.isBuiltIn {   // nothing to unplug: say what will help instead
+            status = "\(bad.name) stopped working. Press the power button to try again, or pick another device in Settings → Audio."
+            fixIn("Audio"); return
+        }
         awaitingReplug = bad.uid
         status = "\(bad.name) stopped responding. Unplug it and plug it back in; Leviathan starts again by itself."
     }
 
-    func toggle() { live ? stop() : start() }
+    /// The power button. Off while the tuner is open keeps it listening (tunerOnly) instead of stopping audio.
+    func toggle() {
+        if live && tunerOn { tunerOnly = true; syncMute(); DebugLog.write("audio", "sound off (tuner still listening)") }
+        else {
+            if !running { tunerOnly = false }   // a failed tuner-only restart must not leave the next start silent
+            live ? stop() : start()
+        }
+    }
+
+    private func tunerChanged() {
+        if tunerOn && !running {   // listen with the sound off: muted before anything can play
+            tunerOnly = true; syncMute()
+            start()
+            if !running { tunerOnly = false }
+        } else if !tunerOn && tunerOnly {
+            if running { stop() } else { tunerOnly = false }
+        }
+        syncMute()
+    }
 
     /// Audio is on only to play a recording back (started by Sessions while the amp was off): no input is open, so a
     /// built-in mic can't feed back through the speakers, and Sessions turns it off again when playback is over.
     @Published private(set) var playbackOnly = false
-    var live: Bool { running && !playbackOnly }
+    var live: Bool { running && !playbackOnly && !tunerOnly }
 
     /// withInput false: output only, for playback. With input while playing back: restart with the input.
     func start(withInput: Bool = true) {
         if ProcessInfo.processInfo.environment["LEVIATHAN_NO_AUDIO"] != nil { return }   // UI testing: never open audio devices
         if running {
+            if withInput && tunerOnly {   // already listening for the tuner: just turn the sound on
+                tunerOnly = false; syncMute(); DebugLog.write("audio", "sound on"); return
+            }
             guard withInput && playbackOnly else { return }
             stop()
         }
@@ -897,6 +942,7 @@ final class Model: ObservableObject {
             do {
                 info = try engine.start(input: nil, output: o, buffer: bufferSize)
                 running = true; playbackOnly = true; awaitingReplug = nil; stalledSince = nil; stallLast = (0, 0)
+                runningOn = (nil, o)
                 startedWithoutInput = false
                 DebugLog.write("audio", "started for playback (input off)")
                 perfDropouts = 0; perfAt = Date(); perfNam = params.namSeconds; perfPeak = 0
@@ -921,6 +967,7 @@ final class Model: ObservableObject {
             info = try engine.start(input: i, output: o, buffer: bufferSize)
             running = true; awaitingReplug = nil; stalledSince = nil; stallLast = (0, 0)
             startedWithoutInput = i == nil && inputUID != Model.noInput
+            runningOn = (i, o)
             DebugLog.write("audio", "started")
             perfDropouts = 0; perfAt = Date(); perfNam = params.namSeconds; perfPeak = 0   // the engine's count restarts with it
             adviseOverloads = true; recentOverloads = []; startedAt = Date()
@@ -941,13 +988,20 @@ final class Model: ObservableObject {
         let outputWorks = i != nil && (try? engine.start(input: nil, output: o, buffer: bufferSize)) != nil
         engine.stop()
         let bad = outputWorks ? i! : o
+        if bad.isBuiltIn {   // nothing to unplug
+            return "Leviathan couldn\u{2019}t start \(bad.name). Try again, or pick another device in Settings → Audio."
+        }
         awaitingReplug = bad.uid
         return outputWorks
             ? "\(bad.name) isn\u{2019}t responding. Unplug it and plug it back in; Leviathan starts again by itself."
             : "Leviathan couldn\u{2019}t start \(bad.name). Unplug it and plug it back in (Leviathan starts again by itself), or pick another output."
     }
 
-    func stop() { engine.stop(); running = false; playbackOnly = false; info = nil; DebugLog.write("audio", "stopped") }
+    func stop() {
+        engine.stop(); running = false; playbackOnly = false; tunerOnly = false; info = nil; runningOn = nil; syncMute()
+        tunerFreq = 0; tunerCents = 0; tunerNote = "–"; tunerString = nil   // no input: never show an old reading
+        DebugLog.write("audio", "stopped")
+    }
 
     /// Hardware advice: most of the round trip is the devices, not the app.
     func latencyAdvice(_ i: AudioDevice, _ o: AudioDevice) -> String {
@@ -967,7 +1021,13 @@ final class Model: ObservableObject {
     }
 
     /// A new device or buffer: reopen with it, keeping playback-only audio without input.
-    private func restartIfRunning() { if running { let withInput = !playbackOnly; stop(); start(withInput: withInput) } }
+    private func restartIfRunning() {
+        guard running else { return }
+        let withInput = !playbackOnly, tuner = tunerOnly
+        stop()
+        tunerOnly = tuner; syncMute()   // a tuner-only restart stays silent
+        start(withInput: withInput)
+    }
 
     private var lastOverloadInfo = Date.distantPast, recentOverloads: [Date] = [], adviseOverloads = true, startedAt = Date.distantPast
 
@@ -1038,7 +1098,7 @@ final class Model: ObservableObject {
         UserDefaults.standard.set(outputUID, forKey: "outputUID")
     }
 
-    private func syncMute() { params.muted = tunerOn && tunerMute }
+    private func syncMute() { params.muted = tunerOn && (tunerMute || tunerOnly) }
 
     var activeCapture: Capture? { s.capture.isEmpty ? nil : captures[s.capture] }
 
@@ -1469,7 +1529,7 @@ final class Model: ObservableObject {
                                           s.nam.isEmpty ? "built-in" : "NAM \"\(s.nam)\""))
             perfAt = now; perfNam = nam; perfDropouts = d; perfPeak = 0
         }
-        if tunerOn && tunerTick % 2 == 0 { runTuner() }
+        if tunerOn { runTuner() }   // every frame (30 a second): follows a peg being turned
     }
 
     private var lastClips = 0, clipTimes: [Date] = [], clipWarned = false
@@ -1491,7 +1551,11 @@ final class Model: ObservableObject {
         let n = 2048, w = params.tunerWrite
         var x = [Float](repeating: 0, count: n)
         for i in 0..<n { x[i] = params.tunerRing[(w - n + i + 4096) & 4095] }
-        guard let f = detectPitch(x, sr: Double(dsp.sr)) else { return }
+        guard let f = detectPitch(x, sr: Double(dsp.sr)) else {
+            if tunerFreq > 0, Date().timeIntervalSince(tunerHeard) > 0.4 { tunerFreq = 0; tunerCents = 0; tunerNote = "–"; tunerString = nil }
+            return
+        }
+        tunerHeard = Date()
         let m = 69 + 12 * log2(f / a4)
         let t = tuning
         // Snap to the nearest string of the chosen tuning if close, otherwise chromatic.
@@ -1762,6 +1826,7 @@ struct LevelMeters: View {
             HStack(spacing: 4) { Text("IN").font(.inter(size: T(9) * UI)).foregroundStyle(.secondary); Meter(level: mt.inLevel) }
             HStack(spacing: 4) { Text("OUT").font(.inter(size: T(9) * UI)).foregroundStyle(.secondary); Meter(level: mt.outLevel) }
         }
+        .fixedSize()   // a crowded top bar (recording's waveform) must never squeeze the labels
     }
 }
 

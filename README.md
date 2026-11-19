@@ -69,7 +69,7 @@ Plug in your guitar, pick a sound, play. Real amp tones, pedals, cabinets, a tun
 - If the interface doesn't come on, the phone may not be able to power it: use a hub with its own power supply.
 - When it's connected properly, the phone's **USB preferences** show *USB controlled by: This device*.
 
-Leviathan opens with the sound off: tap **Start** at the top when you're ready to play. It runs full screen in landscape and keeps the screen on while it's open. The back gesture returns to the rig rather than closing the app, so a stray swipe mid-song won't cut your sound. When you switch to another app, Leviathan stops playing so it doesn't get in the way of other apps' sound. Recording carries on if you were recording.
+Leviathan opens with the sound off: tap **Off** at the top to turn it on when you're ready to play. It runs full screen in landscape and keeps the screen on while it's open. The back gesture returns to the rig rather than closing the app, so a stray swipe mid-song won't cut your sound. When you switch to another app, Leviathan stops playing so it doesn't get in the way of other apps' sound. Recording carries on if you were recording.
 
 ### 2.4 Updates
 
@@ -79,7 +79,7 @@ Leviathan checks for new versions itself. When one is out, a banner appears at t
 
 1. **Plug your guitar into your audio interface** and connect the interface to your computer.
 2. Open Leviathan. In the **Input** panel (top left), **pick your interface** and the input your guitar is plugged into.
-3. Press **Start** at the top (or the Space bar).
+3. Click **⏻ Off** at the top to turn the sound on (or press the Space bar). It turns green and reads **On**.
 4. **Pick a sound** from the preset menu at the top, or step through presets with **‹ ›**.
 5. Play. Use **Input Gain** to set how hard you hit the amp, and **Output** in the Master panel for the overall volume.
 
@@ -114,7 +114,7 @@ Leviathan checks for new versions itself. When one is out, a banner appears at t
 - **Share presets** as `.leviathan` files. They work on Mac, Windows and Android; double-click one to load it on a computer, or import it from **Presets** on a phone.
 
 **Practice**
-- **Tuner** with standard and alternate tunings.
+- **Tuner** with standard and alternate tunings. It keeps listening with the sound off, so you can tune in silence.
 - **Metronome** with beat lights and tap tempo. The delay can follow the tempo too.
 
 **Recording**
@@ -172,7 +172,7 @@ On a computer:
 
 | Mac | Windows | Action |
 | --- | --- | --- |
-| Space | Space | Start / stop sound |
+| Space | Space | Sound on / off |
 | ⌘R | Ctrl+R | Record / stop recording |
 | ⌘S | Ctrl+S | Save the current preset |
 | ⇧⌘S | Ctrl+Shift+S | Save as a new preset |
@@ -225,6 +225,7 @@ The main changes in each release. Full notes are on the [releases page](https://
 
 | Version | Highlights |
 | --- | --- |
+| 0.8.1 | Tuner works with the sound off and follows the peg faster; clearer Off / On button; plain message when an interface is unplugged |
 | 0.8.0 | Search about 1,000 artists in Pitch to hear their tuning; open tunings and DADGAD; matching dropdowns; text colour; full-width top bar; ⌘1–4 shortcuts |
 | 0.7.2 | Recovers by itself when a USB interface stops responding |
 | 0.7.1 | Light theme and your own background colour; Wet / Dry playback; less pitch-shifter lag |

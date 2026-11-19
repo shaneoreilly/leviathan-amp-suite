@@ -130,7 +130,7 @@ Model::Model() {
     // LEVIATHAN_SCREEN=presets|recordings|settings: open on that screen (UI testing)
     const auto scr = juce::SystemStats::getEnvironmentVariable("LEVIATHAN_SCREEN", {});
     if (scr == "presets") screen = Screen::presets; else if (scr == "recordings") screen = Screen::recordings; else if (scr == "settings") screen = Screen::settings;
-    // Android opens with the amp off (nothing plays until you tap Start) and the device released while it's off;
+    // Android opens with the amp off (nothing plays until you turn it on) and the device released while it's off;
     // the device setup is kept and reopened by start(). Desktop starts playing straight away.
     if (onAndroid) devices.closeAudioDevice();
     else start();
@@ -273,8 +273,29 @@ void Model::ensureInputs() {
     }
 }
 
+void Model::toggle() {
+    if (live() && tunerOn) { tunerOnly = true; syncMute(); debuglog::write("audio", "sound off (tuner still listening)"); changed(); return; }
+    if (!running) tunerOnly = false;   // a failed tuner-only restart must not leave the next start silent
+    live() ? stop() : start();
+}
+
+void Model::setTuner(bool on) {
+    tunerOn = on;
+    if (on && !running) {   // listen with the sound off: muted before anything can play
+        tunerOnly = true; syncMute();
+        start();
+        if (!running) tunerOnly = false;
+    } else if (!on && tunerOnly) {
+        if (running) stop(); else tunerOnly = false;
+    }
+    syncMute(); changed();
+}
+
 void Model::start(bool withInput) {
     if (running) {
+        if (withInput && tunerOnly) {   // already listening for the tuner: just turn the sound on
+            tunerOnly = false; syncMute(); debuglog::write("audio", "sound on"); changed(); return;
+        }
         if (withInput && playbackOnly) {   // already playing a recording back: just turn the input on
             playbackOnly = false; inputOff.store(false);
             debuglog::write("audio", "input on");
@@ -309,7 +330,8 @@ void Model::start(bool withInput) {
 void Model::stop() {
     if (!running) return;
     devices.removeAudioCallback(this);
-    running = false; playbackOnly = false; inputOff.store(false);
+    running = false; playbackOnly = false; inputOff.store(false); tunerOnly = false; syncMute();
+    tunerFreq = 0; tunerCents = 0; tunerNote = juce::String::fromUTF8("\xe2\x80\x93"); tunerString = -1;   // no input: never show an old reading
     debuglog::write("audio", "stopped");
     params.inPeak.store(0); params.outPeak.store(0);
     // Android: off means the audio device is released too (its exclusive streams would hold up other apps' sound)
@@ -340,12 +362,13 @@ void Model::enterForeground() {
     pausedForBackground = false;
     devices.restartLastAudioDevice();
     if (wasRunningBeforeBackground) start();
+    else if (tunerOn) setTuner(true);   // the tuner was open with the sound off: listen again
     refreshInfo(); changed();
 }
 
 void Model::restartAudio() {
     ensureInputs();
-    if (running) { stop(); start(); }
+    if (running) { const bool tuner = tunerOnly; stop(); tunerOnly = tuner; syncMute(); start(); }   // a tuner-only restart stays silent
     saveState();
 }
 
@@ -568,7 +591,7 @@ void Model::timerCallback() {
     const int x = devices.getXRunCount();
     if (x > lastXRuns) { dropouts += x - lastXRuns; lastXRuns = x; refreshInfo(); overloaded(); }
     if (++tunerTick % 15 == 0) cpu = (float) devices.getCpuUsage();
-    if (tunerOn && tunerTick % 2 == 0) runTuner();
+    if (tunerOn) runTuner();   // every frame (30 a second): follows a peg being turned
     checkInputClipping();
     if (tunerTick % 15 == 0) checkStall();   // last: it may stop audio
 }
@@ -584,7 +607,14 @@ bool Model::deviceListed(const juce::String& name, bool input) const {
 void Model::changeListenerCallback(juce::ChangeBroadcaster*) {
     const auto setup = devices.getAudioDeviceSetup();
     if (!deviceListed(chosenIn, true) || !deviceListed(chosenOut, false)) {
-        if (!chosenMissing) debuglog::write("audio", "chosen device unplugged");
+        if (!chosenMissing) {
+            debuglog::write("audio", "chosen device unplugged");
+            const auto lost = !deviceListed(chosenIn, true) ? chosenIn : chosenOut;
+            if (running && lost.isNotEmpty()) {
+                status = lost + " was disconnected. Plug it back in; Leviathan goes back to it by itself.";
+                changed();
+            }
+        }
         chosenMissing = true;
         return;
     }
@@ -595,8 +625,8 @@ void Model::changeListenerCallback(juce::ChangeBroadcaster*) {
     // a USB interface needs a moment after it appears before it will start
     juce::Timer::callAfterDelay(1500, [this, a = alive] {
         if (!a->load() || chosenMissing) return;
-        const bool withInput = !running || !playbackOnly;
-        stop();
+        const bool withInput = !running || !playbackOnly, tuner = tunerOnly;
+        stop(); tunerOnly = tuner; syncMute();   // a tuner-only restart stays silent
         auto s = devices.getAudioDeviceSetup();
         if (s.inputDeviceName != chosenIn || s.outputDeviceName != chosenOut || devices.getCurrentAudioDevice() == nullptr) {
             s.inputDeviceName = chosenIn; s.outputDeviceName = chosenOut;
@@ -620,7 +650,8 @@ void Model::checkStall() {
     debuglog::write("audio", "stalled: no audio callbacks for 2 s");
     const bool withInput = !playbackOnly;
     const juce::String name = withInput && info.inName.isNotEmpty() ? info.inName : info.outName;
-    stop();
+    const bool tuner = tunerOnly;
+    stop(); tunerOnly = tuner; syncMute();   // a tuner-only restart stays silent
     devices.closeAudioDevice();
     if (now - lastStallRestart > 30) {
         lastStallRestart = now;
@@ -632,7 +663,7 @@ void Model::checkStall() {
     }
     awaitingReplug = name.isNotEmpty() ? name : juce::String("audio device");
     status = awaitingReplug + juce::String::fromUTF8(" stopped responding. Unplug it and plug it back in")
-             + (devices.getCurrentAudioDeviceType() == "ASIO" ? juce::String(", then press Start.") : juce::String("; Leviathan starts again by itself."));
+             + (devices.getCurrentAudioDeviceType() == "ASIO" ? juce::String(", then turn the sound back on (the Off button at the top).") : juce::String("; Leviathan starts again by itself."));
     changed();
 }
 
@@ -661,7 +692,12 @@ void Model::runTuner() {
     std::vector<float> x((size_t) n);
     for (int i = 0; i < n; ++i) x[(size_t) i] = params.tunerRing[(w - n + i + 4096) & 4095];
     auto f = detectPitch(x, dspRate);
-    if (!f) return;
+    const double now = juce::Time::getMillisecondCounterHiRes() / 1000.0;
+    if (!f) {   // nothing heard for 0.4 s: clear, rather than hold an old reading
+        if (tunerFreq > 0 && now - tunerHeard > 0.4) { tunerFreq = 0; tunerCents = 0; tunerNote = juce::String::fromUTF8("\xe2\x80\x93"); tunerString = -1; changed(); }
+        return;
+    }
+    tunerHeard = now;
     const double m = 69 + 12 * std::log2(*f / a4);
     const auto& t = tuning();
     int nearest = 0;
